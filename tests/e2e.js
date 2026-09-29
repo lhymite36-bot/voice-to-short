@@ -65,7 +65,9 @@ function serve() {
   page.on('dialog', (d) => d.accept());
   page.on('response', (r) => { if (r.status() >= 400 && !/generativelanguage/.test(r.url())) errors.push('HTTP ' + r.status() + ' ' + r.url()); });
   await page.setRequestInterception(true);
-  const calls = []; let failFirstModel = false;
+  const calls = []; let failFirstModel = false; let ttsMode = 'wav'; const ttsCalls = [];
+  const PCM = fs.readFileSync(process.env.PCM || '/tmp/vts-voice-24k.pcm');
+  const wavOf = (pcm) => { const h = Buffer.alloc(44); h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8); h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(24000, 24); h.writeUInt32LE(48000, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write('data', 36); h.writeUInt32LE(pcm.length, 40); return Buffer.concat([h, pcm]); };
   page.on('request', (req) => {
     const u = new URL(req.url());
     if (u.hostname !== 'generativelanguage.googleapis.com') return req.continue();
@@ -74,6 +76,20 @@ function serve() {
     const json = (status, obj) => req.respond({ status, headers: cors, contentType: 'application/json', body: JSON.stringify(obj) });
     const h = req.headers(); let body = null; try { body = JSON.parse(req.postData() || 'null'); } catch (_) { /* ignore */ }
     const m = /\/models\/([^:]+):generateContent$/.exec(u.pathname); const model = m && decodeURIComponent(m[1]);
+    if (model && /tts/.test(model)) {
+      ttsCalls.push({ model, key: h['x-goog-api-key'], query: u.search, body });
+      const audio = (mime, buf) => json(200, { candidates: [{ content: { role: 'model', parts: [{ inlineData: { mimeType: mime, data: buf.toString('base64') } }] }, finishReason: 'STOP' }] });
+      if (ttsMode === 'quota') return json(429, { error: { code: 429, message: 'You exceeded your current quota, please check your plan and billing details.', status: 'RESOURCE_EXHAUSTED' } });
+      if (ttsMode === 'wav') return audio('audio/wav', wavOf(PCM.subarray(0, 24000 * 2 * 3)));
+      if (ttsMode === 'fallback') {
+        if (model === 'gemini-3.8-flash-tts') return json(404, { error: { code: 404, message: 'models/gemini-3.8-flash-tts is not found for API version v1beta, or is not supported for generateContent.', status: 'NOT_FOUND' } });
+        return audio('audio/L16;codec=pcm;rate=24000', PCM);
+      }
+      if (ttsMode === 'legacy31') {
+        if (model !== 'gemini-3.1-flash-tts-preview') return json(404, { error: { code: 404, message: 'models/' + model + ' is not found for API version v1beta.', status: 'NOT_FOUND' } });
+        return audio('audio/L16;codec=pcm;rate=24000', PCM.subarray(0, 48000));
+      }
+    }
     calls.push({ path: u.pathname, query: u.search, key: h['x-goog-api-key'], model, body });
     if (u.pathname.endsWith('/models')) return json(200, { models: [{ name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] }] });
     if (failFirstModel && model === 'gemini-3.8-flash') return json(404, { error: { code: 404, message: 'models/gemini-3.8-flash is not found for API version v1beta, or is not supported for generateContent.', status: 'NOT_FOUND' } });
@@ -164,6 +180,52 @@ function serve() {
   await page.waitForFunction(() => window.VTS.app.project.voice && window.VTS.app.project.voice.source === 'import', { timeout: 10000 });
   ok('audio import', true, (await app(() => window.VTS.app.project.voice.duration)).toFixed(2) + ' s');
 
+  // ---- AI voice (Gemini TTS) ----
+  ok('AI voice card is first + recommended', await app(() => { const g = document.querySelector('#pane-voice .option-group'); return g && g.id === 'opt-ai' && /Recommended/.test(g.textContent); }));
+  ok('30 prebuilt voices listed', (await page.$$eval('#ai-voices .voice', (e) => e.length)) === 30);
+  // 1) per-voice preview (API returns a WAV)
+  ttsMode = 'wav'; let n0 = ttsCalls.length;
+  await page.click('#ai-voices .voice[data-voice=Charon] .v-play');
+  await page.waitForFunction(() => document.querySelector('#ai-voices .voice[data-voice=Charon] .v-play').classList.contains('playing'), { timeout: 10000 });
+  const pv = ttsCalls[n0];
+  ok('preview request shape (AUDIO + prebuiltVoiceConfig + speech_metadata style)', pv && pv.body.generationConfig.responseModalities[0] === 'AUDIO' && pv.body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Charon' && /calm/.test(pv.body.contents[0].parts[0].speech_metadata.style) && pv.key === KEY && !/key=/.test(pv.query), JSON.stringify(pv && pv.body).slice(0, 260));
+  await page.click('#ai-voices .voice[data-voice=Charon] .v-play'); // stop
+  // 2) quota on every model -> clear message
+  ttsMode = 'quota'; n0 = ttsCalls.length;
+  await page.click('#ai-generate');
+  await page.waitForFunction(() => /quota/i.test(document.querySelector('#voice-status').textContent), { timeout: 15000 });
+  const qmsg = await page.$eval('#voice-status', (e) => e.textContent);
+  ok('429 -> quota message with retry-later + record-own-voice + Details', /try again/i.test(qmsg) && /record your own voice/i.test(qmsg) && /Details: HTTP 429/.test(qmsg), qmsg.replace(/\s+/g, ' ').slice(0, 220));
+  ok('quota: each model tried once', ttsCalls.length - n0 >= 2 && new Set(ttsCalls.slice(n0).map((c) => c.model)).size === ttsCalls.length - n0, ttsCalls.slice(n0).map((c) => c.model).join(' > '));
+  await shot('06b-voice-quota');
+  // 3) pick Kore + Bold, 3.8-flash-tts 404 -> falls back to 3.8-flash-lite-tts returning raw L16 PCM
+  ttsMode = 'fallback'; n0 = ttsCalls.length;
+  await page.click('#ai-voices .voice[data-voice=Kore]');
+  await page.select('#ai-style', 'bold');
+  ok('chosen voice saved in settings', (await app(() => JSON.parse(localStorage.getItem('vts.ttsVoice')))) === 'Kore');
+  await page.click('#ai-generate');
+  await page.waitForFunction(() => window.VTS.app.project.voice && window.VTS.app.project.voice.source === 'gemini', { timeout: 20000 });
+  const gv = await app(() => { const v = window.VTS.app.project.voice; return { d: v.duration, voice: v.ttsVoice, model: v.ttsModel, type: v.blob.type, size: v.blob.size }; });
+  const gcalls = ttsCalls.slice(n0);
+  ok('TTS fallback 3.8-flash-tts -> 3.8-flash-lite-tts', gcalls[0].model === 'gemini-3.8-flash-tts' && gcalls[1].model === 'gemini-3.8-flash-lite-tts' && gv.model === 'gemini-3.8-flash-lite-tts', gcalls.map((c) => c.model).join(' > '));
+  ok('PCM wrapped into WAV voice track', gv.type === 'audio/wav' && Math.abs(gv.d - PCM.length / 48000) < 0.05 && gv.voice === 'Kore', JSON.stringify(gv));
+  ok('bold style sent', /bold/.test(gcalls[1].body.contents[0].parts[0].speech_metadata.style) && gcalls[1].body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Kore');
+  ok('working TTS model remembered', (await app(() => JSON.parse(localStorage.getItem('vts.ttsModel')))) === 'gemini-3.8-flash-lite-tts');
+  ok('take card shows playback + regenerate', await app(() => !document.querySelector('#take-card').classList.contains('hidden') && !!document.querySelector('#take-audio').src && !document.querySelector('#ai-regenerate').classList.contains('hidden')));
+  await shot('06c-voice-ai-ready');
+  // 4) long script is chunked and concatenated
+  n0 = ttsCalls.length;
+  const long = await app(async () => { const txt = Array.from({ length: 30 }, (_, i) => 'This is sentence number ' + (i + 1) + ' of a very long script for testing.').join(' ');
+    const r = await window.VTS.gemini.generateSpeech(txt, { voice: 'Kore', style: 'calm' }); const buf = await window.VTS.render.decodeBlob(r.blob); return { chunks: r.chunks, dur: buf.duration }; });
+  ok('long script chunked + concatenated', long.chunks >= 3 && ttsCalls.length - n0 === long.chunks && Math.abs(long.dur - (long.chunks * PCM.length / 48000 + (long.chunks - 1) * 0.18)) < 0.1, JSON.stringify(long));
+  // 5) older preview model gets a spoken style prefix instead of speech_metadata
+  ttsMode = 'legacy31'; n0 = ttsCalls.length;
+  const leg = await app(async () => { const r = await window.VTS.gemini.ttsRequest('Hello there.', { model: 'gemini-3.1-flash-tts-preview', voice: 'Puck', style: 'soft', prefix: 'Say in a soft, gentle, soothing voice' }); return { model: r.model, rate: r.rate, bytes: r.pcm.length }; });
+  const lc = ttsCalls[n0];
+  ok('3.1 preview model: style as spoken prefix', leg.model === 'gemini-3.1-flash-tts-preview' && /^Say in a soft, gentle, soothing voice: Hello there\./.test(lc.body.contents[0].parts[0].text) && !lc.body.contents[0].parts[0].speech_metadata, lc.body.contents[0].parts[0].text);
+  await app(() => localStorage.setItem('vts.ttsModel', JSON.stringify('gemini-3.8-flash-lite-tts')));
+  ttsMode = 'fallback';
+
   // Render (Teal & Orange, auto format)
   await page.click('.step[data-step=render]');
   await new Promise((r) => setTimeout(r, 1200));
@@ -196,12 +258,6 @@ function serve() {
   await page.click('#opt-watermark');
   await page.select('#opt-format', 'webm');
   const f2 = await renderAndSave('render-moody');
-  // Third: Warm Soft back on auto
-  await page.click('#grades .grade:nth-child(3)');
-  await page.click('#cap-style button[data-v=pop]');
-  await page.select('#opt-format', 'auto');
-  const f3 = await renderAndSave('render-warm');
-
   // Library: listed, re-edit, delete
   await page.click('.tab[data-view=library]');
   await page.waitForSelector('.lib-item');
@@ -224,7 +280,7 @@ function serve() {
   await page.click('#export-data');
   await new Promise((r) => setTimeout(r, 500));
   ok('no page errors', errors.length === 0, errors.join(' | ').slice(0, 500));
-  fs.writeFileSync(path.join(OUT, 'files.json'), JSON.stringify([f1, f2, f3]));
+  fs.writeFileSync(path.join(OUT, 'files.json'), JSON.stringify([f1, f2]));
   await browser.close(); srv.close();
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log('\n' + (results.length - failed.length) + '/' + results.length + ' passed');

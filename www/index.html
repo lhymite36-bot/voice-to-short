@@ -98,9 +98,24 @@
 
         <!-- Step 3: Voice -->
         <div class="pane" id="pane-voice">
-          <div class="hero"><h1>Add the voice</h1><p class="muted">Your own voice performs best on Shorts. It’s free and takes 40 seconds.</p></div>
-          <button type="button" class="option recommended" id="opt-record">
-            <span class="opt-icon">🎙</span><span class="opt-text"><strong>Record my voice</strong><span>Teleprompter with auto-scrolling script</span></span><span class="pill">Recommended</span>
+          <div class="hero"><h1>Add the voice</h1><p class="muted">Pick a realistic AI voice, or record your own — both sound great on Shorts.</p></div>
+          <div class="option-group recommended-group" id="opt-ai">
+            <div class="option static">
+              <span class="opt-icon">✨</span><span class="opt-text"><strong>AI voice (Gemini)</strong><span>Realistic narration with your free Gemini key</span></span><span class="pill">Recommended</span>
+            </div>
+            <div class="label-row ai-label"><span>Voice</span><span class="small muted" id="ai-voice-name"></span></div>
+            <div class="voice-list" id="ai-voices" role="radiogroup" aria-label="AI voices"></div>
+            <label class="field"><span>Delivery style</span>
+              <select id="ai-style">
+                <option value="tone">Match my tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="custom">Custom…</option>
+              </select>
+            </label>
+            <input id="ai-style-custom" class="hidden" type="text" maxlength="160" placeholder="e.g. warm late-night radio host, slow and intimate">
+            <button type="button" class="btn primary big" id="ai-generate"><span>✨ Generate AI voice</span></button>
+            <p class="small muted" id="ai-note">Uses your Gemini key (free tier has a limited voice quota per day). Tap ▶ to hear a voice first.</p>
+          </div>
+          <button type="button" class="option" id="opt-record">
+            <span class="opt-icon">🎙</span><span class="opt-text"><strong>Record my voice</strong><span>Teleprompter with auto-scrolling script</span></span><span class="pill soft">Most personal</span>
           </button>
           <div class="option-group">
             <div class="option static" id="opt-tts">
@@ -128,6 +143,7 @@
             <div class="card-head"><h2>Current voice</h2><span class="badge" id="take-badge"></span></div>
             <audio id="take-audio" controls preload="metadata"></audio>
             <p class="small muted" id="take-info"></p>
+            <button type="button" class="btn hidden" id="ai-regenerate">↻ Regenerate AI voice</button>
           </div>
           <div class="actions">
             <button type="button" class="btn" data-goto="script">← Script</button>
@@ -206,6 +222,15 @@
           <label class="field"><span>Script language</span><select id="s-language"></select></label>
           <label class="field"><span>Default colour grade</span><select id="s-grade"></select></label>
           <label class="switch"><input type="checkbox" id="s-watermark"><span>Watermark on by default</span></label>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>AI voice (Gemini)</h2></div>
+          <label class="field"><span>Default voice</span><select id="s-tts-voice"></select></label>
+          <label class="field"><span>Delivery style</span><select id="s-tts-style"><option value="tone">Match the project tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="custom">Custom…</option></select></label>
+          <input id="s-tts-custom" class="hidden" type="text" maxlength="160" placeholder="Custom style, e.g. warm late-night radio host">
+          <label class="field"><span>Voice model</span><select id="s-tts-model"></select></label>
+          <button type="button" class="btn ghost" id="load-tts-models">Load voice models from my key</button>
+          <p class="small muted">If a model isn’t available for your key, the app tries the next one automatically and remembers the one that works.</p>
         </div>
         <div class="card">
           <div class="card-head"><h2>Voice</h2></div>

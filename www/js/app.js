@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.1.0';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 90;
@@ -23,7 +23,8 @@
 
   // ---------- settings ----------
   const K = { key: 'vts.apiKey', model: 'vts.model', models: 'vts.models', handle: 'vts.handle', tone: 'vts.tone', language: 'vts.language', grade: 'vts.grade',
-    watermark: 'vts.watermark', speechLang: 'vts.speechLang', wpm: 'vts.wpm', rawAudio: 'vts.rawAudio', last: 'vts.lastProject' };
+    watermark: 'vts.watermark', speechLang: 'vts.speechLang', wpm: 'vts.wpm', rawAudio: 'vts.rawAudio', last: 'vts.lastProject',
+    ttsVoice: 'vts.ttsVoice', ttsStyle: 'vts.ttsStyle', ttsCustom: 'vts.ttsCustom', ttsModel: 'vts.ttsModel', ttsModels: 'vts.ttsModels' };
   function load(key, fallback) { try { const raw = localStorage.getItem(key); return raw == null ? fallback : JSON.parse(raw); } catch (_) { return fallback; } }
   function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { toast('Could not save settings: storage is full.', true); } }
   const getKey = () => String(localStorage.getItem(K.key) || '').trim();
@@ -37,7 +38,22 @@
     const listed = load(K.models, null);
     if (Array.isArray(listed)) save(K.models, listed.filter((m) => typeof m === 'string' && !G.LEGACY_MODEL_RE.test(m)));
   })();
+  const getTtsModel = () => { const m = String(load(K.ttsModel, G.TTS_DEFAULT_MODEL) || ''); return /^[a-zA-Z0-9._-]{3,80}$/.test(m) ? m : G.TTS_DEFAULT_MODEL; };
+  const ttsVoice = () => { const v = load(K.ttsVoice, 'Sulafat'); return G.TTS_VOICES.some(([n]) => n === v) ? v : 'Sulafat'; };
+  const TTS_STYLES = {
+    calm: { style: 'calm, warm and confident, like a kind teacher; unhurried pace with small natural pauses', prefix: 'Say in a calm, warm, confident voice' },
+    bold: { style: 'bold, energetic and direct; punchy, confident delivery', prefix: 'Say in a bold, energetic, confident voice' },
+    soft: { style: 'soft, gentle and soothing; slow, intimate pace', prefix: 'Say in a soft, gentle, soothing voice' },
+  };
+  function ttsStyle() {
+    const mode = load(K.ttsStyle, 'tone');
+    if (mode === 'custom') { const c = String(load(K.ttsCustom, '') || '').trim(); if (c) return { style: c, prefix: 'Say in this style (' + c + ')' }; }
+    const key = mode === 'tone' || mode === 'custom' ? (P && P.tone) || load(K.tone, 'calm') : mode;
+    return TTS_STYLES[key] || TTS_STYLES.calm;
+  }
   Object.assign(G.host, {
+    getTtsModel, setTtsModel: (m) => save(K.ttsModel, m),
+    onTtsModelSwitch: (from, to) => toast(from + ' is not available for this key. AI voice switched to ' + to + '.'),
     getKey, getModel,
     setModel: (m) => save(K.model, m),
     onModelSwitch: (from, to) => { toast(from + ' is not available for this key. Switched to ' + to + '.'); if (currentView === 'settings') renderSettings(); },
@@ -431,14 +447,16 @@
     const v = P.voice;
     $('take-card').classList.toggle('hidden', !v);
     if (v) {
-      const names = { mic: 'Your voice', 'tts-file': 'Android voice', 'tts-mic': 'Device voice (via mic)', import: 'Imported audio', silent: 'No voice (silent)' };
+      const names = { gemini: 'AI voice' + (v.ttsVoice ? ' · ' + v.ttsVoice : ''), mic: 'Your voice', 'tts-file': 'Android voice', 'tts-mic': 'Device voice (via mic)', import: 'Imported audio', silent: 'No voice (silent)' };
       $('take-badge').textContent = names[v.source] || 'Voice';
       $('take-badge').className = 'badge ok';
       $('take-audio').classList.toggle('hidden', !v.blob);
       if (v.blob) setMedia($('take-audio'), v.blob);
-      $('take-info').textContent = fmt(v.duration) + (v.source === 'silent' ? ' of captions at a relaxed pace. Record a voiceover in the YouTube app after uploading.' : ' · silences at the start and end are trimmed when rendering')
+      $('ai-regenerate').classList.toggle('hidden', v.source !== 'gemini');
+      $('take-info').textContent = (v.source === 'gemini' && v.ttsModel ? 'Gemini ' + v.ttsModel + ' · ' : '') + fmt(v.duration) + (v.source === 'silent' ? ' of captions at a relaxed pace. Record a voiceover in the YouTube app after uploading.' : ' · silences at the start and end are trimmed when rendering')
         + (v.duration > MAX_VOICE_SEC ? ' · Longer than ~59 s, so the end will be cut to keep the Short under 60 s.' : '');
     }
+    paintAiVoices();
     // Honest TTS notes.
     const note = $('tts-note');
     if (N.canTtsToFile) {
@@ -456,11 +474,11 @@
     }
     paintStepper();
   }
-  async function setVoice(blob, source, duration) {
+  async function setVoice(blob, source, duration, meta) {
     try {
       let dur = duration || 0;
       if (blob) { const buf = await R.decodeBlob(blob); dur = buf.duration; if (R.speechBounds(buf).silent && source !== 'silent') toast('That recording sounds silent. Check the mic and try again.', true); }
-      P.voice = { blob: blob || null, source, duration: dur, mime: blob ? blob.type : '', createdAt: new Date().toISOString() };
+      P.voice = Object.assign({ blob: blob || null, source, duration: dur, mime: blob ? blob.type : '', createdAt: new Date().toISOString() }, meta || {});
       voiceBuffer = null; markVideoStale(); persist(true); renderVoice();
       setStatus('voice-status', 'Voice ready (' + fmt(dur) + '). Next: render your video.', 'ok');
     } catch (err) {
@@ -511,6 +529,78 @@
       setStatus('voice-status', (err && err.friendly) || ('Could not record the device voice: ' + (err && err.message || err)), 'err');
     } finally { btn.disabled = false; }
   });
+
+  // ----- AI voice (Gemini TTS) -----
+  const previewCache = new Map(); let previewAudio = null; let previewBusy = '';
+  const PREVIEW_TEXT = 'Here is a small psychology trick that can change how you feel tonight.';
+  function paintAiVoices() {
+    const list = $('ai-voices'); const cur = ttsVoice();
+    if (list.childElementCount !== G.TTS_VOICES.length) {
+      list.innerHTML = '';
+      G.TTS_VOICES.forEach(([name, desc]) => {
+        const b = document.createElement('div'); b.className = 'voice'; b.dataset.voice = name; b.setAttribute('role', 'radio'); b.tabIndex = 0;
+        b.innerHTML = '<span class="v-text"><strong></strong><small></small></span><button type="button" class="v-play" aria-label="Preview ' + name + '">▶</button>';
+        b.querySelector('strong').textContent = name; b.querySelector('small').textContent = desc;
+        b.addEventListener('click', (e) => { if (e.target.closest('.v-play')) return; save(K.ttsVoice, name); paintAiVoices(); });
+        b.querySelector('.v-play').addEventListener('click', () => previewVoice(name, b.querySelector('.v-play')));
+        list.appendChild(b);
+      });
+    }
+    list.querySelectorAll('.voice').forEach((b) => { const on = b.dataset.voice === cur; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    const d = (G.TTS_VOICES.find(([n]) => n === cur) || [])[1];
+    $('ai-voice-name').textContent = cur + (d ? ' — ' + d : '');
+    const mode = load(K.ttsStyle, 'tone'); $('ai-style').value = mode;
+    $('ai-style').options[0].textContent = 'Match my tone (' + ((S.TONES[P && P.tone] || S.TONES.calm).label) + ')';
+    $('ai-style-custom').classList.toggle('hidden', mode !== 'custom'); $('ai-style-custom').value = load(K.ttsCustom, '');
+  }
+  $('ai-style').addEventListener('change', (e) => { save(K.ttsStyle, e.target.value); paintAiVoices(); if (e.target.value === 'custom') $('ai-style-custom').focus(); });
+  $('ai-style-custom').addEventListener('change', (e) => save(K.ttsCustom, e.target.value.trim()));
+  function stopVoicePreview() { if (previewAudio) { previewAudio.pause(); previewAudio = null; } document.querySelectorAll('.v-play.playing').forEach((b) => { b.classList.remove('playing'); b.textContent = '▶'; }); }
+  async function previewVoice(name, btn) {
+    if (btn.classList.contains('playing')) { stopVoicePreview(); return; }
+    if (previewBusy) return;
+    stopVoicePreview();
+    if (!getKey()) { toast('Add your Gemini API key in Settings to hear AI voices.', true); return; }
+    const st = ttsStyle(); const key = name + '|' + st.style;
+    try {
+      let blob = previewCache.get(key);
+      if (!blob) {
+        previewBusy = name; btn.classList.add('busy'); btn.textContent = '…';
+        const r = await G.ttsRequest(PREVIEW_TEXT, { voice: name, style: st.style, prefix: st.prefix, timeout: 60000 });
+        blob = G.pcmToWav([r.pcm], r.rate, r.channels, 0); previewCache.set(key, blob);
+      }
+      previewAudio = new Audio(URL.createObjectURL(blob));
+      btn.classList.add('playing'); btn.textContent = '■';
+      previewAudio.onended = () => stopVoicePreview();
+      await previewAudio.play();
+    } catch (err) {
+      setStatus('voice-status', aiError(err), 'err');
+    } finally { previewBusy = ''; btn.classList.remove('busy'); if (!btn.classList.contains('playing')) btn.textContent = '▶'; }
+  }
+  function aiError(err) {
+    const msg = G.friendlyError(err);
+    return err && err.quota ? msg : 'AI voice failed: ' + msg;
+  }
+  let aiBusy = false;
+  async function generateAiVoice() {
+    if (aiBusy || !P.pkg) return;
+    if (!getKey()) { setStatus('voice-status', 'Add your free Gemini API key in Settings first.', 'err'); return; }
+    stopVoicePreview();
+    aiBusy = true; const btns = [$('ai-generate'), $('ai-regenerate')]; btns.forEach((b) => { b.disabled = true; });
+    const label = $('ai-generate').querySelector('span'); const old = label.textContent;
+    const st = ttsStyle(); const voice = ttsVoice();
+    setStatus('voice-status', 'Creating the ' + voice + ' voice with Gemini… (about 10–30 s)', 'live');
+    try {
+      const r = await G.generateSpeech(P.pkg.script, { voice, style: st.style, prefix: st.prefix,
+        onProgress: (i, n) => { label.textContent = n > 1 ? 'Generating part ' + (i + 1) + ' / ' + n + '…' : 'Generating…'; } });
+      await setVoice(r.blob, 'gemini', 0, { ttsVoice: voice, ttsModel: r.model, ttsStyle: st.style });
+      setStatus('voice-status', 'AI voice ready (' + voice + ', ' + r.model + (r.chunks > 1 ? ', ' + r.chunks + ' parts joined' : '') + '). Play it below, or regenerate for a different read.', 'ok');
+    } catch (err) {
+      setStatus('voice-status', aiError(err), 'err');
+    } finally { aiBusy = false; btns.forEach((b) => { b.disabled = false; }); label.textContent = old; }
+  }
+  $('ai-generate').addEventListener('click', generateAiVoice);
+  $('ai-regenerate').addEventListener('click', generateAiVoice);
 
   // Teleprompter
   let pState = null;
@@ -794,6 +884,11 @@
       : VTS.speech.mode === 'web' ? 'Dictation uses your browser’s speech recognition. Works best in Chrome.' : 'This browser has no speech recognition — type your idea or use your keyboard’s mic.';
     $('s-wpm').value = wpm(); $('s-wpm-label').textContent = wpm() + ' words/min';
     $('s-raw-audio').checked = !!load(K.rawAudio, false);
+    fillSelect($('s-tts-voice'), G.TTS_VOICES.map(([n, d]) => [n, n + ' — ' + d]), ttsVoice());
+    $('s-tts-style').value = load(K.ttsStyle, 'tone');
+    $('s-tts-custom').classList.toggle('hidden', $('s-tts-style').value !== 'custom'); $('s-tts-custom').value = load(K.ttsCustom, '');
+    const tm = Array.from(new Set(G.TTS_MODELS.concat(load(K.ttsModels, []) || []).concat([getTtsModel()])));
+    fillSelect($('s-tts-model'), tm.map((m) => [m, m + (m === G.TTS_DEFAULT_MODEL ? ' (default)' : '')]), getTtsModel());
     $('app-version').textContent = 'Voice to Short ' + APP_VERSION + (N.isNative ? ' · Android app' : ' · web app') + ' · video: ' + (R.pickVideoType('auto') || 'not supported');
   }
   $('api-key-toggle').addEventListener('click', () => { const show = keyInput.type === 'password'; keyInput.type = show ? 'text' : 'password'; $('api-key-toggle').textContent = show ? 'Hide' : 'Show'; });
@@ -840,6 +935,19 @@
   $('s-speech-lang').addEventListener('change', (e) => save(K.speechLang, e.target.value));
   $('s-wpm').addEventListener('input', (e) => { save(K.wpm, Number(e.target.value)); $('s-wpm-label').textContent = e.target.value + ' words/min'; });
   $('s-raw-audio').addEventListener('change', (e) => save(K.rawAudio, e.target.checked));
+  $('s-tts-voice').addEventListener('change', (e) => { save(K.ttsVoice, e.target.value); toast('AI voice: ' + e.target.value); });
+  $('s-tts-style').addEventListener('change', (e) => { save(K.ttsStyle, e.target.value); renderSettings(); });
+  $('s-tts-custom').addEventListener('change', (e) => save(K.ttsCustom, e.target.value.trim()));
+  $('s-tts-model').addEventListener('change', (e) => { save(K.ttsModel, e.target.value); toast('Voice model: ' + e.target.value); });
+  $('load-tts-models').addEventListener('click', async () => {
+    const btn = $('load-tts-models'); btn.disabled = true; btn.textContent = 'Loading…';
+    try {
+      const names = await G.listTtsModels();
+      if (!names.length) throw G.fail('No text-to-speech models were returned for this key.');
+      save(K.ttsModels, names); if (!names.includes(getTtsModel())) save(K.ttsModel, names[0]);
+      renderSettings(); toast(names.length + ' voice model' + (names.length === 1 ? '' : 's') + ' loaded');
+    } catch (err) { toast(G.friendlyError(err), true); } finally { btn.disabled = false; btn.textContent = 'Load voice models from my key'; }
+  });
   $('export-data').addEventListener('click', async () => {
     const projects = (await DB.all()).map((p) => { const c = Object.assign({}, p); delete c.ideaAudio; delete c.video; if (c.voice) c.voice = Object.assign({}, c.voice, { blob: null }); return c; });
     const settings = {}; Object.entries(K).forEach(([k, v]) => { if (k !== 'key' && k !== 'last') { const raw = localStorage.getItem(v); if (raw != null) settings[v] = raw; } });
@@ -870,7 +978,7 @@
     P = blankProject(); voiceBuffer = null; renderAll(); showStep('idea'); renderLibrary(); toast('All projects deleted');
   });
 
-  function stopAll() { stopPreview(); if (dictating) stopDictation(true); N.stopSpeaking(); if (pState) closePrompter(); }
+  function stopAll() { stopPreview(); stopVoicePreview(); if (dictating) stopDictation(true); N.stopSpeaking(); if (pState) closePrompter(); }
 
   // ---------- boot ----------
   // The preview host is the preview wrapper (render canvas is overlaid there while rendering).

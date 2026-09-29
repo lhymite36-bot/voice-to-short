@@ -37,6 +37,22 @@ It's built for faceless psychology and self-help channels (BetterU-style voiceov
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
 
+## AI voice (Gemini text-to-speech) — new in 1.1.0
+
+The recommended voice option. It uses Gemini's native text-to-speech with the same API key (sent only in the `x-goog-api-key` header; `AQ.` keys work).
+
+- **Models, tried in order:** the model that last worked → `gemini-3.8-flash-tts` → `gemini-3.8-flash-lite-tts` → `gemini-3.1-flash-tts-preview` → `gemini-2.5-flash-preview-tts` → `gemini-2.5-pro-preview-tts` → any other TTS models your key lists. When a model returns 404, is unavailable or is out of quota, the app moves to the next one and remembers the one that worked. Errors include a `Details:` line. Settings → AI voice lets you pick a model or load the list from your key.
+- **Request:** `generateContent` with `responseModalities: ["AUDIO"]` and `speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName`.
+- **Delivery style:**
+  - 3.8 models get the style in `speech_metadata.style`, because they read the text word for word.
+  - Older models get a spoken instruction in front of the text instead, like "Say in a calm, warm, confident voice: …".
+  - The styles are Match my tone, Calm teacher, Bold, Soft, or a custom style.
+- **Voices:** all 30 prebuilt voices. Each has a ▶ preview (a short sample sentence, cached per voice and style). The chosen voice is saved in Settings.
+- **Audio:** raw 24 kHz 16-bit mono PCM (or WAV) is wrapped into a WAV file and used as the voiceover track. You can play it back or regenerate it.
+- **Long scripts:** split at sentence boundaries into chunks of about 120 words, then joined with short pauses.
+- **Quota:** the free tier allows only a limited number of voice generations per minute and per day, and previews count too. When every model is out of quota, the app tells you to try again later or record your own voice.
+- **Needs internet.** Nothing except your script goes to Google.
+
 ## Gemini
 
 - The app calls `generativelanguage.googleapis.com/v1beta` directly from the device. The key goes in the `x-goog-api-key` header, never in the URL.

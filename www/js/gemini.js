@@ -181,5 +181,170 @@
     throw fail('Gemini returned an empty response.');
   }
 
-  VTS.gemini = { host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
+  // ================= Text-to-speech (Gemini native TTS) =================
+  // Current docs (Sep 2026): gemini-3.8-flash-tts and gemini-3.8-flash-lite-tts (GenerateContent + Interactions APIs),
+  // older gemini-3.1-flash-tts-preview and 2.5 preview TTS models (may be unavailable to new AQ. keys, like 2.x chat models).
+  const TTS_DEFAULT_MODEL = 'gemini-3.8-flash-tts';
+  const TTS_MODELS = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'];
+  // The 30 documented prebuilt voices (name, character).
+  const TTS_VOICES = [
+    ['Sulafat', 'Warm'], ['Achernar', 'Soft'], ['Vindemiatrix', 'Gentle'], ['Charon', 'Informative'], ['Kore', 'Firm'], ['Gacrux', 'Mature'],
+    ['Aoede', 'Breezy'], ['Puck', 'Upbeat'], ['Zephyr', 'Bright'], ['Fenrir', 'Excitable'], ['Leda', 'Youthful'], ['Orus', 'Firm'],
+    ['Callirrhoe', 'Easy-going'], ['Autonoe', 'Bright'], ['Enceladus', 'Breathy'], ['Iapetus', 'Clear'], ['Umbriel', 'Easy-going'], ['Algieba', 'Smooth'],
+    ['Despina', 'Smooth'], ['Erinome', 'Clear'], ['Algenib', 'Gravelly'], ['Rasalgethi', 'Informative'], ['Laomedeia', 'Upbeat'], ['Alnilam', 'Firm'],
+    ['Schedar', 'Even'], ['Pulcherrima', 'Forward'], ['Achird', 'Friendly'], ['Zubenelgenubi', 'Casual'], ['Sadachbia', 'Lively'], ['Sadaltager', 'Knowledgeable'],
+  ];
+  // 3.8+ TTS reads text verbatim, so delivery goes in speech_metadata.style. Older TTS models take a spoken-style prefix instead.
+  const ttsIsStructured = (m) => { const v = /gemini-(\d+(?:\.\d+)?)/.exec(m); return !v || parseFloat(v[1]) >= 3.5; };
+  function isTtsModelUnavailable(err) {
+    if (isModelUnavailable(err)) return true;
+    const m = String(err && err.message || '').toLowerCase();
+    return !!err && !err.friendly && err.status === 400 && (m.includes('modalit') || m.includes('audio output') || m.includes('speech_config') || m.includes('speechconfig'));
+  }
+  const isQuota = (err) => !!err && (err.status === 429 || err.apiStatus === 'RESOURCE_EXHAUSTED' || /quota|rate limit|resource_exhausted/i.test(String(err.message || '')));
+  function b64ToBytes(b64) { const bin = atob(b64); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+  // Accepts a WAV (RIFF) or headerless 16-bit PCM (audio/L16;rate=24000) payload and returns raw PCM + format.
+  function toPcm(bytes, mime) {
+    const str = (o, n) => String.fromCharCode.apply(null, bytes.subarray(o, o + n));
+    if (bytes.length > 44 && str(0, 4) === 'RIFF' && str(8, 4) === 'WAVE') {
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      let rate = 24000; let channels = 1; let bits = 16; let off = 12;
+      while (off + 8 <= bytes.length) {
+        const id = str(off, 4); let size = dv.getUint32(off + 4, true);
+        if (id === 'fmt ') { channels = dv.getUint16(off + 10, true); rate = dv.getUint32(off + 12, true); bits = dv.getUint16(off + 22, true); }
+        if (id === 'data') { if (size === 0xFFFFFFFF || off + 8 + size > bytes.length) size = bytes.length - off - 8; return { pcm: bytes.subarray(off + 8, off + 8 + size), rate, channels, bits }; }
+        off += 8 + size + (size & 1);
+      }
+      return { pcm: bytes.subarray(44), rate, channels, bits };
+    }
+    const r = /rate=(\d+)/i.exec(mime || ''); const c = /channels=(\d+)/i.exec(mime || '');
+    return { pcm: bytes, rate: r ? Number(r[1]) : 24000, channels: c ? Number(c[1]) : 1, bits: 16 };
+  }
+  function pcmToWav(parts, rate, channels, gapSec) {
+    const bytesPerFrame = 2 * channels;
+    const gap = Math.round((gapSec || 0) * rate) * bytesPerFrame;
+    const total = parts.reduce((a, p) => a + (p.length - (p.length % bytesPerFrame)), 0) + gap * Math.max(0, parts.length - 1);
+    const out = new Uint8Array(44 + total); const dv = new DataView(out.buffer);
+    const w = (o, t) => { for (let i = 0; i < t.length; i++) out[o + i] = t.charCodeAt(i); };
+    w(0, 'RIFF'); dv.setUint32(4, 36 + total, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+    dv.setUint16(22, channels, true); dv.setUint32(24, rate, true); dv.setUint32(28, rate * bytesPerFrame, true); dv.setUint16(32, bytesPerFrame, true); dv.setUint16(34, 16, true);
+    w(36, 'data'); dv.setUint32(40, total, true);
+    let o = 44;
+    parts.forEach((p, i) => { if (i > 0) o += gap; const len = p.length - (p.length % bytesPerFrame); out.set(p.subarray(0, len), o); o += len; });
+    return new Blob([out], { type: 'audio/wav' });
+  }
+  // Split long scripts at sentence boundaries (each request stays short and reliable).
+  function ttsChunks(text, maxWords) {
+    maxWords = maxWords || 120;
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (clean.split(' ').length <= maxWords) return [clean];
+    const sentences = clean.match(/[^.!?…]+[.!?…]*["”’)]?\s*/g) || [clean];
+    const out = []; let cur = '';
+    for (const s of sentences) {
+      if (cur && (cur + s).trim().split(/\s+/).length > maxWords * 0.75) { out.push(cur.trim()); cur = ''; }
+      cur += s;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  }
+  async function listTtsModels() {
+    const data = await geminiRequest('/models?pageSize=200', { method: 'GET' }, 30000);
+    const names = (data.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map((m) => String(m.name || '').replace(/^models\//, ''))
+      .filter((n) => /^gemini/i.test(n) && /tts/i.test(n));
+    const score = (n) => { const v = /gemini-(\d+(?:\.\d+)?)/.exec(n); return (v ? parseFloat(v[1]) : 0) * 10 - (/lite/.test(n) ? 2 : 0) - (/preview/.test(n) ? 3 : 0) - (/pro/.test(n) ? 1 : 0); };
+    return names.sort((a, b) => score(b) - score(a));
+  }
+  async function ttsWith(model, text, o) {
+    const structured = ttsIsStructured(model);
+    const part = { text };
+    if (structured && o.style) part.speech_metadata = { style: o.style };
+    if (!structured && o.prefix) part.text = o.prefix.replace(/:?\s*$/, ': ') + text;
+    const body = {
+      contents: [{ role: 'user', parts: [part] }],
+      generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: o.voice || 'Sulafat' } } } },
+    };
+    const send = () => geminiRequest('/models/' + encodeURIComponent(model) + ':generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }, o.timeout || 120000);
+    let data;
+    try {
+      try { data = await send(); } catch (err) {
+        const m = String(err && err.message || '').toLowerCase();
+        if (err && err.status === 400 && part.speech_metadata && (m.includes('speech_metadata') || m.includes('unknown name') || m.includes('invalid json'))) {
+          delete part.speech_metadata; data = await send(); // style metadata not accepted: plain verbatim text
+        } else throw err;
+      }
+    } catch (err) {
+      if (err && !err.friendly) { err.model = model; if (err.details) err.details += ' [model: ' + model + ']'; }
+      throw err;
+    }
+    const cand = data && data.candidates && data.candidates[0];
+    const parts = (cand && cand.content && cand.content.parts) || [];
+    const audio = parts.map((p) => p.inlineData || p.inline_data).find((d) => d && d.data);
+    if (!audio) {
+      const blocked = data && data.promptFeedback && data.promptFeedback.blockReason;
+      const e = fail(blocked ? 'Gemini blocked that text (' + blocked + ').' : 'Gemini returned no audio for this text.');
+      e.details = 'model ' + model + (cand && cand.finishReason ? ', finishReason ' + cand.finishReason : '');
+      throw e;
+    }
+    return toPcm(b64ToBytes(audio.data), audio.mimeType || audio.mime_type || '');
+  }
+  // One TTS request with the model fallback chain. host.getTtsModel/setTtsModel remember the model that works.
+  async function ttsRequest(text, o) {
+    const first = o.model || (host.getTtsModel ? host.getTtsModel() : '') || TTS_DEFAULT_MODEL;
+    const queue = [first].concat(TTS_MODELS);
+    const tried = new Set(); let lastErr = null; let discovered = false; let quotaHit = false;
+    for (let i = 0; i <= queue.length; i++) {
+      if (i === queue.length) {
+        if (discovered) break;
+        discovered = true;
+        try { (await listTtsModels()).slice(0, 4).forEach((m) => { if (!tried.has(m)) queue.push(m); }); } catch (_) { /* ignore */ }
+        if (i === queue.length) break;
+      }
+      const model = queue[i];
+      if (tried.has(model)) continue;
+      tried.add(model);
+      try {
+        const out = await ttsWith(model, text, o);
+        if (model !== first && host.setTtsModel) { host.setTtsModel(model); if (host.onTtsModelSwitch) host.onTtsModelSwitch(first, model); }
+        out.model = model;
+        return out;
+      } catch (err) {
+        lastErr = err;
+        if (isQuota(err)) { quotaHit = true; continue; } // quotas are per model: try the next one once
+        if (!isTtsModelUnavailable(err)) throw err;
+        if (i === 0) { const hint = /\b(?:use|try|migrate to)\s+(?:models\/)?(gemini-[a-z0-9.-]+tts[a-z0-9.-]*)/i.exec(String(err.message || '')); if (hint && !tried.has(hint[1])) queue.splice(1, 0, hint[1]); }
+      }
+    }
+    if (quotaHit) {
+      const e = fail('Gemini’s AI voice quota is used up for now (the free tier allows only a limited number of voice generations per minute and per day). Try again in a few minutes or tomorrow — or record your own voice, which is free and unlimited.');
+      e.details = redact((lastErr && lastErr.details) || (lastErr && lastErr.message) || 'HTTP 429') + ' [tried: ' + Array.from(tried).join(', ') + ']';
+      e.quota = true;
+      throw e;
+    }
+    if (lastErr && !lastErr.friendly) {
+      lastErr.allTried = true;
+      lastErr.details = (lastErr.details || lastErr.message) + ' [tried: ' + Array.from(tried).join(', ') + ']';
+      if (isTtsModelUnavailable(lastErr)) lastErr.friendly = 'None of the Gemini voice models are available for this API key. Record your own voice or use the device voice instead.';
+    }
+    throw lastErr || fail('Gemini voice failed.');
+  }
+  // Full script -> WAV Blob (chunked + concatenated when long).
+  async function generateSpeech(text, o) {
+    o = o || {};
+    const chunks = ttsChunks(text, o.maxWords || 120);
+    const pcm = []; let fmt = null; let model = '';
+    for (let i = 0; i < chunks.length; i++) {
+      if (o.onProgress) o.onProgress(i, chunks.length);
+      const r = await ttsRequest(chunks[i], Object.assign({}, o, { model: model || o.model }));
+      model = r.model;
+      if (!fmt) fmt = r; else if (r.rate !== fmt.rate || r.channels !== fmt.channels) throw fail('Gemini returned mismatched audio formats between parts. Try again.');
+      pcm.push(r.pcm);
+    }
+    return { blob: pcmToWav(pcm, fmt.rate, fmt.channels, chunks.length > 1 ? 0.18 : 0), model, chunks: chunks.length, rate: fmt.rate };
+  }
+
+  VTS.gemini = { generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
 }());
