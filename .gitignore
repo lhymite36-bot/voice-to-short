@@ -1,0 +1,7 @@
+node_modules/
+out/
+*.p12
+*.jks
+*.keystore
+tests/out/
+.DS_Store

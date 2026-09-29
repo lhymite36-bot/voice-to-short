@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a10">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Talk an idea, get a colour-graded vertical YouTube Short with captions. Free, on your phone.">
+  <title>Voice to Short</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand"><img src="icons/icon-192.png" alt=""><div><strong>Voice to Short</strong><span id="project-name">New Short</span></div></div>
+      <button class="icon-btn" id="new-project" type="button" aria-label="New Short" title="New Short">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </header>
+
+    <main>
+      <!-- ================= CREATE ================= -->
+      <section id="view-create" class="view active" aria-label="Create">
+        <nav class="stepper" aria-label="Steps">
+          <button type="button" class="step" data-step="idea"><i>1</i><span>Idea</span></button>
+          <button type="button" class="step" data-step="script"><i>2</i><span>Script</span></button>
+          <button type="button" class="step" data-step="voice"><i>3</i><span>Voice</span></button>
+          <button type="button" class="step" data-step="render"><i>4</i><span>Render</span></button>
+        </nav>
+
+        <!-- Step 1: Idea -->
+        <div class="pane" id="pane-idea">
+          <div class="hero">
+            <h1>What’s the idea?</h1>
+            <p class="muted">Tap the mic and ramble for up to 90 seconds. Messy is fine — Gemini turns it into a hook, 3 steps and a soft call to action.</p>
+          </div>
+          <div class="mic-wrap">
+            <button type="button" id="mic" class="mic" aria-label="Start dictation" aria-pressed="false">
+              <svg class="ring" viewBox="0 0 120 120"><circle cx="60" cy="60" r="56"/><circle id="mic-progress" cx="60" cy="60" r="56"/></svg>
+              <svg class="glyph" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </button>
+            <div class="mic-meta"><span id="mic-time">0:00</span><span class="muted"> / 1:30</span></div>
+            <div id="mic-status" class="status" role="status"></div>
+          </div>
+          <label class="field">
+            <span class="label-row"><span>Your idea</span><span class="muted small" id="idea-count">0 words</span></span>
+            <textarea id="idea" rows="6" placeholder="…or type / paste your idea here. Example: why we replay embarrassing moments at night and 3 ways to stop it."></textarea>
+          </label>
+          <div id="idea-audio-wrap" class="hidden audio-row"><span class="small muted">Raw audio</span><audio id="idea-audio" controls preload="metadata"></audio></div>
+          <div class="chips" id="idea-examples" aria-label="Example ideas"></div>
+          <div class="field">
+            <span class="label-row"><span>Tone</span></span>
+            <div class="seg" id="tone-seg" role="radiogroup"></div>
+          </div>
+          <button type="button" class="btn primary big" id="generate"><span>✨ Write my Short</span></button>
+          <div id="gen-status" class="status" role="status"></div>
+        </div>
+
+        <!-- Step 2: Script -->
+        <div class="pane" id="pane-script">
+          <div id="script-loading" class="loading hidden">
+            <div class="shimmer"></div><div class="shimmer short"></div><div class="shimmer"></div>
+            <p class="muted center">Writing your hook, 3 steps and captions…</p>
+          </div>
+          <div id="script-empty" class="empty-card hidden"><h2>No script yet</h2><p class="muted">Add your idea in step 1 and tap “Write my Short”.</p><button type="button" class="btn" data-goto="idea">Go to Idea</button></div>
+          <div id="script-body" class="hidden">
+            <div class="card">
+              <div class="card-head"><h2>Pick your hook</h2><span class="muted small">The first 2 seconds decide everything</span></div>
+              <div id="hooks" class="hooks" role="radiogroup"></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>Voiceover script</h2><span id="word-badge" class="badge">0 words</span></div>
+              <textarea id="script" rows="9" aria-label="Voiceover script"></textarea>
+              <div class="row-between small"><span class="muted" id="script-est">≈ 0 s spoken</span><button type="button" class="link-btn hidden" id="rebuild-beats">↻ Update captions from script</button></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>Caption beats</h2><span class="muted small">One phrase per beat · weight = time</span></div>
+              <ol id="beats" class="beats"></ol>
+              <button type="button" class="btn ghost" id="add-beat">+ Add beat</button>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>Publish kit</h2><button type="button" class="chip" id="copy-all">Copy all</button></div>
+              <label class="field"><span class="label-row"><span>Title</span><button type="button" class="copy" data-copy="title">Copy</button></span><input id="f-title" type="text" maxlength="100"></label>
+              <label class="field"><span class="label-row"><span>Description</span><button type="button" class="copy" data-copy="description">Copy</button></span><textarea id="f-description" rows="4"></textarea></label>
+              <label class="field"><span class="label-row"><span>Hashtags</span><button type="button" class="copy" data-copy="hashtags">Copy</button></span><input id="f-hashtags" type="text"></label>
+              <label class="field"><span class="label-row"><span>Pinned comment</span><button type="button" class="copy" data-copy="pinnedComment">Copy</button></span><textarea id="f-pinned" rows="2"></textarea></label>
+              <label class="field"><span class="label-row"><span>Thumbnail text</span><button type="button" class="copy" data-copy="thumbnailText">Copy</button></span><input id="f-thumb" type="text" maxlength="60"></label>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn" id="regenerate">↻ Regenerate</button>
+              <button type="button" class="btn primary" data-goto="voice">Next: Voice →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Voice -->
+        <div class="pane" id="pane-voice">
+          <div class="hero"><h1>Add the voice</h1><p class="muted">Your own voice performs best on Shorts. It’s free and takes 40 seconds.</p></div>
+          <button type="button" class="option recommended" id="opt-record">
+            <span class="opt-icon">🎙</span><span class="opt-text"><strong>Record my voice</strong><span>Teleprompter with auto-scrolling script</span></span><span class="pill">Recommended</span>
+          </button>
+          <div class="option-group">
+            <div class="option static" id="opt-tts">
+              <span class="opt-icon">🗣</span><span class="opt-text"><strong>Device voice (text-to-speech)</strong><span id="tts-note">Free, on this device.</span></span>
+            </div>
+            <div class="option-actions">
+              <button type="button" class="chip" id="tts-preview">▶ Preview</button>
+              <button type="button" class="chip hidden" id="tts-file">Use Android voice</button>
+              <button type="button" class="chip hidden" id="tts-mic">Record it through the mic</button>
+            </div>
+            <div class="tts-controls">
+              <label class="small">Speed <input type="range" id="tts-rate" min="0.7" max="1.3" step="0.05" value="1"></label>
+              <label class="small">Pitch <input type="range" id="tts-pitch" min="0.7" max="1.3" step="0.05" value="1"></label>
+            </div>
+          </div>
+          <label class="option" id="opt-import">
+            <span class="opt-icon">⬆️</span><span class="opt-text"><strong>Import an audio file</strong><span>Voice recorded in another app</span></span>
+            <input type="file" id="import-audio" accept="audio/*,video/*" hidden>
+          </label>
+          <button type="button" class="option" id="opt-silent">
+            <span class="opt-icon">🔇</span><span class="opt-text"><strong>No voice for now</strong><span>Captions only · add a voiceover in the YouTube app</span></span>
+          </button>
+          <div id="voice-status" class="status" role="status"></div>
+          <div class="card hidden" id="take-card">
+            <div class="card-head"><h2>Current voice</h2><span class="badge" id="take-badge"></span></div>
+            <audio id="take-audio" controls preload="metadata"></audio>
+            <p class="small muted" id="take-info"></p>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn" data-goto="script">← Script</button>
+            <button type="button" class="btn primary" data-goto="render" id="to-render">Next: Render →</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Render -->
+        <div class="pane" id="pane-render">
+          <div class="render-layout">
+            <div class="preview-wrap">
+              <canvas id="preview" width="540" height="960" aria-label="Video preview"></canvas>
+              <button type="button" class="play" id="preview-play" aria-label="Play preview">▶</button>
+              <div class="preview-time" id="preview-time"></div>
+            </div>
+            <div class="render-controls">
+              <div class="field"><span class="label-row"><span>Colour grade</span></span><div class="grades" id="grades"></div></div>
+              <div class="field"><span class="label-row"><span>Captions</span></span>
+                <div class="seg" id="cap-style"><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button></div>
+                <div class="seg" id="cap-case"><button type="button" data-v="upper">UPPERCASE</button><button type="button" data-v="sentence">Sentence case</button></div>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-watermark"><span>Channel watermark <em id="wm-handle" class="muted"></em></span></label>
+              <label class="switch"><input type="checkbox" id="opt-progress"><span>Thin progress bar</span></label>
+              <label class="field"><span class="label-row"><span>File format</span></span>
+                <select id="opt-format"><option value="auto">Auto (MP4 when supported)</option><option value="webm">WebM</option></select>
+              </label>
+            </div>
+          </div>
+          <button type="button" class="btn primary big" id="render"><span>🎬 Render 1080×1920 video</span></button>
+          <div id="render-progress" class="progress hidden"><div class="bar"><i id="render-bar"></i></div><div class="row-between small"><span id="render-label">Rendering…</span><button type="button" class="link-btn" id="render-cancel">Cancel</button></div><p class="small muted">Rendering happens in real time on your phone. Keep the app open and the screen on.</p></div>
+          <div id="render-status" class="status" role="status"></div>
+          <div class="card hidden" id="result-card">
+            <div class="card-head"><h2>Your Short</h2><span class="badge ok" id="result-badge"></span></div>
+            <video id="result-video" controls playsinline preload="metadata"></video>
+            <div class="actions wrap">
+              <button type="button" class="btn primary" id="share-video">Share to YouTube…</button>
+              <button type="button" class="btn" id="save-video">Save to phone</button>
+            </div>
+            <div class="chips">
+              <button type="button" class="chip" data-copy="title">Copy title</button>
+              <button type="button" class="chip" data-copy="description">Copy description</button>
+              <button type="button" class="chip" data-copy="hashtags">Copy hashtags</button>
+              <button type="button" class="chip" data-copy="pinnedComment">Copy pinned comment</button>
+            </div>
+            <p class="small muted" id="result-info"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= LIBRARY ================= -->
+      <section id="view-library" class="view" aria-label="Library">
+        <div class="hero"><h1>Library</h1><p class="muted">Your Shorts live on this device.</p></div>
+        <ul id="library" class="library"></ul>
+      </section>
+
+      <!-- ================= SETTINGS ================= -->
+      <section id="view-settings" class="view" aria-label="Settings">
+        <div class="hero"><h1>Settings</h1></div>
+        <div class="card">
+          <div class="card-head"><h2>Gemini API key</h2></div>
+          <p class="small muted">Free from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Stored only on this device and sent only to Google’s Gemini API.</p>
+          <div class="input-row"><input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key (AIza… or AQ.…)"><button type="button" class="chip" id="api-key-toggle">Show</button></div>
+          <div class="actions wrap"><button type="button" class="btn primary" id="api-key-save">Save key</button><button type="button" class="btn" id="api-key-test">Test</button><button type="button" class="btn ghost" id="api-key-remove">Remove</button></div>
+          <p id="key-state" class="hint"></p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Model</h2></div>
+          <select id="model"></select>
+          <div id="custom-model-wrap" class="hidden"><input id="custom-model" type="text" placeholder="e.g. gemini-3.8-flash" spellcheck="false"></div>
+          <button type="button" class="btn ghost" id="load-models">Load models from my key</button>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Channel &amp; style</h2></div>
+          <label class="field"><span>Channel handle</span><input id="s-handle" type="text" placeholder="@yourchannel" autocomplete="off"></label>
+          <label class="field"><span>Default tone</span><select id="s-tone"></select></label>
+          <label class="field"><span>Script language</span><select id="s-language"></select></label>
+          <label class="field"><span>Default colour grade</span><select id="s-grade"></select></label>
+          <label class="switch"><input type="checkbox" id="s-watermark"><span>Watermark on by default</span></label>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Voice</h2></div>
+          <label class="field"><span>Dictation language</span><select id="s-speech-lang"></select></label>
+          <p class="small muted" id="speech-support"></p>
+          <label class="field"><span>Teleprompter speed <em class="muted" id="s-wpm-label"></em></span><input type="range" id="s-wpm" min="110" max="200" step="5"></label>
+          <label class="switch"><input type="checkbox" id="s-raw-audio"><span>Also keep raw audio of my idea <em class="muted">(web; may clash with dictation on some phones)</em></span></label>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Data</h2></div>
+          <div class="actions wrap">
+            <button type="button" class="btn" id="export-data">Export backup</button>
+            <label class="btn" id="import-label">Import backup<input type="file" id="import-data" accept="application/json,.json" hidden></label>
+            <button type="button" class="btn danger" id="wipe-data">Delete all</button>
+          </div>
+          <p class="small muted">Backups contain your ideas, scripts and settings (not audio or video files, and never your API key).</p>
+        </div>
+        <p class="center small muted" id="app-version"></p>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="Main">
+      <button type="button" class="tab active" data-view="create"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg><span>Create</span></button>
+      <button type="button" class="tab" data-view="library"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="7" height="11" rx="2"/><rect x="13" y="3" width="7" height="7" rx="2"/><rect x="13" y="12" width="7" height="9" rx="2"/><rect x="4" y="16" width="7" height="5" rx="2"/></svg><span>Library</span></button>
+      <button type="button" class="tab" data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
+    </nav>
+  </div>
+
+  <!-- Teleprompter -->
+  <div id="prompter" class="prompter hidden" role="dialog" aria-label="Teleprompter">
+    <div class="p-top">
+      <button type="button" class="icon-btn" id="p-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <div class="p-timer"><i id="p-dot"></i><span id="p-time">0:00</span><span class="muted"> / 1:00</span></div>
+      <label class="p-speed small">Speed <input type="range" id="p-speed" min="110" max="200" step="5"></label>
+    </div>
+    <div class="p-scroll" id="p-scroll"><div class="p-pad"></div><div id="p-text" class="p-text"></div><div class="p-pad"></div></div>
+    <div class="p-guide"></div>
+    <div class="p-count hidden" id="p-count">3</div>
+    <div class="p-bottom">
+      <audio id="p-audio" controls class="hidden"></audio>
+      <div class="p-buttons">
+        <button type="button" class="btn hidden" id="p-retake">Retake</button>
+        <button type="button" class="rec" id="p-rec" aria-label="Start recording"><i></i></button>
+        <button type="button" class="btn primary hidden" id="p-use">Use this take</button>
+      </div>
+      <p class="small muted center" id="p-hint">Tap record, wait for 3-2-1, then read at a relaxed pace. Tap the text to pause scrolling.</p>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="capacitor.js"></script>
+  <script src="js/gemini.js"></script>
+  <script src="js/shortgen.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/speech.js"></script>
+  <script src="js/native.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

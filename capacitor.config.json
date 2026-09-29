@@ -1,0 +1,10 @@
+{
+  "appId": "com.voicetoshort.app",
+  "appName": "Voice to Short",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0a0a10",
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
