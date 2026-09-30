@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><style>@font-face{font-family:Montserrat;src:url("../www/fonts/Montserrat.ttf")}body{margin:0;background:#222}canvas{max-width:480px}</style></head>
+<body><script>window.VTS = { EMOJI_BASE: '../www/emoji/', debugSegments: true };</script>
+<script src="../www/js/emoji-index.js"></script><script src="../www/js/scenes.js"></script><script src="../www/js/library.js"></script>
+<script src="../www/js/render.js"></script><script src="../www/js/segments.js"></script>
+<script>
+// Long-render harness: builds a sectioned voice track, keyword scenes, then renders in segments (with a forced interruption + resume).
+window.runLong = async function (cfg) {
+  const R = VTS.render; const SG = VTS.segments; const SC = VTS.scenes;
+  const meta = await (await fetch('out/longdata/' + cfg.name + '-meta.json')).json();
+  const secs = await (await fetch('out/longdata/' + cfg.name + '.json')).json();
+  const track = new SG.AudioTrack(24000); const spans = [];
+  for (let i = 0; i < meta.n; i++) { const b = await (await fetch('out/longdata/' + cfg.name + '/mix' + String(i).padStart(3, '0') + '.wav')).blob(); spans.push(await track.appendBlob(b)); }
+  const beats = []; let prev = null; const scenes = [];
+  secs.forEach((s, k) => s.lines.forEach((line) => { const sc = SC.normalizeScene(null, line, 0, prev); prev = sc; scenes.push(sc); beats.push({ text: line, section: k, weight: line.length, scene: sc }); }));
+  SC.diversify(scenes);
+  const P = await SG.planTrack(track, R.MAX_LONG);
+  const sections = spans.map((sp) => ({ start: R.LEAD + sp.start, end: R.LEAD + sp.end }));
+  const [w, h] = R.frameSize(cfg.aspect, cfg.scale);
+  const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; document.body.appendChild(canvas);
+  const probe = meta.probes.filter((p) => p < P.audioDur - 0.2).map((p) => p + R.LEAD);
+  const look = { preset: cfg.preset || 'teal', visual: 'scenes', aspect: cfg.aspect, handle: '@voicetoshort', watermark: true, captionStyle: 'pop', captionCase: 'upper', progress: true };
+  const mem = []; const memT = setInterval(() => { if (performance.memory) mem.push(performance.memory.usedJSHeapSize); }, 3000);
+  const log = []; let lastLog = 0; let state = null; let interrupted = false;
+  const ctrl = new AbortController();
+  const common = { canvas, track, beats, sections, look, plan: P, segmentSeconds: cfg.segSec || Number(new URLSearchParams(location.search).get('seg')) || 75, allowHidden: true, keepSegments: !!cfg.keep, bitrate: cfg.bitrate, probe, projectId: cfg.name, clockMode: new URLSearchParams(location.search).get('clock') || undefined,
+    onProgress: (q) => { if (performance.now() - lastLog > 15000) { lastLog = performance.now(); console.log('progress', q.phase, (q.p * 100).toFixed(1) + '%', 'seg', q.segment + '/' + q.segments, 'eta', Math.round(q.eta) + 's'); } } };
+  const t0 = performance.now();
+  let res = await SG.renderLong(Object.assign({}, common, { signal: ctrl.signal, onState: (st) => { state = JSON.parse(JSON.stringify(st)); if (cfg.interruptAfter && !interrupted && st.done.length === cfg.interruptAfter) { interrupted = true; setTimeout(() => ctrl.abort(), 4000); } } }));
+  let resumedFrom = null;
+  if (!res && interrupted) { resumedFrom = state.done.length; console.log('interrupted after', resumedFrom, 'segments; resuming'); res = await SG.renderLong(Object.assign({}, common, { resume: state, onState: (st) => { state = JSON.parse(JSON.stringify(st)); } })); }
+  clearInterval(memT);
+  const wall = (performance.now() - t0) / 1000;
+  window.__final = { store: res.store, name: res.name };
+  const scStats = (() => { const combos = scenes.map((s) => s.setting + '|' + s.pose); let maxRun = 1, run = 1; for (let i = 1; i < combos.length; i++) { run = combos[i] === combos[i - 1] ? run + 1 : 1; maxRun = Math.max(maxRun, run); } const sets = new Set(scenes.map((s) => s.setting)); return { beats: scenes.length, distinctCombos: new Set(combos).size, distinctSettings: sets.size, distinctActions: new Set(scenes.map((s) => s.pose)).size, maxSameComboRun: maxRun, cards: scenes.filter((s) => s.setting === 'keyword-card').length }; })();
+  const size = res.name ? (await res.store.reader(res.name)).size : 0;
+  return { plan: P, w, h, wall, recordSec: res.recordSec, joinSec: res.joinSec, joinError: res.joinError || null, parts: res.parts || null, joinStats: res.joinStats, offsets: res.offsets, segments: res.segments.map((d) => ({ k: d.k, T0: +d.T0.toFixed(3), T1: +d.T1.toFixed(3), c0: +d.c0.toFixed(3), size: d.size, frames: d.frames, driftMs: Math.round((d.drift || 0) * 1000), latMs: Math.round((d.lat || 0) * 1000) })), store: res.store.kind, size, heapMaxMB: mem.length ? Math.max(...mem) / 1048576 : null, heapAvgMB: mem.length ? mem.reduce((a, b) => a + b, 0) / mem.length / 1048576 : null, probe, resumedFrom, scStats, mime: res.mime };
+};
+window.readNamed = async function (name, off, n) { const rd = await window.__final.store.reader(name); if (off < 0) return rd.size; const b = await rd.read(off, n); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+window.readFinal = async function (off, n) { const rd = await window.__final.store.reader(window.__final.name); const b = await rd.read(off, n); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+</script></body></html>

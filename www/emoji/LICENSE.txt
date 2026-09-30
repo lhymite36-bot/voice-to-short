@@ -1,0 +1,3 @@
+Emoji graphics: Twemoji, Copyright 2020 Twitter, Inc and other contributors (https://github.com/jdecked/twemoji).
+Licensed under CC-BY 4.0: https://creativecommons.org/licenses/by/4.0/ . Files are unmodified except for added width/height attributes.
+Emoji names/keywords: emojibase-data (MIT) https://github.com/milesj/emojibase

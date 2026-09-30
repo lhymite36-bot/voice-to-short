@@ -30,8 +30,9 @@ const SPECS = JSON.parse(process.env.SPECS || 'null') || [
   await page.goto('file://' + path.join(__dirname, 'gallery.html'));
   await page.evaluate(async () => { await document.fonts.load('900 60px Montserrat'); await document.fonts.load('700 60px Montserrat'); });
   for (const [name, raw, t] of SPECS) {
-    const data = await page.evaluate((raw, t, preset) => {
-      const S = window.VTS.scenes; const sc = S.normalizeScene(raw, '', 1, null);
+    const data = await page.evaluate(async (raw, t, preset) => {
+      const S = window.VTS.scenes; const sc = S.normalizeScene(raw.line ? {} : raw, raw.line || '', 1, null);
+      if (S.preload) { await S.preload([sc]); S.drawPreview(document.getElementById('c'), sc, preset, t); }
       const cv = document.getElementById('c'); const t0 = performance.now();
       S.drawPreview(cv, sc, preset, t);
       const t1 = performance.now(); for (let i = 0; i < 20; i++) S.drawPreview(cv, sc, preset, t + i / 30); const per = (performance.now() - t1) / 20;

@@ -223,7 +223,7 @@
         sp.armL = { x: -128, y: 36, bend: -1 }; sp.armR = { x: 128, y: 36, bend: 1 };
         sp.mouth = 'smile'; break;
       }
-      default: break;
+      default: if (VTS.sceneExt && VTS.sceneExt.pose) VTS.sceneExt.pose(pose, sp, t, o); break;
     }
     return sp;
   }
@@ -391,6 +391,9 @@
       }
       if (o.poseT != null && o.poseT < 0.35) { const k = o.poseT / 0.35; sp.hipY += Math.sin(k * Math.PI) * -18; }
       const face = faceFor(emotion, pose);
+      if (sp.eyesClosed && emotion !== 'surprised') face.eyes = emotion === 'happy' ? 'happy' : 'closed';
+      if (sp.crying) Object.assign(face, { tear: true, mouth: 'frown', eyes: 'closed', brow: [-12, 8] });
+      if (sp.cameraFace) face.hidden = true;
       const pal = this.pal(o.variant || 0);
       if (o.facing != null && sp.facing) sp.facing = o.facing;
       const f = sp.facing;
@@ -400,6 +403,9 @@
       else hipY = groundY - 196 * scale + sp.hipY * scale;
       const cos = Math.cos(sp.tilt); const sin = Math.sin(sp.tilt);
       const toWorld = (lx, ly) => [hipX + scale * (lx * cos - ly * sin), hipY + scale * (lx * sin + ly * cos)];
+      const toLocal = (wx, wy) => { const dx = (wx - hipX) / scale; const dy = (wy - hipY) / scale; return [dx * cos + dy * sin, -dx * sin + dy * cos]; };
+      if (o.targetR) { const q = toLocal(o.targetR[0], o.targetR[1]); sp.armR = { x: q[0], y: q[1], bend: 1 }; }
+      if (o.targetL) { const q = toLocal(o.targetL[0], o.targetL[1]); sp.armL = { x: q[0], y: q[1], bend: -1 }; }
       const br = 1 + Math.sin(t * 2.1 * (1 / sp.breathe)) * 0.012 * sp.breathe;
       const headLocal = [sp.headDx + (f ? f * 8 : 0), -292 * br + sp.headDy];
       ctx.save(); ctx.translate(hipX, hipY); ctx.scale(scale, scale);
@@ -460,7 +466,8 @@
       ctx.restore();
       if (o.desk) { /* legs hidden by the desk */ }
       const hw = toWorld(headLocal[0], headLocal[1]);
-      return { head: { x: hw[0], y: hw[1], r: 92 * scale }, handR: toWorld(sp.armR.x, sp.armR.y), hip: [hipX, hipY], scale, top: hw[1] - 110 * scale };
+      if (VTS.sceneExt && VTS.sceneExt.afterCharacter) VTS.sceneExt.afterCharacter(this, ctx, sp, { hipX, hipY, scale, headLocal, toWorld, pal, t, o, pose });
+      return { head: { x: hw[0], y: hw[1], r: 92 * scale }, handR: toWorld(sp.armR.x, sp.armR.y), handL: toWorld(sp.armL.x, sp.armL.y), hip: [hipX, hipY], scale, top: hw[1] - 110 * scale, tilt: sp.tilt, skin: pal.skin, sp };
     }
 
     // ---------- character lying in bed (head on pillow, blanket) ----------
@@ -1166,11 +1173,13 @@
       ctx.save();
       if (L.zoom) { ctx.translate(L.zoomAt[0], L.zoomAt[1]); ctx.scale(L.zoom, L.zoom); ctx.translate(-L.zoomAt[0], -L.zoomAt[1]); }
       this.camera(ctx, scene.camera, lt, sh.dur, L.charX, focusY);
-      let A = {};
+      let A = {}; let X = null;
       if (sh.img) {
         const iw = sh.img.width; const ih = sh.img.height; const kb = 1.06 + 0.1 * clamp01(lt / Math.max(2, sh.dur || 4)); const z = Math.max(W / iw, H / ih) * kb;
         const px = Math.sin(lt * 0.25) * 30; ctx.drawImage(sh.img, (W - iw * z) / 2 + px, (H - ih * z) / 2, iw * z, ih * z);
         A = { head: { x: 540, y: 1000, r: 90 }, top: 880, hip: [540, 1300], scale: 1 };
+      } else if (kind === 'card' && VTS.sceneExt) {
+        A = VTS.sceneExt.card(this, ctx, scene, L, t, lt, sh);
       } else {
         ctx.drawImage(this.bgCanvas(setting, kind, L, this.s), 0, 0, W, H);
         this.dynamicBg(ctx, setting, kind, L, t, lt, scene);
@@ -1186,8 +1195,14 @@
           let x = L.charX; let facing = null;
           if (L.pace) { const w = Math.sin(lt * 0.8); x = L.charX + w * 200; facing = Math.cos(lt * 0.8) >= 0 ? 1 : -1; }
           if (kind !== 'desk') { ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x, L.groundY + 4, 150 * L.scale, 24 * L.scale, 0, 0, TAU); ctx.fill(); }
-          const opts = { seatY: L.seatY, desk: L.desk === 'office' || L.desk === 'classroom', poseT, facing, seed: 0 };
-          if (scene.count === 2) {
+          const opts = { seatY: L.seatY, desk: !!L.desk && L.desk !== 'cafe', poseT, facing, seed: 0 };
+          X = VTS.sceneExt ? VTS.sceneExt.pre(this, ctx, scene, L, kind, t, lt, x) : null;
+          if (X) { if (X.targetR) opts.targetR = X.targetR; if (X.targetL) opts.targetL = X.targetL; }
+          if (scene.count === 2 && (scene.pose === 'hugging' || scene.pose === 'arguing')) {
+            ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(L.charX2, L.groundY + 4, 140 * L.scale, 22 * L.scale, 0, 0, TAU); ctx.fill();
+            this.character(ctx, L.charX2, L.groundY, L.scale, scene.pose, scene.emotion, t, Object.assign({}, opts, { variant: 1, seed: 3, pair: -1 }));
+            A = this.character(ctx, x, L.groundY, L.scale, scene.pose, scene.emotion, t, Object.assign({}, opts, { pair: 1 }));
+          } else if (scene.count === 2) {
             const talkA = Math.floor(lt / 1.6) % 2 === 0;
             ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(L.charX2, L.groundY + 4, 140 * L.scale, 22 * L.scale, 0, 0, TAU); ctx.fill();
             this.character(ctx, L.charX2, L.groundY, L.scale, talkA ? 'idle' : 'talking', scene.emotion, t, Object.assign({}, opts, { variant: 1, seed: 3 }));
@@ -1197,6 +1212,7 @@
           if (kind === 'move' && scene.pose === 'running') { ctx.strokeStyle = this.ea('#ffffff', 0.55); ctx.lineWidth = 7; ctx.lineCap = 'round'; for (let i = 0; i < 4; i++) { const yy = A.head.y + 120 + i * 90; const xx = x - (facing || 1) * (200 + ((lt * 600 + i * 90) % 160)); ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - (facing || 1) * 90, yy); ctx.stroke(); } }
         }
         this.furnitureFront(ctx, setting, kind, L, scene.pose, t);
+        if (VTS.sceneExt) VTS.sceneExt.post(this, ctx, scene, L, kind, A, X, t, lt, sh);
       }
       const placed = this.placeProps(scene, L, A);
       placed.forEach((p) => { if (p.name === 'brain' && p.env.big && !sh.img) return; this.prop(p.name, ctx, p.x, p.y, p.sc, sh.propAge(p.name), t, p.env); });

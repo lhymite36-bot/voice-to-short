@@ -1,15 +1,15 @@
 # Voice to Short
 
-Talk an idea into your phone and get a finished vertical YouTube Short: a hook, a 3-step method, captions, a colour-graded 1080×1920 video and the publishing text. It's free and runs on your own phone.
+Talk an idea into your phone and get a finished YouTube video: a hook, clear steps, captions, keyword-accurate 2D animated scenes, a colour-graded video and the publishing text. Make a 30–60 s Short or a long video up to 20 minutes, in 9:16, 16:9, 1:1 or 4:5. It's free and runs on your own phone.
 
 It's built for faceless psychology and self-help channels (BetterU-style voiceover over aesthetic visuals).
 
-- **Android app:** download `VoiceToShort-1.0.0.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
+- **Android app:** download `VoiceToShort-1.3.0.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
 - **Web version:** https://lhymite36-bot.github.io/voice-to-short/ (works best in Chrome)
 
 ## How it works
 
-1. **Idea.** Tap the mic and ramble for up to 90 seconds. Android's speech recogniser restarts by itself after pauses. You can also type or paste an idea.
+1. **Idea.** Tap the mic and ramble for up to 20 minutes. Android's speech recogniser restarts by itself after pauses, and the running transcript is saved as you talk. You can also type or paste an idea or a full outline. Pick the video length: 30–60 s (Short), 2, 5, 10, 15 or 20 min.
 2. **Script.** Gemini returns a structured JSON package:
    - 3 hook options. Tap one to use it; it replaces the start of the script and the hook captions.
    - An 80–110 word voiceover: the hook, *One / Two / Three* steps, then a soft call to action. A live word counter and time estimate sit under it.
@@ -18,7 +18,7 @@ It's built for faceless psychology and self-help channels (BetterU-style voiceov
 
    You can edit every field. “Update captions from script” rebuilds the beats after you change the script. Tone options are calm teacher, bold and soft. Scripts are in English by default, and 12 other languages are available.
 3. **Voice.** Choose one:
-   - **Record your own voice (recommended).** A full-screen teleprompter scrolls the script at your speed, with a 3-2-1 countdown, a 60 s limit, playback and retake.
+   - **Record your own voice.** A full-screen teleprompter scrolls the script at your speed, with a 3-2-1 countdown, pause/resume, playback and retake. Shorts are capped at 60 s. Long videos are recorded section by section.
    - **Device voice (text-to-speech).** In the Android app, “Use Android voice” renders the phone's own TTS voice to a WAV file with `TextToSpeech.synthesizeToFile`, so it goes into the video. See the caveats for the web version.
    - Import an audio file.
    - No voice: a silent track with captions, so you can add a voiceover in the YouTube app.
@@ -27,7 +27,7 @@ It's built for faceless psychology and self-help channels (BetterU-style voiceov
    - Captions are big and bold. Choose word-pop or karaoke style, UPPERCASE or sentence case. The active word is highlighted and emphasis words stay coloured.
    - Caption timing follows the beat weights, spread across the detected speech in the voice track. Silence at the start and end is trimmed automatically.
    - A large animated step number (“STEP 2 / 3”) appears during each step. A “Follow @handle” pill appears on the CTA, and you can add an optional handle watermark and a thin progress bar.
-   - `canvas.captureStream()` and the voice track (Web Audio) are recorded together with `MediaRecorder`. The app prefers H.264 MP4 and falls back to WebM (YouTube accepts both). Videos are capped at 60 s.
+   - `canvas.captureStream()` and the voice track (Web Audio) are recorded together with `MediaRecorder`. The app prefers H.264 MP4 and falls back to WebM (YouTube accepts both). Shorts are capped at 60 s; longer videos use the segmented renderer described below.
    - Tap **Share to YouTube…** to open the Android share sheet, or **Save to phone** to save to `Documents/VoiceToShort/`. There are copy buttons for the title, description, hashtags and pinned comment.
 5. **Library.** Projects are stored on the device in IndexedDB: the idea, script, voice, video and a thumbnail. You can edit, render again or delete them.
 6. **Settings:**
@@ -36,6 +36,30 @@ It's built for faceless psychology and self-help channels (BetterU-style voiceov
    - Channel handle, default tone, script language and default grade.
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
+
+## Keyword-driven scenes — new in 1.3.0
+
+Every beat's scene now follows its **keywords**, so "grab a pencil and a sketchbook" shows the character drawing with a pencil in a sketchbook, not a generic pose.
+
+- **Gemini plans, the app checks.** The script schema asks for `keywords`, `objects`, an `icon` emoji and the beat's ACTION. An on-device lexicon (about 620 words and phrases, plus their plurals and verb forms) then validates each scene. If the scene doesn't show the line's main keyword, the app replaces it with the matching action, props and setting. A strong action keyword (draw, cook, run…) also replaces a generic pose like "talking".
+- **Library.** 40 animated actions, 51 poses in all (drawing, cooking, eating, running, lifting, yoga, typing, studying, shopping, driving, riding the bus, showering, brushing teeth, gaming, singing, painting, gardening, hugging, arguing and more), 310 animated props (drawn in code or from bundled emoji), and 19 settings plus the keyword card (art studio, kitchen, gym, library, bus, stage, shop, living room, bathroom and more).
+- **Anything else becomes a keyword card.** Words outside the library ("volcano", "giraffe") get a bobbing icon card from 1,306 bundled Twemoji with the character reacting, never an unrelated scene.
+- **Match score.** Each beat shows a keyword-match badge. Beats below 50% are flagged ⚠ with the missing word, and there's an average for the whole script.
+- **Keyword picker.** In the scene editor, "Find a keyword, prop or action" searches props, actions and emoji names, then applies the prop, action or icon card.
+- **Long videos stay varied.** Settings rotate among each action's valid places, "continuation" lines get gentle varied actions, and camera moves alternate. In the 10-minute test (252 beats) no scene combination repeated more than 6 beats in a row, with 18 settings and 38 actions used.
+
+## Frame shapes — new in 1.3.0
+
+9:16 (1080×1920), 16:9 (1920×1080), 1:1 (1080×1080) or 4:5 (1080×1350). Pick one in Render and set a default in Settings. Each shape gets its own layout: 16:9 puts the scene card on the left with captions on the right, and 1:1 and 4:5 put captions above a rounded scene card. Nothing is letterboxed or cropped.
+
+## Long videos (up to 20 min) — new in 1.3.0
+
+- **Script.** Gemini writes an outline first (about one section per 80 s), then each section in its own call with the outline and the end of the previous section as context. The app stitches the sections into chapters (a "PART n" badge in the video, chapters in the description). Progress is saved after every call. If a call fails, tap Write again to continue from the next section. Quota errors (429) and 5xx errors are retried with backoff, following Gemini's `retryDelay`.
+- **AI voice.** Generated per paragraph (≤150 words) with progress. Each finished chunk is cached in IndexedDB, so a failure never restarts the whole voice. Playback joins the parts without decoding them.
+- **Your voice.** The teleprompter records long scripts section by section, with pause/resume, a retake per section and "use recorded parts".
+- **Rendering.** Videos over 150 s are rendered in parts of about 75 s. Each part is recorded in real time and streamed to app storage (OPFS in Chrome and the Android WebView; the Capacitor Filesystem as a fallback) as it finishes. The screen is kept awake, and progress shows the part and an ETA. If the app is backgrounded, the current part restarts when you come back. If you cancel or it fails, "Resume render" continues from the last finished part. A small streaming WebM remuxer in JS then joins the parts into one file with bounded memory: it re-times clusters and trims overlaps, without re-encoding or loading whole files. If joining isn't possible (for example if a device only records MP4), you get numbered parts to join in any editor.
+- **Output.** Long videos are WebM (VP8 + Opus), 720p by default (1080p optional), at 6 Mbps.
+- **Tested** in headless Chrome: a 10-min 16:9 render and a 20-min 9:16 render, both ffprobe-checked for full duration, A/V sync at the start, middle and end, and gaps at the joins (see `tests/long.js`).
 
 ## Animated scenes (2D cartoon) — new in 1.2.0
 
@@ -83,16 +107,17 @@ The recommended voice option. It uses Gemini's native text-to-speech with the sa
 - **Real-time rendering.** A 40 s Short takes about 40 s to render. Keep the app open and the screen on; the app asks Android to keep the screen awake. Slow phones may drop frames under load.
 - **Dictation** uses the phone's speech service, and most phones need internet for it. Raw-audio capture of the idea is off by default, because on many phones the recogniser and the recorder can't share the mic.
 - **Animated scenes** are a hand-authored flat style with one main character design (plus a second for conversations) and fixed poses: they illustrate each beat with the closest scene in the vocabulary, not a custom animation. AI illustrations need a paid (billing-enabled) Gemini key and weren't verified against a live key.
+- **Long videos** were verified in headless desktop Chrome. On a real phone, a 20-minute real-time render takes over 20 minutes and uses about 6 MB of storage per 10 s at 720p (about 0.9 GB for 20 min). The A/V timing compensation was tuned on desktop Chrome and hasn't been verified on a physical Android phone, and neither has the Capacitor Filesystem storage fallback. Importing one long audio file decodes it in full, so AI voice or recording section by section is lighter. YouTube Shorts can be at most 3 minutes long; longer vertical videos upload as regular videos.
 - **Backups** hold text only: ideas, scripts and settings. Audio and video stay on the device, and the API key is never exported.
 
 ## Install on Android (6.0+)
 
-1. Download `VoiceToShort-1.0.0.apk` from the latest release.
+1. Download `VoiceToShort-1.3.0.apk` from the latest release.
 2. Open it. If Android asks, allow “Install unknown apps” for your browser or Files app.
 3. Open **Voice to Short**, go to **Settings**, paste your free Gemini key and tap **Save key**.
 4. Allow the microphone when asked. It's used for dictation and voice recording.
 
-To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.0.0.apk`.
+To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.3.0.apk`.
 
 ## Development
 
@@ -103,6 +128,8 @@ npm ci
 npm run serve                     # web version at http://localhost:8080
 npm run apk:debug                 # needs the Android SDK (JDK 21)
 node tests/e2e.js /path/voice.wav # headless Chrome end-to-end test with a mocked Gemini API
+node tests/e2e13.js               # v1.3: keyword scenes, picker, 4 frame shapes, long-video flow
+node tests/long.js s10 16:9 0.6667 out.webm 3   # long segmented render + resume (see tests/long.html)
 ```
 
 Plugins:
@@ -115,6 +142,8 @@ Plugins:
 
 - `.github/workflows/android.yml` builds a signed release APK. It needs these repo secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them, the APK is signed with a debug key.
 - `.github/workflows/pages.yml` deploys `www/` to GitHub Pages.
+
+Keyword icons: [Twemoji](https://github.com/jdecked/twemoji) by Twitter/X and contributors, licensed [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (`www/emoji/LICENSE.txt`). Emoji names and tags: [emojibase](https://github.com/milesj/emojibase) (MIT).
 
 Font: [Montserrat](https://github.com/google/fonts/tree/main/ofl/montserrat) (SIL Open Font License), bundled in `www/fonts/`.
 

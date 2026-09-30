@@ -74,6 +74,8 @@
       e.status = res.status;
       e.apiStatus = ge.status || '';
       e.reason = reasons[0] || '';
+      const rd = (Array.isArray(ge.details) ? ge.details : []).map((d) => d && d.retryDelay).find(Boolean);
+      if (rd) e.retryAfter = parseFloat(rd) || 0; // seconds, from google.rpc.RetryInfo
       e.details = ['HTTP ' + res.status, e.apiStatus, reasons.join(', ')].filter(Boolean).join(' ')
         + (ge.message ? ': ' + String(ge.message).replace(/\s+/g, ' ').slice(0, 300) : '');
       throw e;
@@ -331,6 +333,40 @@
     }
     throw lastErr || fail('Gemini voice failed.');
   }
+  // ---------- long jobs: retry with backoff, chunk cache ----------
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const transient = (err) => !!err && (err.status === 429 || err.status >= 500 || err.name === 'AbortError' || err.name === 'TypeError' || isQuota(err));
+  // Retries rate limits / server errors with exponential backoff (honours the API's retryDelay). Daily-quota errors
+  // still fail after the last try, but every finished piece is kept by the caller so nothing restarts from zero.
+  async function withRetry(fn, o) {
+    o = o || {}; const tries = o.tries || 5; let wait = o.base || 4000;
+    for (let i = 0; ; i++) {
+      try { return await fn(i); } catch (err) {
+        if (i >= tries - 1 || !transient(err) || (o.signal && o.signal.aborted)) throw err;
+        const ms = Math.min(o.max || 65000, Math.max(wait, (err.retryAfter || 0) * 1000 + 500));
+        if (o.onWait) o.onWait(ms, i + 1, err);
+        await sleep(ms); wait *= 2;
+      }
+    }
+  }
+  function hashText(t) { let h1 = 0x811c9dc5; let h2 = 0; for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = (h2 * 31 + c) >>> 0; } return h1.toString(36) + h2.toString(36) + t.length.toString(36); }
+  // Long scripts: one TTS request per section/paragraph. Each finished chunk goes to o.cache (IndexedDB) right away,
+  // so a failure or quota stop resumes from the first missing chunk. Returns raw PCM parts (no giant WAV in memory).
+  async function speechChunks(texts, o) {
+    o = o || {}; const out = []; let model = ''; let fmt = null;
+    for (let i = 0; i < texts.length; i++) {
+      const key = 'tts:' + hashText([o.voice || '', o.style || '', o.prefix || '', texts[i]].join('|'));
+      let hit = o.cache ? await o.cache.get(key) : null;
+      if (hit && hit.pcm) { out.push(hit); if (o.onProgress) o.onProgress(i + 1, texts.length, true); continue; }
+      if (o.onProgress) o.onProgress(i, texts.length, false);
+      const r = await withRetry(() => ttsRequest(texts[i], Object.assign({}, o, { model: model || o.model })), { tries: o.tries || 4, base: 5000, signal: o.signal, onWait: o.onWait });
+      model = r.model; if (!fmt) fmt = r;
+      hit = { pcm: new Blob([r.pcm]), rate: r.rate, channels: r.channels, text: texts[i], model };
+      if (o.cache) await o.cache.set(key, hit);
+      out.push(hit); if (o.onProgress) o.onProgress(i + 1, texts.length, false);
+    }
+    return { parts: out, model };
+  }
   // Full script -> WAV Blob (chunked + concatenated when long).
   async function generateSpeech(text, o) {
     o = o || {};
@@ -404,5 +440,5 @@
     e.quota = quotaHit; e.unavailable = true;
     throw e;
   }
-  VTS.gemini = { generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
+  VTS.gemini = { withRetry, speechChunks, hashText, generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
 }());

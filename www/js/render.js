@@ -1,10 +1,34 @@
-/* Canvas renderer for 1080x1920 colour-graded caption videos + MediaRecorder export. */
+/* Canvas renderer for colour-graded caption videos (9:16, 16:9, 1:1, 4:5) + MediaRecorder export.
+   Long videos (up to 20 min) are recorded in segments streamed to disk, then joined by a streaming WebM remuxer. */
 (function () {
   'use strict';
   const VTS = (window.VTS = window.VTS || {});
   const W = 1080; const H = 1920;
   const FONT = 'Montserrat, "Arial Black", "Roboto", sans-serif';
-  const MAX_SECONDS = 60;
+  const MAX_SECONDS = 60; // default Short cap (9:16); longer lengths pass maxSeconds
+  const MAX_LONG = 20 * 60;
+  const ASPECTS = { '9:16': [1080, 1920], '16:9': [1920, 1080], '1:1': [1080, 1080], '4:5': [1080, 1350] };
+  const ASPECT_LABELS = { '9:16': 'Vertical 9:16 (Shorts, Reels, TikTok)', '16:9': 'Landscape 16:9 (YouTube)', '1:1': 'Square 1:1', '4:5': 'Portrait 4:5 (Instagram feed)' };
+  function frameSize(aspect, scale) { const d = ASPECTS[aspect] || ASPECTS['9:16']; const k = scale || 1; return [Math.round(d[0] * k / 2) * 2, Math.round(d[1] * k / 2) * 2]; }
+  // Where things go for each frame shape (design units: the frame's own 1080-based size).
+  function layoutFor(aspect, scenes) {
+    const [DW, DH] = ASPECTS[aspect] || ASPECTS['9:16'];
+    const L = { aspect: ASPECTS[aspect] ? aspect : '9:16', DW, DH, card: null, band: false };
+    if (L.aspect === '9:16') {
+      Object.assign(L, { cap: { cx: 540, cy: scenes ? 500 : 1030, maxW: 900, size: 1, lines: 3 }, step: [540, 272], cta: [540, 790], wm: [540, 200], band: scenes, classicY: 1 });
+    } else if (L.aspect === '16:9') {
+      // scene on the left (world x 0–1080, y 760–1840 at 1:1), captions panel on the right
+      Object.assign(L, { card: scenes ? { x: 0, y: 0, w: 1080, h: 1080, cropY: 760, k: 1, edge: 'right' } : null,
+        cap: scenes ? { cx: 1500, cy: 560, maxW: 720, size: 0.8, lines: 4 } : { cx: 960, cy: 560, maxW: 1500, size: 1, lines: 2 },
+        step: scenes ? [1500, 190] : [960, 150], cta: scenes ? [1500, 900] : [960, 900], wm: scenes ? [1500, 1030] : [960, 1030], classicY: 1080 / 1920 });
+    } else { // 1:1 and 4:5: caption strip on top, scene card below
+      const sq = L.aspect === '1:1'; const top = sq ? 300 : 360; const ch = DH - top - (sq ? 30 : 40); const k = ch / 1080; const cw = 1080 * k;
+      Object.assign(L, { card: scenes ? { x: (DW - cw) / 2, y: top, w: cw, h: ch, cropY: 760, k, edge: 'round' } : null,
+        cap: scenes ? { cx: 540, cy: top / 2 + 8, maxW: 980, size: sq ? 0.66 : 0.72, lines: 2 } : { cx: 540, cy: DH * 0.5, maxW: 940, size: sq ? 0.8 : 0.9, lines: 3 },
+        step: scenes ? [540, top + 52] : [540, DH * 0.14], cta: scenes ? [540, top + ch - 120] : [540, DH * 0.78], wm: scenes ? [540, top + ch - 20] : [540, DH - 26], classicY: DH / 1920 });
+    }
+    return L;
+  }
   const LEAD = 0.3; const TAIL = 0.8;
 
   const PRESETS = {
@@ -36,8 +60,15 @@
   }
 
   // ---------- timeline ----------
-  function buildTimeline(beats, speechStart, speechEnd) {
+  function buildTimeline(beats, speechStart, speechEnd, sections) {
     const list = (beats || []).filter((b) => b && String(b.text || '').trim());
+    // Long videos: every section has its own audio span, so captions can't drift across sections.
+    if (sections && sections.length > 1 && list.some((b) => b.section != null)) {
+      const out = [];
+      // sections are spans in video time (lead-in already added); clip to the speech that fits
+      sections.forEach((sp, k) => { const part = list.filter((b) => (b.section || 0) === k); const a = k === 0 ? Math.max(sp.start, speechStart) : sp.start; const e = Math.min(sp.end, speechEnd); if (part.length && e - a > 0.3) out.push.apply(out, buildTimeline(part, a, e)); });
+      if (out.length) return out;
+    }
     const total = list.reduce((a, b) => a + (Number(b.weight) || 1), 0) || 1;
     const span = Math.max(0.5, speechEnd - speechStart);
     let acc = 0;
@@ -50,7 +81,7 @@
       const wsum = ww.reduce((a, x) => a + x, 0) || 1;
       let wacc = 0;
       const wordTimes = words.map((w, i) => { const t = start + (wacc / wsum) * (end - start) * 0.92; wacc += ww[i]; return t; });
-      return { text: String(b.text).trim(), words, wordTimes, start, end, step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), scene: b.scene || null, aiImage: b.aiImage || null };
+      return { text: String(b.text).trim(), words, wordTimes, start, end, step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), scene: b.scene || null, aiImage: b.aiImage || null, section: b.section || 0, chapter: b.chapter || '' };
     });
   }
 
@@ -59,7 +90,7 @@
     constructor(canvas) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d', { alpha: false });
-      this.s = canvas.width / W;
+      this.s = canvas.width / W; this.DW = W; this.DH = H;
       this.bgW = 270; this.bgH = 480;
       this.bg = makeCanvas(this.bgW, this.bgH);
       this.graded = makeCanvas(this.bgW, this.bgH);
@@ -70,9 +101,12 @@
     setup(o) {
       this.o = Object.assign({ captionStyle: 'pop', captionCase: 'upper', watermark: false, handle: '' }, o);
       this.preset = PRESETS[o.preset] || PRESETS.teal;
-      this.timeline = buildTimeline(o.beats, o.speechStart, o.speechEnd);
-      this.layoutCache.clear();
       this.scenes = this.o.visual !== 'classic' && !!VTS.scenes;
+      this.LY = layoutFor(this.o.aspect || '9:16', this.scenes); this.DW = this.LY.DW; this.DH = this.LY.DH; this.s = this.canvas.width / this.DW;
+      if (this.DW > this.DH) { this.bgW = 480; this.bgH = 270; } else { this.bgW = 270; this.bgH = Math.round(270 * this.DH / this.DW); }
+      this.bg = makeCanvas(this.bgW, this.bgH); this.graded = makeCanvas(this.bgW, this.bgH);
+      this.timeline = buildTimeline(o.beats, o.speechStart, o.speechEnd, o.sections);
+      this.layoutCache.clear();
       this.images = [];
       if (this.scenes) this.setupScenes();
       // Vignette + film grain, pre-baked into a few half-resolution frames (one cheap full-frame draw per frame).
@@ -125,6 +159,7 @@
     }
     // Decode AI illustrations (if any) before rendering.
     async prepare() {
+      if (this.scenes && VTS.scenes.preload) { try { await VTS.scenes.preload(this.timeline.map((b) => b.sc)); } catch (_) { /* icons are optional */ } }
       if (!this.scenes || !this.o.aiImages) return 0;
       const cache = new Map(); let n = 0;
       for (let i = 0; i < this.timeline.length; i++) {
@@ -137,14 +172,24 @@
     }
     shotState(i, t) {
       const b = this.timeline[i]; const sh = this.shots[b.shot];
-      return { scene: b.sc, lt: Math.max(0, t - sh.start), t, dur: sh.end - sh.start, s: this.s, img: this.images[i] || null,
+      return { scene: b.sc, lt: Math.max(0, t - sh.start), t, dur: sh.end - sh.start, s: this.s * (this.LY.card ? this.LY.card.k : 1), img: this.images[i] || null,
         propAge: (n) => t - (b.propStart[n] != null ? b.propStart[n] : b.start), poseAge: t - b.poseStart, calloutAge: t - b.start };
     }
     drawScenes(t) {
       const ctx = this.ctx; const tl = this.timeline; if (!tl.length) return;
       const i = Math.max(0, this.beatAt(t)); const sh = this.shots[tl[i].shot];
-      const TR = 0.42; const st = this.stage;
+      const TR = 0.42; const st = this.stage; const c = this.LY.card;
+      if (c) { // backdrop + card frame for landscape / square / 4:5
+        this.drawBackground(t, 0);
+        ctx.save(); ctx.setTransform(this.s, 0, 0, this.s, 0, 0);
+        if (c.edge === 'round') { ctx.fillStyle = 'rgba(0,0,0,0.35)'; roundRect(ctx, c.x + 8, c.y + 14, c.w, c.h, 40); ctx.fill(); }
+        ctx.restore();
+      }
       ctx.save(); ctx.setTransform(this.s, 0, 0, this.s, 0, 0);
+      if (c) {
+        if (c.edge === 'round') roundRect(ctx, c.x, c.y, c.w, c.h, 40); else { ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); }
+        ctx.clip(); ctx.translate(c.x, c.y); ctx.scale(c.k, c.k); ctx.translate(0, -c.cropY);
+      }
       const since = t - sh.start;
       if (sh.idx > 0 && since < TR) {
         const p = VTS.scenes.easeInOut(since / TR); const prevI = sh.first - 1; const type = sh.transition; const hi = this.preset.hi;
@@ -169,9 +214,14 @@
         }
       } else st.drawShot(ctx, this.shotState(i, t));
       // soft band behind the captions for readability
-      const g = ctx.createLinearGradient(0, 300, 0, 740); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, 'rgba(0,0,0,0.26)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g; ctx.fillRect(0, 300, W, 440);
+      if (this.LY.band) { const g = ctx.createLinearGradient(0, 300, 0, 740); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, 'rgba(0,0,0,0.26)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 300, W, 440); }
       ctx.restore();
+      if (c) {
+        ctx.save(); ctx.setTransform(this.s, 0, 0, this.s, 0, 0);
+        if (c.edge === 'right') { const g = ctx.createLinearGradient(c.x + c.w - 70, 0, c.x + c.w + 40, 0); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.64, 'rgba(0,0,0,0.28)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(c.x + c.w - 70, 0, 110, this.DH); ctx.fillStyle = hexA(this.preset.hi, 0.9); ctx.fillRect(c.x + c.w - 4, 0, 8, this.DH); }
+        else { roundRect(ctx, c.x, c.y, c.w, c.h, 40); ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.stroke(); }
+        ctx.restore();
+      }
     }
     drawSceneStep(t) {
       const i = this.beatAt(t); if (i < 0) return;
@@ -180,7 +230,7 @@
         let first = i; while (first > 0 && this.timeline[first - 1].step === step) first--;
         let last = i; while (last < this.timeline.length - 1 && this.timeline[last + 1].step === step) last++;
         const a = easeOutBack(clamp01((t - this.timeline[first].start) / 0.45)); const out = clamp01((this.timeline[last].end - t) / 0.25);
-        ctx.save(); ctx.globalAlpha = out; ctx.translate(W * s / 2, 272 * s); ctx.scale(0.4 + 0.6 * a, 0.4 + 0.6 * a);
+        ctx.save(); ctx.globalAlpha = out; ctx.translate(this.LY.step[0] * s, this.LY.step[1] * s); ctx.scale(0.4 + 0.6 * a, 0.4 + 0.6 * a);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.font = '800 ' + (40 * s) + 'px ' + FONT; const label = 'STEP ' + step + ' OF 3'; const lw = ctx.measureText(label).width + 150 * s;
         ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(ctx, -lw / 2, -40 * s, lw, 80 * s, 40 * s); ctx.fill();
@@ -188,10 +238,20 @@
         ctx.fillStyle = '#111'; ctx.font = '900 ' + (40 * s) + 'px ' + FONT; ctx.fillText(String(step), -lw / 2 + 40 * s, 2 * s);
         ctx.fillStyle = '#fff'; ctx.font = '800 ' + (40 * s) + 'px ' + FONT; ctx.fillText(label, 34 * s, 2 * s);
         ctx.restore();
+      } else if (step === 0 && beat.section) { // long videos: chapter badge at the start of each section
+        let first = i; while (first > 0 && this.timeline[first - 1].section === beat.section) first--;
+        const ch = this.timeline[first].chapter; const since = t - this.timeline[first].start;
+        if (ch && since < 3.2) {
+          const a = easeOutBack(clamp01(since / 0.45)); const out = clamp01((3.2 - since) / 0.3);
+          ctx.save(); ctx.globalAlpha = out; ctx.translate(this.LY.step[0] * s, this.LY.step[1] * s); ctx.scale(0.4 + 0.6 * a, 0.4 + 0.6 * a); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = '800 ' + (40 * s) + 'px ' + FONT; const label = ('Part ' + (beat.section + 1) + ' · ' + ch).toUpperCase(); const lw = Math.min(ctx.measureText(label).width + 90 * s, (this.LY.aspect === '16:9' ? 780 : 1000) * s);
+          ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(ctx, -lw / 2, -40 * s, lw, 80 * s, 40 * s); ctx.fill(); ctx.strokeStyle = p.hi; ctx.lineWidth = 4 * s; ctx.stroke();
+          ctx.fillStyle = '#fff'; ctx.fillText(label, 0, 2 * s, lw - 60 * s); ctx.restore();
+        }
       } else if (step === 4 && this.o.handle) {
         let first = i; while (first > 0 && this.timeline[first - 1].step === 4) first--;
         const a = easeOutBack(clamp01((t - this.timeline[first].start) / 0.4));
-        ctx.save(); ctx.translate(W * s / 2, 790 * s); ctx.scale(a, a); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.save(); ctx.translate(this.LY.cta[0] * s, this.LY.cta[1] * s); ctx.scale(a, a); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.font = '800 ' + (46 * s) + 'px ' + FONT; const txt = 'Follow ' + this.o.handle; const tw = ctx.measureText(txt).width + 80 * s;
         ctx.fillStyle = p.hi; roundRect(ctx, -tw / 2, -45 * s, tw, 90 * s, 45 * s); ctx.fill(); ctx.fillStyle = '#111'; ctx.fillText(txt, 0, 2 * s); ctx.restore();
       }
@@ -244,9 +304,10 @@
         const x = q.x + 0.02 * Math.sin(t * 0.5 + q.ph);
         const a = (0.10 + 0.18 * (0.5 + 0.5 * Math.sin(t * 1.3 + q.ph))) * q.z;
         const r = q.rad * q.z * s;
-        const g = ctx.createRadialGradient(x * W * s, y * H * s, 0, x * W * s, y * H * s, r * 2.5);
+        const px = x * this.DW * s; const py = y * this.DH * s;
+        const g = ctx.createRadialGradient(px, py, 0, px, py, r * 2.5);
         g.addColorStop(0, hexA(p.particles, a)); g.addColorStop(1, hexA(p.particles, 0));
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x * W * s, y * H * s, r * 2.5, 0, 6.2832); ctx.fill();
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r * 2.5, 0, 6.2832); ctx.fill();
       }
       ctx.restore();
     }
@@ -255,8 +316,8 @@
       const beat = this.timeline[i]; const ctx = this.ctx; const s = this.s;
       const upper = this.o.captionCase === 'upper';
       const words = beat.words.map((w) => (upper ? w.toUpperCase() : w));
-      const maxW = 900 * s;
-      let size = (words.join(' ').length > 22 ? 104 : 122) * s * (this.scenes ? 0.9 : 1);
+      const cap = this.LY.cap; const maxW = cap.maxW * s;
+      let size = (words.join(' ').length > 22 ? 104 : 122) * s * (this.scenes ? 0.9 : 1) * cap.size;
       let lines;
       for (let tries = 0; tries < 6; tries++) {
         ctx.font = '800 ' + size + 'px ' + FONT;
@@ -269,16 +330,16 @@
         });
         if (cur.length) lines.push({ items: cur, width: curW });
         const widest = Math.max.apply(null, lines.map((l) => l.width));
-        if (lines.length <= 3 && widest <= maxW) break;
+        if (lines.length <= cap.lines && widest <= maxW) break;
         size *= 0.88;
       }
       ctx.font = '800 ' + size + 'px ' + FONT;
       const space = ctx.measureText(' ').width;
       const lh = size * 1.14;
-      const cy = (this.scenes ? 500 : 1030) * s; const top = cy - (lines.length * lh) / 2 + lh / 2;
+      const cy = cap.cy * s; const top = cy - (lines.length * lh) / 2 + lh / 2;
       const pos = [];
       lines.forEach((l, li) => {
-        let x = (W * s - l.width) / 2;
+        let x = cap.cx * s - l.width / 2;
         l.items.forEach((it) => { pos[it.wi] = { x: x + it.ww / 2, y: top + li * lh, w: it.w, ww: it.ww }; x += it.ww + space; });
       });
       const out = { size, pos, lh };
@@ -347,14 +408,14 @@
         ctx.font = '800 ' + (40 * s) + 'px ' + FONT;
         const label = 'STEP ' + step + ' / 3';
         const lw = ctx.measureText(label).width + 64 * s;
-        const ly = 360 * s;
+        const cyk = this.LY.classicY; const cx = this.LY.cap.cx * s; const ly = (this.DW > this.DH ? 170 : 360 * cyk) * s;
         ctx.fillStyle = hexA('#000000', 0.32);
-        roundRect(ctx, (W * s - lw) / 2, ly - 34 * s, lw, 68 * s, 34 * s); ctx.fill();
+        roundRect(ctx, cx - lw / 2, ly - 34 * s, lw, 68 * s, 34 * s); ctx.fill();
         ctx.strokeStyle = hexA(p.hi, 0.7); ctx.lineWidth = 3 * s; ctx.stroke();
-        ctx.fillStyle = p.hi; ctx.fillText(label.split('').join(String.fromCharCode(8202)), W * s / 2, ly + 2 * s);
+        ctx.fillStyle = p.hi; ctx.fillText(label.split('').join(String.fromCharCode(8202)), cx, ly + 2 * s);
         // big number
-        ctx.translate(W * s / 2, 640 * s);
-        const sc = 0.6 + 0.4 * a; ctx.scale(sc, sc);
+        ctx.translate(cx, (this.DW > this.DH ? 330 : 640 * cyk) * s);
+        const sc = (0.6 + 0.4 * a) * (this.DW > this.DH ? 0.55 : Math.min(1, cyk * 1.25)); ctx.scale(sc, sc);
         ctx.font = '900 ' + (400 * s) + 'px ' + FONT;
         ctx.shadowColor = hexA(p.hi, 0.55); ctx.shadowBlur = 60 * s;
         const g = ctx.createLinearGradient(0, -200 * s, 0, 200 * s);
@@ -365,7 +426,7 @@
         // step dots
         ctx.save(); ctx.globalAlpha = out;
         for (let d = 1; d <= 3; d++) {
-          ctx.beginPath(); ctx.arc(W * s / 2 + (d - 2) * 40 * s, 1450 * s, (d === step ? 11 : 7) * s, 0, 6.2832);
+          ctx.beginPath(); ctx.arc(this.LY.cap.cx * s + (d - 2) * 40 * s, (this.DW > this.DH ? 820 : 1450 * this.LY.classicY) * s, (d === step ? 11 : 7) * s, 0, 6.2832);
           ctx.fillStyle = d <= step ? p.hi : hexA('#ffffff', 0.35); ctx.fill();
         }
         ctx.restore();
@@ -377,8 +438,9 @@
         ctx.font = '700 ' + (46 * s) + 'px ' + FONT;
         const txt = 'Follow ' + this.o.handle;
         const tw = ctx.measureText(txt).width + 80 * s;
-        ctx.fillStyle = p.hi; roundRect(ctx, (W * s - tw) / 2, 1330 * s, tw, 90 * s, 45 * s); ctx.fill();
-        ctx.fillStyle = '#111'; ctx.fillText(txt, W * s / 2, 1377 * s);
+        const cy2 = this.LY.cta[1] * s; const cx2 = this.LY.cta[0] * s;
+        ctx.fillStyle = p.hi; roundRect(ctx, cx2 - tw / 2, cy2 - 45 * s, tw, 90 * s, 45 * s); ctx.fill();
+        ctx.fillStyle = '#111'; ctx.fillText(txt, cx2, cy2 + 2 * s);
         ctx.restore();
       }
     }
@@ -388,7 +450,7 @@
       ctx.save(); ctx.globalAlpha = 0.72; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = '700 ' + (36 * s) + 'px ' + FONT;
       ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 10 * s;
-      ctx.fillStyle = '#ffffff'; ctx.fillText(this.o.handle, W * s / 2, 200 * s);
+      ctx.fillStyle = '#ffffff'; ctx.fillText(this.o.handle, this.LY.wm[0] * s, (this.LY.wm[1] - (this.LY.aspect === '9:16' ? 0 : 12)) * s);
       ctx.restore();
     }
     drawFinish(t) {
@@ -400,9 +462,13 @@
         ctx.fillStyle = hexA(p.hi, 0.85); ctx.fillRect(0, 0, cw * clamp01(t / d), 8 * this.s);
       }
     }
+    drawProbe(t) { // test-only A/V sync marker: white square while a probe beep plays
+      if (!this.probe) return; const on = this.probe.some((p) => t >= p && t < p + 0.1);
+      this.ctx.fillStyle = on ? '#ffffff' : '#000000'; this.ctx.fillRect(0, 0, 48 * this.s, 48 * this.s);
+    }
     draw(t) {
       if (this.scenes) {
-        this.drawScenes(t); this.drawSceneStep(t); this.drawCaptions(t); this.drawWatermark(); this.drawFinish(t);
+        this.drawScenes(t); this.drawSceneStep(t); this.drawCaptions(t); this.drawWatermark(); this.drawFinish(t); this.drawProbe(t);
         return;
       }
       const i = this.beatAt(t);
@@ -414,6 +480,7 @@
       this.drawCaptions(t);
       this.drawWatermark();
       this.drawFinish(t);
+      this.drawProbe(t);
     }
   }
   function roundRect(ctx, x, y, w, h, r) {
@@ -481,8 +548,8 @@
     const c = document.createElement('canvas');
     return typeof MediaRecorder !== 'undefined' && typeof c.captureStream === 'function' && !!(window.AudioContext || window.webkitAudioContext);
   }
-  function plan(buf) {
-    const audioDur = Math.min(buf.duration, MAX_SECONDS - LEAD - TAIL);
+  function plan(buf, maxSeconds) {
+    const audioDur = Math.min(buf.duration, Math.min(maxSeconds || MAX_SECONDS, MAX_LONG) - LEAD - TAIL);
     const b = speechBounds(buf);
     return { audioDur, total: LEAD + audioDur + TAIL, speechStart: LEAD + Math.min(b.start, audioDur), speechEnd: LEAD + Math.min(b.end, audioDur) };
   }
@@ -492,10 +559,11 @@
     const { canvas, buffer, onProgress } = opts;
     if (!canRender()) throw new Error('This browser cannot record canvas video (needs MediaRecorder + canvas.captureStream).');
     const mime = pickVideoType(opts.format);
-    const P = plan(buffer);
+    const P = plan(buffer, opts.maxSeconds);
     const r = new Renderer(canvas);
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
-    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total }));
+    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
+    if (opts.probe) r.probe = opts.probe;
     const illustrated = await r.prepare();
     r.draw(0);
     const ac = audioCtx();
@@ -590,9 +658,9 @@
   // Live preview synced to audio playback (no recording).
   function preview(opts) {
     const { canvas, buffer } = opts;
-    const P = plan(buffer);
+    const P = plan(buffer, opts.maxSeconds);
     const r = new Renderer(canvas);
-    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total }));
+    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
     const ac = audioCtx();
     let src = null; let raf = 0; let startAt = 0; let playing = false;
     const api = {
@@ -619,5 +687,5 @@
     return api;
   }
 
-  VTS.render = { fixWebmDuration, W, H, PRESETS, MAX_SECONDS, LEAD, TAIL, Renderer, buildTimeline, decodeBlob, silentBuffer, speechBounds, trimBuffer, pickVideoType, canRender, renderVideo, preview, plan, audioCtx };
+  VTS.render = { fixWebmDuration, W, H, PRESETS, MAX_SECONDS, MAX_LONG, ASPECTS, ASPECT_LABELS, frameSize, layoutFor, LEAD, TAIL, Renderer, buildTimeline, decodeBlob, silentBuffer, speechBounds, trimBuffer, pickVideoType, canRender, renderVideo, preview, plan, audioCtx };
 }());

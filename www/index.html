@@ -35,14 +35,14 @@
         <div class="pane" id="pane-idea">
           <div class="hero">
             <h1>What’s the idea?</h1>
-            <p class="muted">Tap the mic and ramble for up to 90 seconds. Messy is fine — Gemini turns it into a hook, 3 steps and a soft call to action.</p>
+            <p class="muted">Tap the mic and ramble — up to 20 minutes, pauses are fine (the transcript is saved as you talk). Or paste text or an outline. Gemini turns it into a hook, clear steps and a soft call to action.</p>
           </div>
           <div class="mic-wrap">
             <button type="button" id="mic" class="mic" aria-label="Start dictation" aria-pressed="false">
               <svg class="ring" viewBox="0 0 120 120"><circle cx="60" cy="60" r="56"/><circle id="mic-progress" cx="60" cy="60" r="56"/></svg>
               <svg class="glyph" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
             </button>
-            <div class="mic-meta"><span id="mic-time">0:00</span><span class="muted"> / 1:30</span></div>
+            <div class="mic-meta"><span id="mic-time">0:00</span><span class="muted" id="mic-max"> / 20:00</span></div>
             <div id="mic-status" class="status" role="status"></div>
           </div>
           <label class="field">
@@ -55,6 +55,9 @@
             <span class="label-row"><span>Tone</span></span>
             <div class="seg" id="tone-seg" role="radiogroup"></div>
           </div>
+          <label class="field"><span class="label-row"><span>Video length</span><span class="muted small" id="length-aspect"></span></span>
+            <select id="opt-length"></select></label>
+          <p class="small muted" id="length-note"></p>
           <button type="button" class="btn primary big" id="generate"><span>✨ Write my Short</span></button>
           <div id="gen-status" class="status" role="status"></div>
         </div>
@@ -63,7 +66,7 @@
         <div class="pane" id="pane-script">
           <div id="script-loading" class="loading hidden">
             <div class="shimmer"></div><div class="shimmer short"></div><div class="shimmer"></div>
-            <p class="muted center">Writing your hook, 3 steps and captions…</p>
+            <p class="muted center" id="script-loading-text">Writing your hook, 3 steps and captions…</p><div class="bar hidden" id="script-bar"><i id="script-bar-fill"></i></div><button type="button" class="btn ghost hidden" id="btn-gen-cancel">Stop</button>
           </div>
           <div id="script-empty" class="empty-card hidden"><h2>No script yet</h2><p class="muted">Add your idea in step 1 and tap “Write my Short”.</p><button type="button" class="btn" data-goto="idea">Go to Idea</button></div>
           <div id="script-body" class="hidden">
@@ -81,7 +84,9 @@
               <div class="field"><span class="label-row"><span>Visual style</span></span>
                 <div class="seg vis-seg" id="vis-seg-script"><button type="button" data-v="scenes">🎨 Animated scenes</button><button type="button" data-v="classic">Captions only (classic)</button></div>
               </div>
-              <p class="small muted" id="scene-hint">Each beat gets a 2D animated scene. Tap 🎬 on a beat to change its scene.</p>
+              <p class="small muted" id="scene-hint">Each beat gets a 2D animated scene that shows its keyword. Tap 🎬 on a beat to change its scene.</p>
+              <p class="small" id="match-summary"></p>
+              <label class="field hidden" id="beat-section-row"><span class="label-row"><span>Section</span><span class="muted small" id="beat-section-info"></span></span><select id="beat-section"></select></label>
               <ol id="beats" class="beats"></ol>
               <button type="button" class="btn ghost" id="add-beat">+ Add beat</button>
             </div>
@@ -168,6 +173,8 @@
                 <div class="seg vis-seg" id="vis-seg-render"><button type="button" data-v="scenes">🎨 Animated scenes</button><button type="button" data-v="classic">Captions only</button></div>
               </div>
               <label class="switch" id="ai-img-row"><input type="checkbox" id="opt-ai-images"><span>Use AI-drawn illustrations when available <em class="muted">(uses Gemini image quota · needs a billing-enabled key, ≈ $0.03–0.04 per scene · falls back to built-in scenes)</em></span></label>
+              <div class="field"><span class="label-row"><span>Frame shape</span><span class="muted small" id="aspect-note"></span></span>
+                <div class="seg" id="aspect-seg"><button type="button" data-v="9:16">9:16</button><button type="button" data-v="16:9">16:9</button><button type="button" data-v="1:1">1:1</button><button type="button" data-v="4:5">4:5</button></div></div>
               <div class="field"><span class="label-row"><span>Colour grade</span></span><div class="grades" id="grades"></div></div>
               <div class="field"><span class="label-row"><span>Captions</span></span>
                 <div class="seg" id="cap-style"><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button></div>
@@ -178,10 +185,13 @@
               <label class="field"><span class="label-row"><span>File format</span></span>
                 <select id="opt-format"><option value="auto">Auto (MP4 when supported)</option><option value="webm">WebM</option></select>
               </label>
+              <label class="field"><span class="label-row"><span>Quality</span></span>
+                <select id="opt-quality"><option value="auto">Auto (1080p · 720p for videos over 3 min)</option><option value="1080">1080p</option><option value="720">720p (faster, safer on older phones)</option></select>
+              </label>
             </div>
           </div>
           <button type="button" class="btn primary big" id="render"><span>🎬 Render 1080×1920 video</span></button>
-          <div id="render-progress" class="progress hidden"><div class="bar"><i id="render-bar"></i></div><div class="row-between small"><span id="render-label">Rendering…</span><button type="button" class="link-btn" id="render-cancel">Cancel</button></div><p class="small muted">Rendering happens in real time on your phone. Keep the app open and the screen on.</p></div>
+          <div id="render-progress" class="progress hidden"><div class="bar"><i id="render-bar"></i></div><div class="row-between small"><span id="render-label">Rendering…</span><button type="button" class="link-btn" id="render-cancel">Cancel</button></div><p class="small muted" id="render-note">Rendering happens in real time on your phone. Keep the app open and the screen on.</p></div>
           <div id="render-status" class="status" role="status"></div>
           <div class="card hidden" id="result-card">
             <div class="card-head"><h2>Your Short</h2><span class="badge ok" id="result-badge"></span></div>
@@ -197,6 +207,7 @@
               <button type="button" class="chip" data-copy="pinnedComment">Copy pinned comment</button>
             </div>
             <p class="small muted" id="result-info"></p>
+            <div id="result-parts" class="hidden"><p class="small" id="parts-note"></p><div class="chips" id="parts-list"></div></div>
           </div>
         </div>
       </section>
@@ -229,6 +240,7 @@
           <label class="field"><span>Default tone</span><select id="s-tone"></select></label>
           <label class="field"><span>Script language</span><select id="s-language"></select></label>
           <label class="field"><span>Default colour grade</span><select id="s-grade"></select></label>
+          <label class="field"><span>Default frame shape</span><select id="s-aspect"></select></label>
           <label class="switch"><input type="checkbox" id="s-watermark"><span>Watermark on by default</span></label>
           <label class="field"><span>Default visual style</span><select id="s-visual"><option value="scenes">Animated scenes (2D cartoon, on-device)</option><option value="classic">Captions only (classic)</option></select></label>
           <label class="switch"><input type="checkbox" id="s-ai-images"><span>AI-drawn illustrations by default <em class="muted">(Gemini image models have no free tier; uses paid quota)</em></span></label>
@@ -259,6 +271,7 @@
           <p class="small muted">Backups contain your ideas, scripts and settings (not audio or video files, and never your API key).</p>
         </div>
         <p class="center small muted" id="app-version"></p>
+        <p class="center small muted" id="credits">Keyword icons: <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener">Twemoji</a> © Twitter/X and contributors, CC-BY 4.0 (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">license</a>). Emoji names: emojibase (MIT). Scenes and characters are drawn in code on your device.</p>
       </section>
     </main>
 
@@ -273,9 +286,10 @@
   <div id="prompter" class="prompter hidden" role="dialog" aria-label="Teleprompter">
     <div class="p-top">
       <button type="button" class="icon-btn" id="p-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-      <div class="p-timer"><i id="p-dot"></i><span id="p-time">0:00</span><span class="muted"> / 1:00</span></div>
+      <div class="p-timer"><i id="p-dot"></i><span id="p-time">0:00</span><span class="muted" id="p-max"> / 1:00</span></div>
       <label class="p-speed small">Speed <input type="range" id="p-speed" min="110" max="200" step="5"></label>
     </div>
+    <div class="p-sections hidden" id="p-sections"><button type="button" class="chip" id="p-prev" aria-label="Previous section">‹</button><span id="p-sec-label" class="small"></span><button type="button" class="chip" id="p-next" aria-label="Next section">›</button><button type="button" class="chip hidden" id="p-finish">✓ Use recorded parts</button></div>
     <div class="p-scroll" id="p-scroll"><div class="p-pad"></div><div id="p-text" class="p-text"></div><div class="p-pad"></div></div>
     <div class="p-guide"></div>
     <div class="p-count hidden" id="p-count">3</div>
@@ -283,6 +297,7 @@
       <audio id="p-audio" controls class="hidden"></audio>
       <div class="p-buttons">
         <button type="button" class="btn hidden" id="p-retake">Retake</button>
+        <button type="button" class="btn hidden" id="p-pause">❚❚ Pause</button>
         <button type="button" class="rec" id="p-rec" aria-label="Start recording"><i></i></button>
         <button type="button" class="btn primary hidden" id="p-use">Use this take</button>
       </div>
@@ -294,12 +309,15 @@
 
   <script src="capacitor.js"></script>
   <script src="js/gemini.js"></script>
+  <script src="js/emoji-index.js"></script>
   <script src="js/scenes.js"></script>
+  <script src="js/library.js"></script>
   <script src="js/shortgen.js"></script>
   <script src="js/db.js"></script>
   <script src="js/speech.js"></script>
   <script src="js/native.js"></script>
   <script src="js/render.js"></script>
+  <script src="js/segments.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

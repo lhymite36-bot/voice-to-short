@@ -10,7 +10,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const results = []; const ok = (name, cond, extra) => { results.push([cond ? 'PASS' : 'FAIL', name, extra || '']); console.log(cond ? 'PASS' : 'FAIL', name, extra || ''); };
 
 const SCRIPT = fs.readFileSync('/tmp/overthink.txt', 'utf8').trim();
-const PREVIEWS = '/workspace/voice-to-short-previews/v1.2';
+const PREVIEWS = path.join(OUT, 'v12-regression-previews');
 fs.mkdirSync(PREVIEWS, { recursive: true });
 // The scene plan Gemini would return, one per sentence (hand-written mock of the structured output).
 const SENT_SCENES = [

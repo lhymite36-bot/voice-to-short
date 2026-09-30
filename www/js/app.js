@@ -1,11 +1,14 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.3.0';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
-  const MAX_IDEA_SEC = 90;
+  const MAX_IDEA_SEC = 20 * 60; // long dictation (auto-restarts after pauses)
   const MAX_VOICE_SEC = R.MAX_SECONDS - R.LEAD - R.TAIL; // 58.9 s of audio fits in a 60 s Short
+  const MAX_LONG_VOICE = R.MAX_LONG - R.LEAD - R.TAIL; // 20 min videos
+  const LONG_RENDER_SEC = 150; // above this the render is done in segments saved to disk
+  const SG = VTS.segments;
 
   const SPEECH_LANGS = [
     ['en-US', 'English (US)'], ['en-GB', 'English (UK)'], ['en-IN', 'English (India)'], ['en-NG', 'English (Nigeria)'], ['en-GH', 'English (Ghana)'], ['en-KE', 'English (Kenya)'],
@@ -24,7 +27,7 @@
   // ---------- settings ----------
   const K = { key: 'vts.apiKey', model: 'vts.model', models: 'vts.models', handle: 'vts.handle', tone: 'vts.tone', language: 'vts.language', grade: 'vts.grade',
     watermark: 'vts.watermark', speechLang: 'vts.speechLang', wpm: 'vts.wpm', rawAudio: 'vts.rawAudio', last: 'vts.lastProject',
-    ttsVoice: 'vts.ttsVoice', ttsStyle: 'vts.ttsStyle', ttsCustom: 'vts.ttsCustom', ttsModel: 'vts.ttsModel', ttsModels: 'vts.ttsModels', visualStyle: 'vts.visualStyle', aiImages: 'vts.aiImages', imageModel: 'vts.imageModel' };
+    ttsVoice: 'vts.ttsVoice', ttsStyle: 'vts.ttsStyle', ttsCustom: 'vts.ttsCustom', ttsModel: 'vts.ttsModel', ttsModels: 'vts.ttsModels', visualStyle: 'vts.visualStyle', aiImages: 'vts.aiImages', imageModel: 'vts.imageModel', aspect: 'vts.aspect', length: 'vts.length' };
   function load(key, fallback) { try { const raw = localStorage.getItem(key); return raw == null ? fallback : JSON.parse(raw); } catch (_) { return fallback; } }
   function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { toast('Could not save settings: storage is full.', true); } }
   const getKey = () => String(localStorage.getItem(K.key) || '').trim();
@@ -32,6 +35,8 @@
   const handle = () => { const h = String(load(K.handle, '') || '').trim(); return h ? (h.startsWith('@') ? h : '@' + h) : ''; };
   const speechLang = () => load(K.speechLang, (navigator.language && /^[a-z]{2}-[A-Z]{2}$/.test(navigator.language)) ? navigator.language : 'en-US');
   const wpm = () => Number(load(K.wpm, 150)) || 150;
+  const defAspect = () => { const a = load(K.aspect, '9:16'); return R.ASPECTS[a] ? a : '9:16'; };
+  const defLength = (aspect) => { const l = load(K.length, null); if (l && S.LENGTHS.some((x) => x.id === l)) return l; return (aspect || defAspect()) === '9:16' ? '60' : '120'; };
   (function migrateModel() {
     const saved = load(K.model, null);
     if (typeof saved === 'string' && G.LEGACY_MODEL_RE.test(saved.trim())) save(K.model, G.DEFAULT_MODEL);
@@ -117,9 +122,10 @@
   let saveTimer = 0;
   function blankProject() {
     const now = new Date().toISOString();
-    return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone: load(K.tone, 'calm'),
-      pkg: null, voice: null, video: null, thumb: '',
-      look: { preset: load(K.grade, 'teal'), captionStyle: 'pop', captionCase: 'upper', watermark: !!load(K.watermark, false), progress: false, format: 'auto',
+    const aspect = defAspect();
+    return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone: load(K.tone, 'calm'), length: defLength(aspect),
+      pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null,
+      look: { aspect, quality: 'auto', preset: load(K.grade, 'teal'), captionStyle: 'pop', captionCase: 'upper', watermark: !!load(K.watermark, false), progress: false, format: 'auto',
         visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) } };
   }
   function persist(now) {
@@ -133,6 +139,29 @@
     };
     if (now) run(); else saveTimer = setTimeout(run, 500);
   }
+  const lengthId = () => (P && P.length) || '60';
+  const isShortLen = () => lengthId() === '60';
+  const maxVoice = () => (isShortLen() ? MAX_VOICE_SEC : MAX_LONG_VOICE);
+  const aspectOf = () => (P && P.look && R.ASPECTS[P.look.aspect] ? P.look.aspect : '9:16');
+  const voiceIsLong = () => !!(P && P.voice && (P.voice.parts || (!isShortLen() && P.voice.duration > LONG_RENDER_SEC)));
+  // A WAV header + raw PCM blob: nothing is decoded or copied (Blob parts stay on disk).
+  function wavHeader(bytes, rate, ch) {
+    const h = new DataView(new ArrayBuffer(44)); const w = (o, t) => { for (let i = 0; i < 4; i++) h.setUint8(o + i, t.charCodeAt(i)); };
+    w(0, 'RIFF'); h.setUint32(4, 36 + bytes, true); w(8, 'WAVE'); w(12, 'fmt '); h.setUint32(16, 16, true); h.setUint16(20, 1, true); h.setUint16(22, ch, true);
+    h.setUint32(24, rate, true); h.setUint32(28, rate * ch * 2, true); h.setUint16(32, ch * 2, true); h.setUint16(34, 16, true); w(36, 'data'); h.setUint32(40, bytes, true);
+    return h.buffer;
+  }
+  const wavFromPcm = (pcmBlobs, rate, ch) => { const n = pcmBlobs.reduce((a, b) => a + b.size, 0); return new Blob([wavHeader(n, rate, ch)].concat(pcmBlobs), { type: 'audio/wav' }); };
+  // Duration without decoding the whole file (long imports would need hundreds of MB decoded).
+  function mediaDuration(blob) {
+    return new Promise((resolve) => {
+      const a = document.createElement('audio'); const url = URL.createObjectURL(blob); let done = false;
+      const fin = (d) => { if (done) return; done = true; URL.revokeObjectURL(url); a.removeAttribute('src'); resolve(d); };
+      a.preload = 'metadata'; a.onerror = () => fin(0);
+      a.onloadedmetadata = () => { if (isFinite(a.duration) && a.duration > 0) fin(a.duration); else { a.ondurationchange = () => { if (isFinite(a.duration) && a.duration > 0) fin(a.duration); }; a.currentTime = 1e7; setTimeout(() => fin(isFinite(a.duration) ? a.duration : 0), 4000); } };
+      a.src = url; setTimeout(() => fin(0), 10000);
+    });
+  }
   function projectTitle(p) { return (p.pkg && p.pkg.title) || (p.idea ? p.idea.trim().split(/\s+/).slice(0, 8).join(' ') + (S.wordCount(p.idea) > 8 ? '…' : '') : 'New Short'); }
   async function openProject(id, step) {
     const p = await DB.get(id);
@@ -140,6 +169,8 @@
     stopAll();
     P = Object.assign(blankProject(), p);
     P.look = Object.assign(blankProject().look, p.look || {});
+    if (!p.look || !p.look.aspect) P.look.aspect = '9:16'; // projects from v1.2 were vertical
+    if (!p.length) P.length = p.pkg && p.pkg.long ? String((p.pkg.lengthSec || 600)) : '60';
     voiceBuffer = null; save(K.last, P.id);
     renderAll();
     showView('create');
@@ -234,9 +265,22 @@
     });
     const ex = $('idea-examples');
     if (!ex.childElementCount) EXAMPLES.forEach((t) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = t; b.addEventListener('click', () => { if (ideaEl.value.trim() && !confirm('Replace your idea with this example?')) return; P.idea = t; ideaEl.value = t; updateIdeaCount(); persist(); }); ex.appendChild(b); });
+    const ls = $('opt-length');
+    if (ls.options.length !== S.LENGTHS.length) { ls.innerHTML = ''; S.LENGTHS.forEach((l) => ls.add(new Option(l.label + (l.sec >= 300 ? ' · long video' : ''), l.id))); }
+    ls.value = lengthId(); paintLengthNote();
     paintIdeaAudio();
     setStatus('gen-status', getKey() ? '' : 'Tip: add your free Gemini API key in Settings to write scripts.');
   }
+  function paintLengthNote() {
+    const L = S.lengthOf(lengthId()); const a = aspectOf();
+    $('length-aspect').textContent = 'Frame: ' + a + ' (change in Render)';
+    const notes = [];
+    if (L.sec > 60 && a === '9:16') notes.push('Heads-up: YouTube Shorts can be at most 3 minutes. ' + (L.sec > 180 ? 'A ' + L.label + ' vertical video will upload as a regular video, not a Short.' : 'This fits, but under 60 s performs best.'));
+    if (L.sec >= 300) notes.push('Long video: Gemini writes an outline first, then each section separately (about ' + Math.max(3, Math.round(L.sec / 80)) + ' sections). It resumes if something fails. Rendering runs in real time in parts (≈' + Math.round(L.sec / 60) + ' min), saved to storage as it goes.');
+    if (L.sec > 60 && a !== '9:16') notes.push('Tip: 16:9 is the classic YouTube shape for long videos.');
+    $('length-note').textContent = notes.join(' ');
+  }
+  $('opt-length').addEventListener('change', (e) => { P.length = e.target.value; save(K.length, P.length); persist(); paintLengthNote(); if (P.pkg) updateScriptMeta(); });
   function paintIdeaAudio() {
     const wrap = $('idea-audio-wrap');
     if (P.ideaAudio && P.ideaAudio.size) { wrap.classList.remove('hidden'); setMedia($('idea-audio'), P.ideaAudio); } else wrap.classList.add('hidden');
@@ -273,7 +317,7 @@
     try {
       engine = await VTS.speech.create({
         lang: speechLang,
-        commit: (t) => { t = String(t || '').trim(); if (t) committed = committed ? committed + ' ' + t : t; paintDictation(); },
+        commit: (t) => { t = String(t || '').trim(); if (t) committed = committed ? committed + ' ' + t : t; paintDictation(); P.idea = joinText(); persist(); },
         interim: (t) => { interim = t || ''; paintDictation(); },
         error: (msg) => { setStatus('mic-status', msg, 'err'); stopDictation(true); },
         ended: () => { if (dictating) stopDictation(); },
@@ -285,7 +329,7 @@
         const sec = (Date.now() - micStart) / 1000;
         $('mic-time').textContent = fmt(sec);
         $('mic-progress').style.strokeDashoffset = 351.9 * (1 - Math.min(1, sec / MAX_IDEA_SEC));
-        if (sec >= MAX_IDEA_SEC) { stopDictation(); toast('90 seconds reached — that’s plenty for a Short.'); }
+        if (sec >= MAX_IDEA_SEC) { stopDictation(); toast('20 minutes reached — the transcript is saved. Tap the mic again to keep going.'); }
       }, 250);
       await engine.start();
       if (load(K.rawAudio, false)) {
@@ -310,7 +354,8 @@
   }
 
   // Generate the Short package.
-  let generating = false;
+  let generating = false; let genAbort = null;
+  $('btn-gen-cancel').addEventListener('click', () => { if (genAbort) genAbort.abort(); });
   async function generate() {
     if (generating) return;
     if (dictating) await stopDictation(true);
@@ -322,23 +367,37 @@
     setStatus('gen-status', '');
     P.step = 'script'; STEPS.forEach((k) => $('pane-' + k).classList.toggle('active', k === 'script')); paintStepper();
     $('script-loading').classList.remove('hidden'); $('script-body').classList.add('hidden'); $('script-empty').classList.add('hidden');
+    const L = S.lengthOf(lengthId()); const long = S.isLong(L.id);
+    const lt = $('script-loading-text'); lt.textContent = long ? 'Planning a ' + L.label + ' video…' : L.sec > 60 ? 'Writing your ' + L.label + ' script…' : 'Writing your hook, 3 steps and captions…';
+    $('script-bar').classList.toggle('hidden', !long); $('script-bar-fill').style.width = '0';
+    genAbort = new AbortController(); $('btn-gen-cancel').classList.toggle('hidden', !long);
     try {
-      const pkg = await S.generatePackage(P.idea, { tone: P.tone, language: load(K.language, 'English'), handle: handle() });
-      P.pkg = pkg; P.video = null;
+      const pkg = await S.generatePackage(P.idea, { tone: P.tone, language: load(K.language, 'English'), handle: handle(), length: L.id, signal: genAbort.signal,
+        partial: P.genPartial || null,
+        onPartial: (part) => { P.genPartial = part; persist(true); },
+        onProgress: (q) => {
+          if (q.phase === 'outline') lt.textContent = 'Step 1 / ' + q.n + ': outlining the sections…';
+          else if (q.phase === 'section') lt.textContent = 'Step ' + (q.i + 1) + ' / ' + q.n + ': writing “' + (q.title || 'section ' + q.i) + '”…';
+          else if (q.phase === 'wait') lt.textContent = (q.quota ? 'Gemini rate limit reached — ' : 'Gemini hiccup — ') + 'retrying in ' + Math.round(q.ms / 1000) + ' s (attempt ' + (q.attempt + 1) + ')…';
+          if (q.n) $('script-bar-fill').style.width = Math.round(100 * (q.phase === 'section' ? q.i : 0) / q.n) + '%';
+        } });
+      P.pkg = pkg; P.video = null; P.genPartial = null; P.renderState = null;
       persist(true);
       $('project-name').textContent = projectTitle(P);
       toast('Script ready — pick a hook and tweak anything');
     } catch (err) {
-      const msg = G.friendlyError(err);
+      let msg = G.friendlyError(err);
+      if (P.genPartial && P.genPartial.sections && P.genPartial.sections.length) msg += ' Progress is saved (' + P.genPartial.sections.length + ' section' + (P.genPartial.sections.length > 1 ? 's' : '') + ' written) — tap “Write my Short” again to continue where it stopped.';
       if (P.pkg) { toast(msg, true); } else { showStep('idea'); setStatus('gen-status', msg, 'err'); }
     } finally {
+      genAbort = null; $('btn-gen-cancel').classList.add('hidden'); $('script-bar').classList.add('hidden');
       generating = false; $('generate').disabled = false; $('regenerate').disabled = false;
       $('script-loading').classList.add('hidden');
       if (P.pkg) { renderScript(); paintStepper(); }
     }
   }
   $('generate').addEventListener('click', generate);
-  $('regenerate').addEventListener('click', () => { if (!confirm('Write a fresh script from the same idea? Your edits to this script will be replaced.')) return; generate(); });
+  $('regenerate').addEventListener('click', () => { if (!confirm('Write a fresh script from the same idea? Your edits to this script will be replaced.')) return; P.genPartial = null; generate(); });
 
   // ---------- step 2: script ----------
   let beatsStale = false;
@@ -382,9 +441,11 @@
     $('f-pinned').value = pkg.pinnedComment; $('f-thumb').value = pkg.thumbnailText;
   }
   function updateScriptMeta() {
-    const n = S.wordCount($('script').value);
-    const b = $('word-badge'); b.textContent = n + ' words'; b.className = 'badge ' + (n >= 80 && n <= 110 ? 'ok' : 'warn');
-    $('script-est').textContent = '≈ ' + Math.round(n / 2.5) + ' s spoken' + (n > 140 ? ' · too long for 60 s' : n < 80 ? ' · aim for 80–110 words' : '');
+    const n = S.wordCount($('script').value); const L = S.lengthOf(lengthId()); const [lo, hi] = L.words;
+    const b = $('word-badge'); b.textContent = n + ' words'; b.className = 'badge ' + (n >= lo * 0.9 && n <= hi * 1.1 ? 'ok' : 'warn');
+    const sec = n / 2.5; const cap = L.sec === 60 ? 60 : R.MAX_LONG;
+    $('script-est').textContent = '≈ ' + (sec >= 90 ? fmt(sec) + ' min' : Math.round(sec) + ' s') + ' spoken · target ' + L.label + ' (' + lo + '–' + hi + ' words)'
+      + (sec > cap ? ' · too long for ' + (cap === 60 ? '60 s' : '20 min') : n < lo * 0.9 ? ' · a bit short' : n > hi * 1.25 ? ' · a bit long' : '');
   }
   $('script').addEventListener('input', () => {
     P.pkg.script = $('script').value; updateScriptMeta(); beatsStale = true; $('rebuild-beats').classList.remove('hidden'); markVideoStale(); persist();
@@ -418,10 +479,13 @@
     const build = () => {
       built = true;
       box.innerHTML = '<canvas class="sc-prev" width="135" height="240" aria-label="Scene preview"></canvas><div class="sc-fields">'
-        + '<label>Setting<select data-f="setting"></select></label><label>Pose<select data-f="pose"></select></label>'
+        + '<label class="sc-pickrow">Find a keyword, prop or action<span class="sc-pick"><input class="sc-find" type="search" list="kw-list" placeholder="e.g. pencil, piggy bank, running, 🍕 pizza" autocomplete="off"><button type="button" class="chip sc-find-go">Use</button></span></label>'
+        + '<label>Setting<select data-f="setting"></select></label><label>Action<select data-f="pose"></select></label>'
         + '<label>Emotion<select data-f="emotion"></select></label><label>Camera<select data-f="camera"></select></label>'
         + '<label>Props<span class="sc-props"><select data-p="0"></select><select data-p="1"></select><select data-p="2"></select></span></label>'
         + '<label>Callout<input data-f="callout" type="text" maxlength="28" placeholder="e.g. 2:07 AM (optional)"></label>'
+        + '<label>Keywords<input class="sc-kw" type="text" maxlength="80" placeholder="words the scene must show, comma separated"></label>'
+        + '<p class="small sc-match"></p>'
         + '<label class="sc-two"><input type="checkbox" data-f="count"> Two characters (conversation)</label>'
         + '<div class="sc-actions"><button type="button" class="chip sc-regen">↻ Regenerate scene</button><button type="button" class="chip sc-same"' + (i ? '' : ' disabled') + '>Same as previous</button></div></div>';
       const fill = (sel, list, none) => { if (none) sel.add(new Option('— none —', '')); list.forEach(([id, l]) => sel.add(new Option(l, id))); };
@@ -433,8 +497,13 @@
         const sc = b.scene;
         box.querySelectorAll('[data-f]').forEach((el) => { const f = el.dataset.f; if (f === 'count') el.checked = sc.count === 2; else el.value = sc[f] || ''; });
         box.querySelectorAll('[data-p]').forEach((el) => { el.value = sc.props[Number(el.dataset.p)] || ''; });
-        try { SC.drawPreview(cv, sc, P.look.preset, 1.6); } catch (_) { /* ignore */ }
-        sum();
+        box.querySelector('.sc-kw').value = (sc.keywords || []).join(', ');
+        const m = SC.matchScore ? SC.matchScore(b.text, sc) : null; const mEl = box.querySelector('.sc-match');
+        mEl.textContent = m && m.score != null ? 'Keyword match ' + m.score + '%' + (m.missing.length ? ' · not shown: ' + m.missing.slice(0, 3).join(', ') : '') : 'No concrete keyword in this line — any scene works.';
+        mEl.className = 'small sc-match ' + (m && m.score != null && m.score < 50 ? 'warn' : 'muted');
+        const draw = () => { try { SC.drawPreview(cv, sc, P.look.preset, 1.6); } catch (_) { /* ignore */ } };
+        draw(); if (SC.preload) SC.preload(SC.iconsFor(sc)).then(draw, () => {});
+        sum(); paintBeatBadge(li, b);
       };
       const changed = (ev) => {
         const raw = Object.assign({}, b.scene); const f = ev && ev.target && ev.target.dataset.f;
@@ -444,7 +513,26 @@
         b.scene.edited = true;
         markVideoStale(); persist(); paint();
       };
-      box.querySelectorAll('select, input').forEach((el) => el.addEventListener('change', changed));
+      box.querySelectorAll('select, input[data-f]').forEach((el) => el.addEventListener('change', changed));
+      box.querySelector('.sc-kw').addEventListener('change', (ev) => {
+        const raw = Object.assign({}, b.scene, { keywords: ev.target.value.split(',').map((x) => x.trim()).filter(Boolean) });
+        b.scene = SC.normalizeScene(raw, b.text, b.step, i > 0 ? P.pkg.beats[i - 1].scene : null, 'pose'); b.scene.edited = true; markVideoStale(); persist(); paint();
+      });
+      const find = box.querySelector('.sc-find');
+      const usePick = () => {
+        const r = resolvePick(find.value); if (!r) { toast('No match for “' + find.value + '”. Try a simpler word.', true); return; }
+        const prev = i > 0 ? P.pkg.beats[i - 1].scene : null; const cur = Object.assign({}, b.scene);
+        let sc;
+        if (r.kind === 'prop') { cur.props = [r.id].concat((cur.props || []).filter((x) => x !== r.id)).slice(0, 3); if (cur.setting === 'keyword-card') cur.setting = ''; sc = SC.normalizeScene(cur, b.text, b.step, prev, 'pose'); if (!sc.props.includes(r.id)) sc.props = [r.id].concat(sc.props).slice(0, 3); }
+        else if (r.kind === 'action') { const a = SC.ACTIONS[r.id]; cur.pose = r.id; if (a && a.ok && !a.ok.includes(cur.setting)) cur.setting = a.ok[0]; sc = SC.normalizeScene(cur, b.text, b.step, prev, 'pose'); sc.pose = r.id; if (a && a.ok && !a.ok.includes(sc.setting)) sc.setting = a.ok[0]; }
+        else { sc = SC.normalizeScene(Object.assign(cur, { icon: r.id, iconWord: r.word }), b.text, b.step, prev, 'card'); Object.assign(sc, { setting: 'keyword-card', pose: 'standing-thinking', icon: r.id, iconWord: r.word }); }
+        sc.keywords = Array.from(new Set([r.word].concat(sc.keywords || []))).slice(0, 6);
+        b.scene = sc; b.scene.edited = true; find.value = ''; markVideoStale(); persist(); paint();
+        toast('Scene now shows: ' + r.label);
+      };
+      box.querySelector('.sc-find-go').addEventListener('click', usePick);
+      find.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); usePick(); } });
+      find.addEventListener('change', () => { if (pickIndex().has(find.value)) usePick(); });
       box.querySelector('[data-f=callout]').addEventListener('input', () => { b.scene.callout = box.querySelector('[data-f=callout]').value.slice(0, 28); markVideoStale(); persist(); });
       box.querySelector('.sc-same').addEventListener('click', () => { if (!i) return; b.scene = JSON.parse(JSON.stringify(P.pkg.beats[i - 1].scene)); markVideoStale(); persist(); paint(); });
       const regen = box.querySelector('.sc-regen');
@@ -467,16 +555,67 @@
       if (open && !built) build();
     });
   }
+  // Searchable picker over library props, actions and the bundled emoji (keyword icon cards).
+  let pickMap = null;
+  function pickIndex() {
+    if (pickMap) return pickMap;
+    pickMap = new Map(); const dl = document.createElement('datalist'); dl.id = 'kw-list';
+    const add = (label, v) => { if (pickMap.has(label)) return; pickMap.set(label, v); dl.appendChild(new Option(label)); };
+    (SC.PROPS || []).forEach(([id, l]) => add('Prop · ' + l, { kind: 'prop', id, word: l.toLowerCase(), label: l }));
+    (SC.POSES || []).forEach(([id, l]) => add('Action · ' + l, { kind: 'action', id, word: l.toLowerCase(), label: l }));
+    (VTS.EMOJI_DATA || []).forEach(([file, label, tags, group]) => { if (group === 2) return; add('Icon · ' + label, { kind: 'icon', id: file, word: label.split(/\s+/).pop(), label, tags }); });
+    document.body.appendChild(dl);
+    return pickMap;
+  }
+  function resolvePick(q) {
+    q = String(q || '').trim(); if (!q) return null; const map = pickIndex();
+    if (map.has(q)) return map.get(q);
+    const low = q.toLowerCase().replace(/^(prop|action|icon)\s*·\s*/, '');
+    const all = Array.from(map.values());
+    const exact = all.find((v) => v.kind !== 'icon' && v.label.toLowerCase() === low) || all.find((v) => v.label.toLowerCase() === low);
+    if (exact) return exact;
+    const lx = SC.lexLookup && SC.lexLookup(low.split(/\s+/).pop());
+    if (lx && lx.e.p && lx.e.p.length) { const id = lx.e.p[0]; const hit = all.find((v) => v.kind === 'prop' && v.id === id); if (hit) return Object.assign({}, hit, { word: low }); }
+    if (lx && lx.e.a) { const hit = all.find((v) => v.kind === 'action' && v.id === lx.e.a); if (hit) return Object.assign({}, hit, { word: low }); }
+    const f = SC.emojiForWord && SC.emojiForWord(low.split(/\s+/).pop());
+    if (f) { const hit = all.find((v) => v.kind === 'icon' && v.id === f); return Object.assign({}, hit || { kind: 'icon', id: f, label: low }, { word: low }); }
+    return all.find((v) => v.kind !== 'icon' && v.label.toLowerCase().includes(low)) || all.find((v) => v.kind === 'icon' && (' ' + v.label + ' ' + (v.tags || '') + ' ').includes(' ' + low + ' ')) || null;
+  }
+  function paintBeatBadge(li, b) {
+    const el = li.querySelector('.b-match'); if (!el) return;
+    const m = b.scene && SC.matchScore ? SC.matchScore(b.text, b.scene) : null;
+    if (!m || m.score == null) { el.textContent = 'no keyword'; el.className = 'b-match'; li.classList.remove('low'); return; }
+    const low = m.score < 50; el.textContent = (low ? '⚠ ' : '✓ ') + 'match ' + m.score + '%' + (low && m.missing.length ? ' · missing “' + m.missing[0] + '”' : '');
+    el.className = 'b-match ' + (low ? 'low' : 'ok'); li.classList.toggle('low', low);
+  }
+  function paintMatchSummary() {
+    const el = $('match-summary'); if (!scenesOn() || !P.pkg || !SC.matchScore) { el.textContent = ''; return; }
+    const ms = P.pkg.beats.map((b) => (b.scene ? SC.matchScore(b.text, b.scene) : null)).filter((m) => m && m.score != null);
+    if (!ms.length) { el.textContent = ''; return; }
+    const avg = Math.round(ms.reduce((a, m) => a + m.score, 0) / ms.length); const low = ms.filter((m) => m.score < 50).length;
+    el.textContent = 'Keyword match: ' + avg + '% average' + (low ? ' · ' + low + ' beat' + (low > 1 ? 's' : '') + ' flagged ⚠ — open 🎬 and use “Find a keyword”.' : ' · every keyword is shown.');
+    el.className = 'small ' + (low ? 'warn-text' : 'ok-text');
+  }
+  let beatSection = 0;
   function renderBeats() {
     const list = $('beats'); list.innerHTML = '';
     const scenes = scenesOn();
     if (scenes) ensureScenes();
     $('scene-hint').classList.toggle('hidden', !scenes);
+    const secs = P.pkg.sections && P.pkg.sections.length > 1 ? P.pkg.sections : null;
+    const sr = $('beat-section-row'); sr.classList.toggle('hidden', !secs);
+    if (secs) {
+      const sel = $('beat-section'); if (beatSection >= secs.length) beatSection = 0;
+      if (sel.options.length !== secs.length || sel.dataset.pkg !== P.pkg.title) { sel.innerHTML = ''; secs.forEach((x, k) => sel.add(new Option('Part ' + (k + 1) + ' · ' + x.title, k))); sel.dataset.pkg = P.pkg.title; }
+      sel.value = beatSection; $('beat-section-info').textContent = secs.length + ' parts · ' + P.pkg.beats.length + ' beats';
+    }
+    paintMatchSummary();
     P.pkg.beats.forEach((b, i) => {
+      if (secs && (b.section || 0) !== beatSection) return;
       const li = document.createElement('li'); li.className = 'beat s' + b.step;
       li.innerHTML = '<select aria-label="Section"></select><input class="b-text" type="text" aria-label="Caption text"><button type="button" class="b-del" aria-label="Delete beat">×</button>'
         + '<div class="b-row"><label>Weight <input class="b-weight" type="number" min="0.5" max="12" step="0.5" inputmode="decimal"></label><label style="flex:1">Emphasis <input class="b-emph" type="text" placeholder="key word"></label></div>'
-        + (scenes ? '<button type="button" class="b-scene-btn" aria-expanded="false"></button><div class="b-scene hidden"></div>'
+        + (scenes ? '<span class="b-match"></span><button type="button" class="b-scene-btn" aria-expanded="false"></button><div class="b-scene hidden"></div>'
           : '<input class="b-visual" type="text" aria-label="Visual idea" placeholder="🎞 b-roll / visual idea">');
       const sel = li.querySelector('select'); STEP_LABELS.forEach((l, k) => sel.add(new Option(l, k))); sel.value = b.step;
       const tx = li.querySelector('.b-text'); tx.value = b.text;
@@ -484,9 +623,10 @@
       const em = li.querySelector('.b-emph'); em.value = b.emphasis || '';
       sel.addEventListener('change', () => { b.step = Number(sel.value); li.className = 'beat s' + b.step; markVideoStale(); persist(); });
       tx.addEventListener('input', () => { b.text = tx.value; markVideoStale(); persist(); });
+      tx.addEventListener('change', () => { if (scenes) { paintBeatBadge(li, b); paintMatchSummary(); } });
       w.addEventListener('input', () => { b.weight = Math.max(0.5, Math.min(12, Number(w.value) || 1)); markVideoStale(); persist(); });
       em.addEventListener('input', () => { b.emphasis = em.value.trim(); markVideoStale(); persist(); });
-      if (scenes) sceneEditor(li, b, i);
+      if (scenes) { sceneEditor(li, b, i); paintBeatBadge(li, b); }
       else {
         const vi = li.querySelector('.b-visual'); vi.value = b.visual ? '🎞 ' + b.visual : '';
         vi.addEventListener('input', () => { b.visual = vi.value.replace(/^🎞\s*/, ''); persist(); });
@@ -496,6 +636,7 @@
     });
     paintVisualSegs();
   }
+  $('beat-section').addEventListener('change', (e) => { beatSection = Number(e.target.value) || 0; renderBeats(); });
   function paintVisualSegs() {
     const v = P && P.look && P.look.visual === 'classic' ? 'classic' : 'scenes';
     document.querySelectorAll('.vis-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
@@ -509,9 +650,12 @@
   }));
   $('add-beat').addEventListener('click', () => {
     const last = P.pkg.beats[P.pkg.beats.length - 1];
-    P.pkg.beats.push({ text: '', weight: 3, step: last ? last.step : 4, emphasis: '', visual: '', scene: last && last.scene ? JSON.parse(JSON.stringify(last.scene)) : null });
+    const secs = P.pkg.sections && P.pkg.sections.length > 1;
+    const inSec = secs ? P.pkg.beats.filter((b) => (b.section || 0) === beatSection) : null; const ref = secs ? inSec[inSec.length - 1] || last : last;
+    const nb = { text: '', weight: 3, step: ref ? ref.step : 4, emphasis: '', visual: '', scene: ref && ref.scene ? JSON.parse(JSON.stringify(ref.scene)) : null };
+    if (secs) { nb.section = beatSection; nb.chapter = ref ? ref.chapter : ''; P.pkg.beats.splice(ref ? P.pkg.beats.indexOf(ref) + 1 : P.pkg.beats.length, 0, nb); } else P.pkg.beats.push(nb);
     persist(); renderBeats();
-    const inputs = $('beats').querySelectorAll('.b-text'); inputs[inputs.length - 1].focus();
+    const inputs = $('beats').querySelectorAll('.b-text'); if (inputs.length) inputs[inputs.length - 1].focus();
   });
   $('f-title').addEventListener('input', (e) => { P.pkg.title = e.target.value; $('project-name').textContent = projectTitle(P); persist(); });
   $('f-description').addEventListener('input', (e) => { P.pkg.description = e.target.value; persist(); });
@@ -543,11 +687,14 @@
       const names = { gemini: 'AI voice' + (v.ttsVoice ? ' · ' + v.ttsVoice : ''), mic: 'Your voice', 'tts-file': 'Android voice', 'tts-mic': 'Device voice (via mic)', import: 'Imported audio', silent: 'No voice (silent)' };
       $('take-badge').textContent = names[v.source] || 'Voice';
       $('take-badge').className = 'badge ok';
-      $('take-audio').classList.toggle('hidden', !v.blob);
-      if (v.blob) setMedia($('take-audio'), v.blob);
+      const vb = voiceBlob(v) || (v.parts && v.parts[0] && v.parts[0].blob) || null;
+      $('take-audio').classList.toggle('hidden', !vb);
+      if (vb) setMedia($('take-audio'), vb);
       $('ai-regenerate').classList.toggle('hidden', v.source !== 'gemini');
       $('take-info').textContent = (v.source === 'gemini' && v.ttsModel ? 'Gemini ' + v.ttsModel + ' · ' : '') + fmt(v.duration) + (v.source === 'silent' ? ' of captions at a relaxed pace. Record a voiceover in the YouTube app after uploading.' : ' · silences at the start and end are trimmed when rendering')
-        + (v.duration > MAX_VOICE_SEC ? ' · Longer than ~59 s, so the end will be cut to keep the Short under 60 s.' : '');
+        + (v.parts ? ' · ' + v.parts.length + ' parts' : '')
+        + (v.duration > maxVoice() ? (isShortLen() ? ' · Longer than ~59 s, so the end will be cut to keep the Short under 60 s (pick a longer video length in step 1 to keep it all).' : ' · Longer than 20 min, so the end will be cut.') : '')
+        + (!isShortLen() && aspectOf() === '9:16' && v.duration > 178 ? ' · Over 3 min: YouTube will treat this vertical video as a regular video, not a Short.' : '');
     }
     paintAiVoices();
     // Honest TTS notes.
@@ -567,12 +714,24 @@
     }
     paintStepper();
   }
+  // Long voices are kept as parts (per section / chunk); playback uses a lazily joined Blob.
+  const joinedVoice = new WeakMap();
+  function voiceBlob(v) {
+    if (!v) return null; if (v.blob) return v.blob; if (!v.parts || !v.parts.length) return null;
+    if (joinedVoice.has(v.parts)) return joinedVoice.get(v.parts);
+    const pcm = v.parts.every((x) => x.pcm && x.rate === v.parts[0].rate);
+    const b = pcm ? wavFromPcm(v.parts.map((x) => x.pcm), v.parts[0].rate, v.parts[0].channels || 1) : v.parts.length === 1 ? v.parts[0].blob : null;
+    if (b) joinedVoice.set(v.parts, b);
+    return b;
+  }
   async function setVoice(blob, source, duration, meta) {
     try {
       let dur = duration || 0;
-      if (blob) { const buf = await R.decodeBlob(blob); dur = buf.duration; if (R.speechBounds(buf).silent && source !== 'silent') toast('That recording sounds silent. Check the mic and try again.', true); }
+      if (blob && blob.size > 12 * 1024 * 1024) { dur = await mediaDuration(blob); if (!dur) { const buf = await R.decodeBlob(blob); dur = buf.duration; } }
+      else if (blob) { const buf = await R.decodeBlob(blob); dur = buf.duration; if (R.speechBounds(buf).silent && source !== 'silent') toast('That recording sounds silent. Check the mic and try again.', true); }
+      else if (meta && meta.parts) dur = meta.parts.reduce((a, x) => a + (x.duration || 0), 0);
       P.voice = Object.assign({ blob: blob || null, source, duration: dur, mime: blob ? blob.type : '', createdAt: new Date().toISOString() }, meta || {});
-      voiceBuffer = null; markVideoStale(); persist(true); renderVoice();
+      voiceBuffer = null; P.renderState = null; markVideoStale(); persist(true); renderVoice();
       setStatus('voice-status', 'Voice ready (' + fmt(dur) + '). Next: render your video.', 'ok');
     } catch (err) {
       setStatus('voice-status', 'Could not read that audio: ' + (err && err.message || err || 'unsupported format'), 'err');
@@ -582,13 +741,13 @@
   $('import-audio').addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0]; e.target.value = '';
     if (!f) return;
-    if (f.size > 60 * 1024 * 1024) { setStatus('voice-status', 'That file is too big (max 60 MB).', 'err'); return; }
+    if (f.size > 300 * 1024 * 1024) { setStatus('voice-status', 'That file is too big (max 300 MB).', 'err'); return; }
     setStatus('voice-status', 'Reading audio…');
     await setVoice(f.slice(0, f.size, f.type || 'audio/mpeg'), 'import');
   });
   $('opt-silent').addEventListener('click', () => {
     const words = S.wordCount(P.pkg ? P.pkg.script : '');
-    setVoice(null, 'silent', Math.min(MAX_VOICE_SEC, Math.max(8, words / (wpm() / 60))));
+    setVoice(null, 'silent', Math.min(maxVoice(), Math.max(8, words / (wpm() / 60))));
   });
   let speaking = false;
   $('tts-preview').addEventListener('click', async () => {
@@ -682,8 +841,22 @@
     aiBusy = true; const btns = [$('ai-generate'), $('ai-regenerate')]; btns.forEach((b) => { b.disabled = true; });
     const label = $('ai-generate').querySelector('span'); const old = label.textContent;
     const st = ttsStyle(); const voice = ttsVoice();
-    setStatus('voice-status', 'Creating the ' + voice + ' voice with Gemini… (about 10–30 s)', 'live');
+    const long = !isShortLen() && (S.wordCount(P.pkg.script) > 320 || (P.pkg.sections && P.pkg.sections.length > 1));
+    setStatus('voice-status', 'Creating the ' + voice + ' voice with Gemini… ' + (long ? '(long script: generated in parts, each saved as it finishes)' : '(about 10–30 s)'), 'live');
     try {
+      if (long) {
+        // Chunk per section/paragraph (≤ ~150 words), cache each finished chunk in IndexedDB so a failure never restarts everything.
+        const units = []; const secs = P.pkg.sections && P.pkg.sections.length ? P.pkg.sections : [{ title: '', text: P.pkg.script }];
+        secs.forEach((sec, k) => { const paras = String(sec.text).split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean); paras.forEach((para) => G.ttsChunks(para, 150).forEach((t) => units.push({ text: t, section: k }))); });
+        const t0 = Date.now();
+        const r = await G.speechChunks(units.map((u) => u.text), { voice, style: st.style, prefix: st.prefix, cache: DB.cache,
+          onProgress: (i, n, cached) => { label.textContent = 'Voice part ' + Math.min(n, i + (cached ? 0 : 1)) + ' / ' + n + '…'; const el = (Date.now() - t0) / 1000; setStatus('voice-status', 'Creating the voice: ' + i + ' of ' + n + ' parts done' + (i > 1 && i < n ? ' · about ' + fmt(el / i * (n - i)) + ' left' : '') + '. Finished parts are cached — if it stops, tap Generate again to continue.', 'live'); },
+          onWait: (ms, n, err) => setStatus('voice-status', (err && err.status === 429 ? 'Gemini voice quota/rate limit — ' : 'Retrying after an error — ') + 'waiting ' + Math.round(ms / 1000) + ' s (attempt ' + (n + 1) + ')…', 'live') });
+        const parts = r.parts.map((x, k) => ({ pcm: x.pcm, rate: x.rate, channels: x.channels || 1, section: units[k].section, duration: x.pcm.size / (2 * (x.channels || 1) * x.rate) }));
+        await setVoice(null, 'gemini', 0, { ttsVoice: voice, ttsModel: r.model, ttsStyle: st.style, parts });
+        setStatus('voice-status', 'AI voice ready (' + voice + ', ' + r.model + ', ' + parts.length + ' parts, ' + fmt(P.voice.duration) + ').', 'ok');
+        return;
+      }
       const r = await G.generateSpeech(P.pkg.script, { voice, style: st.style, prefix: st.prefix,
         onProgress: (i, n) => { label.textContent = n > 1 ? 'Generating part ' + (i + 1) + ' / ' + n + '…' : 'Generating…'; } });
       await setVoice(r.blob, 'gemini', 0, { ttsVoice: voice, ttsModel: r.model, ttsStyle: st.style });
@@ -695,27 +868,58 @@
   $('ai-generate').addEventListener('click', generateAiVoice);
   $('ai-regenerate').addEventListener('click', generateAiVoice);
 
-  // Teleprompter
+  // Teleprompter (long videos: record section by section, retake any section, pause/resume)
   let pState = null;
+  const pSectioned = () => !!(P.pkg && !isShortLen() && P.pkg.sections && P.pkg.sections.length > 1);
+  function pText() { return pState && pState.sections ? pState.sections[pState.idx].text : P.pkg.script; }
+  function paintPrompterText() {
+    const box = $('p-text'); box.innerHTML = '';
+    const txt = pText();
+    const sentences = txt.match(/[^.!?…]+[.!?…]*["”’)]?\s*/g) || [txt];
+    sentences.forEach((s) => { const span = document.createElement('span'); span.textContent = s; if (/^\s*(step\s*)?(one|two|three|first|second|third|1|2|3)\b/i.test(s)) span.className = 's'; box.appendChild(span); });
+    $('p-scroll').scrollTop = 0;
+    const secs = pState.sections;
+    $('p-sections').classList.toggle('hidden', !secs);
+    if (secs) {
+      const k = pState.idx; const done = pState.takes.filter(Boolean).length;
+      $('p-sec-label').innerHTML = 'Part ' + (k + 1) + ' / ' + secs.length + ' · ' + esc(secs[k].title) + (pState.takes[k] ? ' <span class="done">✓ recorded</span>' : '') + ' <span class="muted">(' + done + ' done)</span>';
+      $('p-prev').disabled = k === 0 || !!pState.rec; $('p-next').disabled = k === secs.length - 1 || !!pState.rec;
+      $('p-finish').classList.toggle('hidden', !done || !!pState.rec);
+    }
+  }
+  function paintPrompterButtons() {
+    const k = pState.idx; const have = pState.sections ? pState.takes[k] : pState.blob;
+    const recOn = !!pState.rec;
+    $('p-rec').classList.toggle('hidden', !!have && !recOn);
+    $('p-pause').classList.toggle('hidden', !recOn);
+    $('p-retake').classList.toggle('hidden', !have || recOn);
+    $('p-use').classList.toggle('hidden', !have || recOn);
+    const a = $('p-audio'); a.classList.toggle('hidden', !have || recOn); setMedia(a, have && !recOn ? have : null);
+    if (pState.sections) {
+      const last = pState.idx === pState.sections.length - 1; const all = pState.takes.every(Boolean);
+      $('p-use').textContent = all ? 'Use all ' + pState.sections.length + ' parts' : last ? 'Finish' : 'Next part ›';
+    } else $('p-use').textContent = 'Use this take';
+    $('p-time').textContent = fmt(pState.sections ? pState.durs[k] || 0 : pState.dur || 0);
+  }
   function openPrompter() {
     if (!P.pkg) return;
-    const box = $('p-text'); box.innerHTML = '';
-    const sentences = P.pkg.script.match(/[^.!?…]+[.!?…]*["”’)]?\s*/g) || [P.pkg.script];
-    sentences.forEach((s) => { const span = document.createElement('span'); span.textContent = s; if (/^\s*(step\s*)?(one|two|three|first|second|third|1|2|3)\b/i.test(s)) span.className = 's'; box.appendChild(span); });
+    pState = { blob: null, idx: 0 };
+    if (pSectioned()) { pState.sections = P.pkg.sections; pState.takes = new Array(P.pkg.sections.length).fill(null); pState.durs = []; }
     $('p-speed').value = wpm();
-    $('p-scroll').scrollTop = 0;
+    $('p-max').textContent = ' / ' + fmt(pState.sections ? maxVoice() : Math.min(maxVoice(), isShortLen() ? 60 : maxVoice()));
     $('p-time').textContent = '0:00'; $('p-dot').classList.remove('on');
-    $('p-rec').classList.remove('on'); $('p-rec').classList.remove('hidden');
-    $('p-retake').classList.add('hidden'); $('p-use').classList.add('hidden'); $('p-audio').classList.add('hidden');
-    $('p-hint').textContent = 'Tap record, wait for 3-2-1, then read at a relaxed pace. Tap the text to pause scrolling.';
+    $('p-rec').classList.remove('on');
+    paintPrompterText(); paintPrompterButtons();
+    $('p-hint').textContent = pState.sections ? 'Long video: record one part at a time. You can pause, retake any part, and come back later — finished parts are kept while this screen is open.'
+      : 'Tap record, wait for 3-2-1, then read at a relaxed pace. Tap the text to pause scrolling.';
     $('prompter').classList.remove('hidden');
     history.pushState(null, '', '#prompter');
-    pState = { blob: null };
   }
   function closePrompter(fromPop) {
     if (!pState) return;
     if (pState.rec) { pState.rec.stop(); }
     cancelAnimationFrame(pState.raf); clearInterval(pState.timer); clearTimeout(pState.countT);
+    N.keepAwake(false);
     $('p-count').classList.add('hidden');
     $('prompter').classList.add('hidden');
     setMedia($('p-audio'), null);
@@ -723,9 +927,17 @@
     if (!fromPop && location.hash === '#prompter') history.back();
   }
   window.addEventListener('popstate', () => { if (pState) closePrompter(true); });
-  $('p-close').addEventListener('click', () => closePrompter());
+  $('p-close').addEventListener('click', () => { if (pState && pState.takes && pState.takes.some(Boolean) && !confirm('Close the teleprompter? Recorded parts that you haven’t used will be discarded.')) return; closePrompter(); });
   $('p-speed').addEventListener('input', (e) => save(K.wpm, Number(e.target.value)));
-  $('p-scroll').addEventListener('click', () => { if (pState && pState.rec) { pState.paused = !pState.paused; toast(pState.paused ? 'Scrolling paused' : 'Scrolling'); } });
+  $('p-scroll').addEventListener('click', () => { if (pState && pState.rec && !pState.recPaused) { pState.paused = !pState.paused; toast(pState.paused ? 'Scrolling paused' : 'Scrolling'); } });
+  const goSection = (d) => { if (!pState || !pState.sections || pState.rec) return; pState.idx = Math.max(0, Math.min(pState.sections.length - 1, pState.idx + d)); paintPrompterText(); paintPrompterButtons(); };
+  $('p-prev').addEventListener('click', () => goSection(-1));
+  $('p-next').addEventListener('click', () => goSection(1));
+  $('p-pause').addEventListener('click', () => {
+    if (!pState || !pState.rec) return; const rec = pState.rec.rec;
+    if (!pState.recPaused) { try { rec.pause(); } catch (_) { /* ignore */ } pState.recPaused = true; pState.pausedAt = performance.now(); pState.paused = true; $('p-pause').textContent = '● Resume'; $('p-dot').classList.remove('on'); $('p-hint').textContent = 'Paused. Tap Resume to keep going (the recording continues in the same take).'; }
+    else { try { rec.resume(); } catch (_) { /* ignore */ } pState.recPaused = false; pState.pausedMs += performance.now() - pState.pausedAt; pState.paused = false; pState.last = performance.now(); $('p-pause').textContent = '❚❚ Pause'; $('p-dot').classList.add('on'); $('p-hint').textContent = 'Recording… tap ■ when you finish this ' + (pState.sections ? 'part' : 'take') + '.'; }
+  });
   $('p-rec').addEventListener('click', async () => {
     if (!pState) return;
     if (pState.rec) { stopTake(); return; }
@@ -736,13 +948,15 @@
     $('p-rec').disabled = true;
     for (const n of [3, 2, 1]) { cnt.textContent = n; await new Promise((r) => { pState.countT = setTimeout(r, 750); }); if (!pState) { stream.getTracks().forEach((t) => t.stop()); return; } }
     cnt.classList.add('hidden'); $('p-rec').disabled = false;
-    pState.rec = recorder(stream); pState.rec.start();
-    pState.t0 = performance.now(); pState.paused = false; pState.scrollPos = 0; pState.last = performance.now();
-    $('p-rec').classList.add('on'); $('p-rec').setAttribute('aria-label', 'Stop recording'); $('p-dot').classList.add('on');
-    $('p-hint').textContent = 'Recording… tap ■ when you finish.';
-    $('p-retake').classList.add('hidden'); $('p-use').classList.add('hidden'); $('p-audio').classList.add('hidden');
+    pState.rec = recorder(stream); pState.rec.start(); N.keepAwake(true);
+    pState.t0 = performance.now(); pState.pausedMs = 0; pState.recPaused = false; pState.paused = false; pState.scrollPos = 0; pState.last = performance.now();
+    $('p-rec').classList.add('on'); $('p-rec').setAttribute('aria-label', 'Stop recording'); $('p-dot').classList.add('on'); $('p-pause').textContent = '❚❚ Pause';
+    $('p-hint').textContent = 'Recording… tap ■ when you finish this ' + (pState.sections ? 'part' : 'take') + '.';
+    paintPrompterButtons(); paintPrompterText();
     const sc = $('p-scroll'); sc.scrollTop = 0;
-    const words = S.wordCount(P.pkg.script);
+    const words = S.wordCount(pText());
+    const cap = pState.sections ? maxVoice() : isShortLen() ? 60 : maxVoice();
+    const already = pState.sections ? pState.durs.reduce((x, d, j) => x + (j === pState.idx ? 0 : d || 0), 0) : 0;
     const step = (now) => {
       if (!pState || !pState.rec) return;
       const dt = (now - pState.last) / 1000; pState.last = now;
@@ -754,32 +968,51 @@
     };
     pState.raf = requestAnimationFrame(step);
     pState.timer = setInterval(() => {
-      const sec = (performance.now() - pState.t0) / 1000;
-      $('p-time').textContent = fmt(sec);
-      if (sec >= 60) { stopTake(); toast('60 seconds — perfect Short length.'); }
-    }, 200);
+      const sec = (performance.now() - pState.t0 - pState.pausedMs - (pState.recPaused ? performance.now() - pState.pausedAt : 0)) / 1000;
+      $('p-time').textContent = fmt(sec) + (pState.sections ? ' · total ' + fmt(already + sec) : '');
+      if (already + sec >= cap) { stopTake(); toast(cap === 60 ? '60 seconds — perfect Short length.' : 'Reached the 20-minute limit.'); }
+    }, 250);
   });
   async function stopTake() {
     const r = pState.rec; pState.rec = null;
-    cancelAnimationFrame(pState.raf); clearInterval(pState.timer);
+    cancelAnimationFrame(pState.raf); clearInterval(pState.timer); N.keepAwake(false);
+    const sec = (performance.now() - pState.t0 - pState.pausedMs - (pState.recPaused ? performance.now() - pState.pausedAt : 0)) / 1000; pState.recPaused = false;
     $('p-rec').classList.remove('on'); $('p-rec').setAttribute('aria-label', 'Start recording'); $('p-dot').classList.remove('on');
     const blob = await r.stop();
     if (!pState) return;
-    pState.blob = blob;
-    const a = $('p-audio'); setMedia(a, blob); a.classList.remove('hidden');
-    $('p-rec').classList.add('hidden'); $('p-retake').classList.remove('hidden'); $('p-use').classList.remove('hidden');
-    $('p-hint').textContent = 'Listen back. Happy? Tap “Use this take”.';
+    if (pState.sections) { pState.takes[pState.idx] = blob; pState.durs[pState.idx] = sec; } else { pState.blob = blob; pState.dur = sec; }
+    paintPrompterText(); paintPrompterButtons();
+    $('p-hint').textContent = pState.sections ? 'Listen back. Retake this part, or go to the next one.' : 'Listen back. Happy? Tap “Use this take”.';
   }
   $('p-retake').addEventListener('click', () => {
-    setMedia($('p-audio'), null); $('p-audio').classList.add('hidden');
-    $('p-rec').classList.remove('hidden'); $('p-retake').classList.add('hidden'); $('p-use').classList.add('hidden');
+    if (!pState) return;
+    if (pState.sections) { pState.takes[pState.idx] = null; pState.durs[pState.idx] = 0; } else pState.blob = null;
+    paintPrompterText(); paintPrompterButtons();
     $('p-scroll').scrollTop = 0; $('p-time').textContent = '0:00';
     $('p-hint').textContent = 'Tap record when ready.';
   });
   $('p-use').addEventListener('click', async () => {
+    if (!pState) return;
+    if (pState.sections) {
+      const all = pState.takes.every(Boolean); const last = pState.idx === pState.sections.length - 1;
+      if (!all && !last) { const nx = pState.takes.findIndex((t, j) => !t && j > pState.idx); pState.idx = nx >= 0 ? nx : pState.idx + 1; paintPrompterText(); paintPrompterButtons(); $('p-hint').textContent = 'Next part. Tap record when ready.'; return; }
+      await finishSections(); return;
+    }
     const blob = pState && pState.blob; closePrompter();
     if (blob) { await setVoice(blob, 'mic'); }
   });
+  $('p-finish').addEventListener('click', () => { if (pState && pState.sections && !pState.rec) finishSections(); });
+  async function finishSections() {
+    {
+      const missing = pState.takes.map((t, j) => (t ? 0 : j + 1)).filter(Boolean);
+      if (missing.length && !confirm('Part' + (missing.length > 1 ? 's ' : ' ') + missing.join(', ') + ' not recorded yet. Use only the recorded parts?')) { pState.idx = missing[0] - 1; paintPrompterText(); paintPrompterButtons(); return; }
+      const takes = pState.takes.map((b, k) => (b ? { blob: b, section: k } : null)).filter(Boolean);
+      closePrompter();
+      setStatus('voice-status', 'Reading ' + takes.length + ' parts…', 'live');
+      for (const t of takes) { try { t.duration = (await R.decodeBlob(t.blob)).duration; } catch (_) { t.duration = await mediaDuration(t.blob); } }
+      await setVoice(null, 'mic', 0, { parts: takes });
+    }
+  }
 
   // ---------- step 4: render ----------
   let pv = null; let rendering = false; let renderAbort = null;
@@ -787,24 +1020,42 @@
   async function getVoiceBuffer() {
     if (voiceBuffer) return voiceBuffer;
     const v = P.voice;
-    if (!v) return R.silentBuffer(Math.min(MAX_VOICE_SEC, Math.max(8, S.wordCount(P.pkg.script) / (wpm() / 60))));
-    if (v.source === 'silent' || !v.blob) voiceBuffer = R.silentBuffer(Math.min(MAX_VOICE_SEC, v.duration || 30));
-    else voiceBuffer = R.trimBuffer(await R.decodeBlob(v.blob), MAX_VOICE_SEC);
+    if (!v) return R.silentBuffer(Math.min(maxVoice(), Math.max(8, S.wordCount(P.pkg.script) / (wpm() / 60))));
+    if (voiceIsLong()) { // preview only the first part/section of a long voice (never decode 20 minutes at once)
+      const first = v.parts ? v.parts[0] : null;
+      const blob = first ? (first.pcm ? wavFromPcm([first.pcm], first.rate, first.channels || 1) : first.blob) : null;
+      voiceBuffer = blob ? R.trimBuffer(await R.decodeBlob(blob), 150) : R.silentBuffer(Math.min(90, v.duration || 30));
+      voiceBuffer.previewOnly = true; return voiceBuffer;
+    }
+    if (v.source === 'silent' || !v.blob) voiceBuffer = R.silentBuffer(Math.min(maxVoice(), v.duration || 30));
+    else voiceBuffer = R.trimBuffer(await R.decodeBlob(v.blob), maxVoice());
     return voiceBuffer;
   }
-  const look = () => Object.assign({}, P.look, { handle: handle() });
+  const look = () => Object.assign({}, P.look, { aspect: aspectOf(), handle: handle() });
+  function sizePreview() {
+    const a = aspectOf(); const [w, h] = R.frameSize(a, 0.5); const cv = $('preview');
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    const wrap = document.querySelector('.preview-wrap'); ['16x9', '1x1', '4x5'].forEach((k) => wrap.classList.toggle('ar-' + k, a.replace(':', 'x') === k));
+    document.querySelector('.render-layout').classList.toggle('wide', a === '16:9');
+  }
+  // Only the first section's beats when previewing part of a long voice.
+  function previewBeats(buf) {
+    if (!buf.previewOnly || !P.pkg.sections) return P.pkg.beats;
+    const first = P.pkg.beats.filter((b) => (b.section || 0) === 0); return first.length ? first : P.pkg.beats;
+  }
   async function buildPreview() {
     stopPreview();
     if (!P.pkg) return;
     try {
       const buf = await getVoiceBuffer();
-      pv = R.preview({ canvas: $('preview'), buffer: buf, beats: P.pkg.beats, look: look(), onTime: (t, d) => { $('preview-time').textContent = fmt(t) + ' / ' + fmt(d); } });
+      sizePreview();
+      pv = R.preview({ canvas: $('preview'), buffer: buf, beats: previewBeats(buf), look: look(), maxSeconds: isShortLen() ? undefined : R.MAX_LONG, onTime: (t, d) => { $('preview-time').textContent = fmt(t) + ' / ' + fmt(d) + (buf.previewOnly ? ' (part 1 preview)' : ''); } });
       try { await document.fonts.load('800 100px Montserrat'); } catch (_) { /* ignore */ }
       try { await pv.ready; } catch (_) { /* ignore */ }
-      const first = R.buildTimeline(P.pkg.beats, 0.3, 0.3 + buf.duration);
+      const first = R.buildTimeline(previewBeats(buf), 0.3, 0.3 + buf.duration);
       const stepBeat = first.find((b) => b.step === 1);
       pv.drawAt(stepBeat ? stepBeat.start + 0.9 : 1.2);
-      $('preview-time').textContent = fmt(pv.duration);
+      $('preview-time').textContent = buf.previewOnly ? 'Preview of part 1 · full video ' + fmt(P.voice.duration + R.LEAD + R.TAIL) : fmt(pv.duration);
     } catch (err) { setStatus('render-status', 'Preview failed: ' + (err && err.message || err), 'err'); }
   }
   function renderRenderPane() {
@@ -820,13 +1071,31 @@
     document.querySelectorAll('#cap-style button').forEach((b) => b.classList.toggle('on', b.dataset.v === P.look.captionStyle));
     document.querySelectorAll('#cap-case button').forEach((b) => b.classList.toggle('on', b.dataset.v === P.look.captionCase));
     paintVisualSegs(); $('opt-ai-images').checked = !!P.look.aiImages;
+    const a = aspectOf(); document.querySelectorAll('#aspect-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === a));
+    const dur = P.voice ? P.voice.duration : 0;
+    $('aspect-note').textContent = a === '9:16' ? (dur > 178 ? 'over 3 min → regular video' : 'Shorts / Reels / TikTok') : a === '16:9' ? 'classic YouTube' : a === '1:1' ? 'square feed' : 'portrait feed';
+    $('opt-quality').value = P.look.quality || 'auto';
+    const long = voiceIsLong() || (!isShortLen() && dur > LONG_RENDER_SEC);
+    $('render-note').textContent = long ? 'Long video: rendered in real time in ~75 s parts that are saved to storage as they finish, then joined into one WebM file. Keep the app open with the screen on (it stays awake). If it stops, tap Render again to resume from the last finished part.'
+      : 'Rendering happens in real time on your phone. Keep the app open and the screen on.';
     $('opt-watermark').checked = !!P.look.watermark; $('opt-progress').checked = !!P.look.progress; $('opt-format').value = P.look.format || 'auto';
     $('wm-handle').textContent = handle() ? handle() : '(set your handle in Settings)';
     $('render').disabled = rendering;
-    $('render').querySelector('span').textContent = P.voice ? (P.video ? '🎬 Render again' : '🎬 Render 1080×1920 video') : '🎙 Add a voice first';
+    const [fw, fh] = R.frameSize(a, renderScale());
+    const resumable = P.renderState && P.renderState.done && P.renderState.done.length && !P.renderState.final;
+    $('render').querySelector('span').textContent = P.voice ? (resumable ? '▶ Resume render (' + P.renderState.done.length + ' / ' + P.renderState.bounds.length + ' parts done)' : P.video ? '🎬 Render again' : '🎬 Render ' + fw + '×' + fh + ' ' + a + ' video') : '🎙 Add a voice first';
     paintResult();
     if (currentView === 'create' && P.step === 'render' && !rendering) buildPreview();
   }
+  function renderScale() {
+    const q = (P && P.look.quality) || 'auto'; const dur = P && P.voice ? P.voice.duration : 0;
+    if (q === '720' || (q === 'auto' && (voiceIsLong() || dur > 180))) return 720 / Math.min(...R.ASPECTS[aspectOf()]);
+    return 1;
+  }
+  document.querySelectorAll('#aspect-seg button').forEach((b) => b.addEventListener('click', () => {
+    if (!P || rendering) return; P.look.aspect = b.dataset.v; P.renderState = null; markVideoStale(); persist(); renderRenderPane(); paintLengthNote();
+  }));
+  $('opt-quality').addEventListener('change', (e) => { P.look.quality = e.target.value; P.renderState = null; persist(); renderRenderPane(); });
   document.querySelectorAll('#cap-style button').forEach((b) => b.addEventListener('click', () => { P.look.captionStyle = b.dataset.v; markVideoStale(); persist(); renderRenderPane(); }));
   document.querySelectorAll('#cap-case button').forEach((b) => b.addEventListener('click', () => { P.look.captionCase = b.dataset.v; markVideoStale(); persist(); renderRenderPane(); }));
   $('opt-watermark').addEventListener('change', (e) => { P.look.watermark = e.target.checked; if (e.target.checked && !handle()) toast('Set your channel handle in Settings.', true); markVideoStale(); persist(); renderRenderPane(); });
@@ -881,6 +1150,34 @@
   });
   $('render').addEventListener('click', () => startRender());
   $('render-cancel').addEventListener('click', () => { if (renderAbort) renderAbort.abort(); });
+  // Build the long voice as a disk-backed track (per-part decode; never the whole file at once when it has parts).
+  async function buildTrack(onStep) {
+    const v = P.voice; const track = new SG.AudioTrack(24000); const spans = [];
+    const cap = MAX_LONG_VOICE;
+    if (v.source === 'silent' || (!v.blob && !v.parts)) {
+      let left = Math.min(cap, v.duration || 60); while (left > 0.01) { const d = Math.min(60, left); await track.appendBuffer(R.silentBuffer(d)); left -= d; }
+    } else if (v.parts) {
+      for (let k = 0; k < v.parts.length && track.duration < cap; k++) {
+        const x = v.parts[k]; if (onStep) onStep(k, v.parts.length);
+        const blob = x.pcm ? wavFromPcm([x.pcm], x.rate, x.channels || 1) : x.blob;
+        if (k > 0 && x.section !== v.parts[k - 1].section) await track.appendBuffer(R.silentBuffer(0.45)); // breath between sections
+        const sp = await track.appendBlob(blob); spans.push({ section: x.section || 0, start: sp.start, end: sp.end });
+      }
+    } else {
+      await track.appendBlob(v.blob);
+    }
+    // section spans (video time) for chapter badges + per-section caption timing
+    let sections;
+    const nSec = P.pkg.sections ? P.pkg.sections.length : 0;
+    if (nSec > 1 && spans.length) {
+      sections = [];
+      for (let k = 0; k < nSec; k++) { const my = spans.filter((sp) => sp.section === k); sections.push(my.length ? { start: R.LEAD + my[0].start, end: R.LEAD + my[my.length - 1].end } : { start: 0, end: 0 }); }
+    } else if (nSec > 1) { // one long file: split by word share
+      const words = P.pkg.sections.map((x) => Math.max(1, S.wordCount(x.text))); const tot = words.reduce((a2, w) => a2 + w, 0);
+      const bd = await track.bounds(); let t = bd.start; sections = words.map((w) => { const d = (bd.end - bd.start) * w / tot; const sp = { start: R.LEAD + t, end: R.LEAD + t + d }; t += d; return sp; });
+    }
+    return { track, sections };
+  }
   async function startRender() {
     if (rendering || !P.pkg) return;
     if (!P.voice) { showStep('voice'); toast('Record your voice (or pick an option) first.', true); return; }
@@ -888,79 +1185,143 @@
     stopPreview();
     rendering = true; renderAbort = new AbortController();
     $('render').disabled = true; $('render-progress').classList.remove('hidden'); setStatus('render-status', '');
-    const canvas = document.createElement('canvas'); canvas.width = R.W; canvas.height = R.H; canvas.id = 'render-canvas';
+    const aspect = aspectOf(); const scale = renderScale(); const [cw, ch] = R.frameSize(aspect, scale);
+    const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch; canvas.id = 'render-canvas';
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-    $('preview-wrap-host').appendChild(canvas);
+    sizePreview(); $('preview-wrap-host').appendChild(canvas);
     let wake = null;
     N.keepAwake(true);
-    try { if (navigator.wakeLock) wake = await navigator.wakeLock.request('screen'); } catch (_) { /* ignore */ }
+    const reWake = async () => { try { if (navigator.wakeLock && document.visibilityState === 'visible') wake = await navigator.wakeLock.request('screen'); } catch (_) { /* ignore */ } };
+    await reWake(); document.addEventListener('visibilitychange', reWake);
     const t0 = Date.now();
+    const long = voiceIsLong() || (!isShortLen() && P.voice.duration > LONG_RENDER_SEC);
     try {
-      const buf = await getVoiceBuffer();
       const lk = look(); let aiNote = '';
-      if (lk.visual !== 'classic') ensureScenes();
+      if (lk.visual !== 'classic') { ensureScenes(); if (long && SC.diversify && !P.pkg.diversified) { SC.diversify(P.pkg.beats.map((b2) => b2.scene)); P.pkg.diversified = true; } }
       if (lk.visual !== 'classic' && lk.aiImages) {
         if (!getKey()) aiNote = ' AI illustrations need a Gemini key, so the built-in scenes were used.';
         else {
           const r0 = await prepareAiImages(renderAbort.signal);
           if (r0 === null) { setStatus('render-status', 'Render cancelled.'); return; }
-          const have = P.pkg.beats.some((b) => b.aiImage);
+          const have = P.pkg.beats.some((b2) => b2.aiImage);
           if (!have) { lk.aiImages = false; aiNote = ' AI illustrations weren’t available for this key (image models need billing), so the built-in animated scenes were used.'; }
         }
       } else lk.aiImages = false;
-      const res = await R.renderVideo({
-        canvas, buffer: buf, beats: P.pkg.beats, look: lk, format: P.look.format, signal: renderAbort.signal,
-        onProgress: (p, t, total) => { $('render-bar').style.width = (p * 100).toFixed(1) + '%'; $('render-label').textContent = 'Rendering… ' + Math.round(p * 100) + '% (' + fmt(t) + ' / ' + fmt(total) + ')'; },
-      });
-      if (!res) { setStatus('render-status', 'Render cancelled.'); return; }
-      if (!res.blob.size) throw new Error('The recorder produced an empty file.');
-      // Library thumbnail.
-      const th = document.createElement('canvas'); th.width = 270; th.height = 480;
-      const rr = new R.Renderer(th); const P2 = R.plan(buf);
-      rr.setup(Object.assign({}, lk, { aiImages: false, beats: P.pkg.beats, speechStart: P2.speechStart, speechEnd: P2.speechEnd, duration: P2.total }));
-      const tl = R.buildTimeline(P.pkg.beats, P2.speechStart, P2.speechEnd); const sb = tl.find((b) => b.step === 1);
-      rr.draw(sb ? sb.start + 0.9 : 1.2);
-      P.thumb = th.toDataURL('image/jpeg', 0.8);
-      P.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, frames: res.frames, fps: res.fps, avgDrawMs: res.avgDrawMs, illustrated: res.illustrated || 0, visual: res.scenes ? 'scenes' : 'classic' };
+      const bar = (p) => { $('render-bar').style.width = (p * 100).toFixed(1) + '%'; };
+      if (long) {
+        $('render-label').textContent = 'Preparing the voice track…';
+        const { track, sections } = await buildTrack((k, n) => { $('render-label').textContent = 'Preparing the voice track… part ' + (k + 1) + ' / ' + n; });
+        const res = await SG.renderLong({ canvas, track, beats: P.pkg.beats, sections, look: lk, signal: renderAbort.signal, projectId: P.id, maxSeconds: R.MAX_LONG,
+          resume: P.renderState || null,
+          onState: (st) => { P.renderState = JSON.parse(JSON.stringify(st)); persist(true); },
+          onInterrupted: () => { toast('The app went to the background — the current part will restart when you come back.', true); },
+          onProgress: (q) => {
+            bar(q.p);
+            $('render-label').textContent = q.phase === 'join' ? 'Joining ' + q.segments + ' parts into one file… ' + Math.round(q.p * 100) + '%'
+              : 'Part ' + q.segment + ' / ' + q.segments + ' · ' + Math.round(q.p * 100) + '% · about ' + fmt(q.eta) + ' left';
+          } });
+        if (!res) { setStatus('render-status', 'Render paused. Finished parts are saved — tap “Resume render” to continue.'); return; }
+        const th = thumbFrame(lk, res.duration, sections);
+        const old = P.video;
+        if (old && old.stored && old.stored.name && old.stored.name !== res.name) storeFor(old).then((st) => st.remove(old.stored.name)).catch(() => {});
+        if (res.name) {
+          const rd = await res.store.reader(res.name);
+          const inMem = res.store.kind === 'memory';
+          P.video = { blob: inMem ? rd.file : null, stored: inMem ? null : { store: res.store.kind, name: res.name }, mime: res.mime, type: 'video/webm', duration: res.duration, size: rd.size, width: res.width, height: res.height, aspect,
+            createdAt: new Date().toISOString(), renderMs: Date.now() - t0, segments: res.segments.length, visual: lk.visual === 'classic' ? 'classic' : 'scenes' };
+          storedFile = inMem ? null : rd.file || null;
+          setStatus('render-status', 'Done! ' + fmt(res.duration) + ' video rendered in ' + res.segments.length + ' parts and joined into one file.' + aiNote, 'ok');
+        } else {
+          P.video = { blob: null, parts: res.parts.map((n2, k) => ({ name: n2, k })), stored: { store: res.store.kind }, mime: res.mime, type: /mp4/.test(res.mime) ? 'video/mp4' : 'video/webm', duration: res.duration, size: 0, width: res.width, height: res.height, aspect, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, joinError: res.joinError || 'this device records MP4, which can’t be joined on-device' };
+          setStatus('render-status', 'Rendered ' + res.parts.length + ' parts, but they couldn’t be joined into one file (' + P.video.joinError + '). Save the numbered parts below and join them in any video editor (YouTube Studio’s editor or CapCut work).', 'warn');
+        }
+        P.renderState = null; P.thumb = th;
+      } else {
+        const buf = await getVoiceBuffer();
+        const res = await R.renderVideo({
+          canvas, buffer: buf, beats: P.pkg.beats, look: lk, format: P.look.format, signal: renderAbort.signal, maxSeconds: isShortLen() ? undefined : R.MAX_LONG,
+          onProgress: (p, t, total) => { bar(p); $('render-label').textContent = 'Rendering… ' + Math.round(p * 100) + '% (' + fmt(t) + ' / ' + fmt(total) + ')'; },
+        });
+        if (!res) { setStatus('render-status', 'Render cancelled.'); return; }
+        if (!res.blob.size) throw new Error('The recorder produced an empty file.');
+        const P2 = R.plan(buf, isShortLen() ? undefined : R.MAX_LONG);
+        P.thumb = thumbFrame(lk, P2.total, null, P2);
+        P.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, frames: res.frames, fps: res.fps, avgDrawMs: res.avgDrawMs, illustrated: res.illustrated || 0, visual: res.scenes ? 'scenes' : 'classic' };
+        setStatus('render-status', 'Done! Share it straight to YouTube or save it to your phone.' + aiNote, 'ok');
+      }
       persist(true);
-      setStatus('render-status', 'Done! Share it straight to YouTube or save it to your phone.' + aiNote, 'ok');
       paintResult(); paintStepper();
       setTimeout(() => $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     } catch (err) {
-      setStatus('render-status', 'Render failed: ' + (err && err.message || err), 'err');
+      setStatus('render-status', 'Render failed: ' + (err && err.message || err) + (long && P.renderState && P.renderState.done && P.renderState.done.length ? ' Finished parts are saved — tap Render to resume.' : ''), 'err');
     } finally {
       rendering = false; renderAbort = null; canvas.remove();
+      document.removeEventListener('visibilitychange', reWake);
       try { if (wake) wake.release(); } catch (_) { /* ignore */ }
       N.keepAwake(false);
       $('render').disabled = false; $('render-progress').classList.add('hidden'); $('render-bar').style.width = '0';
       renderRenderPane();
     }
   }
-  function paintResult() {
+  // Library thumbnail (first step beat), in the video's shape.
+  function thumbFrame(lk, total, sections, P2) {
+    const [tw, th] = R.frameSize(lk.aspect, 0.25);
+    const c = document.createElement('canvas'); c.width = tw; c.height = th;
+    const rr = new R.Renderer(c);
+    const ss = P2 ? P2.speechStart : R.LEAD; const se = P2 ? P2.speechEnd : total - R.TAIL;
+    rr.setup(Object.assign({}, lk, { aiImages: false, beats: P.pkg.beats, speechStart: ss, speechEnd: se, duration: total, sections }));
+    const tl = R.buildTimeline(P.pkg.beats, ss, se, sections); const sb = tl.find((b2) => b2.step === 1);
+    try { rr.draw(sb ? sb.start + 0.9 : 1.2); } catch (_) { /* ignore */ }
+    return c.toDataURL('image/jpeg', 0.8);
+  }
+  // Long renders live in app storage (OPFS / app files), not in IndexedDB.
+  let storedFile = null; const stores = {};
+  async function storeFor(v) { const kind = v.stored && v.stored.store; if (!stores[kind]) stores[kind] = await SG.openStore(kind); return stores[kind]; }
+  async function videoFile(v) {
+    if (v.blob) return v.blob;
+    if (storedFile && storedFile.__name === v.stored.name) return storedFile;
+    try { const st = await storeFor(v); const rd = await st.reader(v.stored.name); storedFile = rd.file || null; if (storedFile) storedFile.__name = v.stored.name; return storedFile; } catch (_) { return null; }
+  }
+  async function paintResult() {
     const v = P && P.video;
     $('result-card').classList.toggle('hidden', !v);
+    $('result-parts').classList.add('hidden');
     if (!v) { setMedia($('result-video'), null); return; }
-    setMedia($('result-video'), v.blob);
     const ext = /mp4/.test(v.type) ? 'MP4' : 'WebM';
     $('result-badge').textContent = ext + ' · ' + fmt(v.duration);
-    $('result-info').textContent = v.width + '×' + v.height + ' · ' + fmtSize(v.size) + ' · ' + (v.mime || v.type) + (v.stale ? ' · You changed things since this render — tap “Render again”.' : '');
+    $('result-info').textContent = v.width + '×' + v.height + (v.aspect ? ' (' + v.aspect + ')' : '') + (v.size ? ' · ' + fmtSize(v.size) : '') + ' · ' + (v.mime || v.type) + (v.segments ? ' · ' + v.segments + ' parts joined' : '') + (v.stale ? ' · You changed things since this render — tap “Render again”.' : '');
+    if (v.parts) {
+      setMedia($('result-video'), null);
+      $('result-parts').classList.remove('hidden'); $('parts-note').textContent = 'Your video is in ' + v.parts.length + ' numbered parts (couldn’t join on this device: ' + v.joinError + '). Save each one:';
+      const list = $('parts-list'); list.innerHTML = '';
+      v.parts.forEach((pt, k) => { const b2 = document.createElement('button'); b2.type = 'button'; b2.className = 'chip'; b2.textContent = '💾 Part ' + (k + 1); b2.addEventListener('click', async () => { try { const st = await storeFor(v); const r = await SG.exportStored(st, pt.name, fileName(' part ' + String(k + 1).padStart(2, '0')), 'save'); toast('Saved to ' + r.where); } catch (err) { toast('Could not save: ' + (err && err.message || err), true); } }); list.appendChild(b2); });
+      return;
+    }
+    const f = await videoFile(v);
+    if (P && P.video === v) setMedia($('result-video'), f);
   }
-  function fileName() {
+  function fileName(suffix) {
     const v = P.video; const ext = /mp4/.test(v.type) ? 'mp4' : 'webm';
     const slug = (P.pkg.title || 'short').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'short';
-    return 'VoiceToShort-' + slug + '-' + new Date().toISOString().slice(0, 10) + '.' + ext;
+    return 'VoiceToShort-' + slug + '-' + new Date().toISOString().slice(0, 10) + (suffix ? suffix.replace(/\s+/g, '-') : '') + '.' + ext;
   }
   $('save-video').addEventListener('click', async () => {
-    if (!P.video) return;
+    if (!P.video || P.video.parts) return;
     const btn = $('save-video'); btn.disabled = true; btn.textContent = 'Saving…';
-    try { const r = await N.saveFile(P.video.blob, fileName(), (p) => { btn.textContent = 'Saving… ' + Math.round(p * 100) + '%'; }); toast('Saved to ' + r.where); }
-    catch (err) { toast('Could not save: ' + (err && err.message || err), true); }
+    const prog = (p) => { btn.textContent = 'Saving… ' + Math.round(p * 100) + '%'; };
+    try {
+      let r;
+      if (P.video.stored) r = await SG.exportStored(await storeFor(P.video), P.video.stored.name, fileName(), 'save', prog);
+      else r = await N.saveFile(P.video.blob, fileName(), prog);
+      toast('Saved to ' + r.where);
+    } catch (err) { toast('Could not save: ' + (err && err.message || err), true); }
     finally { btn.disabled = false; btn.textContent = 'Save to phone'; }
   });
   $('share-video').addEventListener('click', async () => {
-    if (!P.video) return;
+    if (!P.video || P.video.parts) return;
     const btn = $('share-video'); btn.disabled = true;
     try {
+      if (P.video.stored) { await SG.exportStored(await storeFor(P.video), P.video.stored.name, fileName(), 'share'); return; }
       const r = await N.shareFile(P.video.blob, fileName(), fieldText('title') + '\n\n' + fieldText('description'), P.pkg.title);
       if (r === 'downloaded') toast('Sharing files is not supported here, so the video was downloaded.');
     } catch (err) { if (!/cancel/i.test(String(err && err.message))) toast('Could not share: ' + (err && err.message || err), true); }
@@ -986,7 +1347,8 @@
       const meta = li.querySelector('.lib-meta');
       const add = (t, cls) => { const s = document.createElement('span'); s.className = 'badge ' + (cls || ''); s.textContent = t; meta.appendChild(s); };
       if (p.pkg) add('Script', 'ok'); if (p.voice) add('Voice', 'ok');
-      if (p.video) add((/mp4/.test(p.video.type) ? 'MP4' : 'WebM') + ' ' + fmt(p.video.duration), 'ok'); else add('No video');
+      if (p.video) add((/mp4/.test(p.video.type) ? 'MP4' : 'WebM') + ' ' + fmt(p.video.duration) + (p.video.aspect && p.video.aspect !== '9:16' ? ' · ' + p.video.aspect : ''), 'ok'); else add('No video');
+      if (!p.video && p.renderState && p.renderState.done && p.renderState.done.length) add('Render paused ' + p.renderState.done.length + '/' + p.renderState.bounds.length, 'warn');
       if (!p.pkg) li.querySelector('[data-a=render]').remove();
       li.querySelector('[data-a=open]').addEventListener('click', () => openProject(p.id, p.video ? 'render' : p.voice ? 'render' : p.pkg ? 'script' : 'idea'));
       const rb = li.querySelector('[data-a=render]');
@@ -994,6 +1356,7 @@
       li.querySelector('[data-a=del]').addEventListener('click', async () => {
         if (!confirm('Delete “' + projectTitle(p) + '”? This cannot be undone.')) return;
         await DB.del(p.id);
+        if (p.video && p.video.stored) { try { const st = await storeFor(p.video); if (p.video.stored.name) await st.remove(p.video.stored.name); (p.video.parts || []).forEach((x) => st.remove(x.name).catch(() => {})); } catch (_) { /* ignore */ } }
         if (P && P.id === p.id) { P = blankProject(); voiceBuffer = null; localStorage.removeItem(K.last); renderAll(); showStep('idea'); }
         renderLibrary(); toast('Deleted');
       });
@@ -1023,6 +1386,7 @@
     fillSelect($('s-tone'), Object.entries(S.TONES).map(([k, t]) => [k, t.label]), load(K.tone, 'calm'));
     fillSelect($('s-language'), S.LANGUAGES.map((l) => [l, l]), load(K.language, 'English'));
     fillSelect($('s-grade'), Object.entries(R.PRESETS).map(([k, p]) => [k, p.name]), load(K.grade, 'teal'));
+    fillSelect($('s-aspect'), R.ASPECTS ? Object.keys(R.ASPECTS).map((k) => [k, (R.ASPECT_LABELS && R.ASPECT_LABELS[k]) || k]) : [['9:16', '9:16']], defAspect());
     $('s-watermark').checked = !!load(K.watermark, false);
     $('s-visual').value = load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes'; $('s-ai-images').checked = !!load(K.aiImages, false);
     const langs = SPEECH_LANGS.slice(); if (!langs.some(([id]) => id === speechLang())) langs.unshift([speechLang(), speechLang()]);
@@ -1078,6 +1442,7 @@
   $('s-tone').addEventListener('change', (e) => { save(K.tone, e.target.value); if (P && !P.pkg) { P.tone = e.target.value; renderIdea(); } });
   $('s-language').addEventListener('change', (e) => save(K.language, e.target.value));
   $('s-grade').addEventListener('change', (e) => { save(K.grade, e.target.value); if (P && !P.video) P.look.preset = e.target.value; });
+  $('s-aspect').addEventListener('change', (e) => { save(K.aspect, e.target.value); if (P && !P.video && !P.pkg) { P.look.aspect = e.target.value; if (!load(K.length, null)) P.length = defLength(e.target.value); } });
   $('s-watermark').addEventListener('change', (e) => save(K.watermark, e.target.checked));
   $('s-visual').addEventListener('change', (e) => save(K.visualStyle, e.target.value));
   $('s-ai-images').addEventListener('change', (e) => save(K.aiImages, e.target.checked));
@@ -1098,7 +1463,7 @@
     } catch (err) { toast(G.friendlyError(err), true); } finally { btn.disabled = false; btn.textContent = 'Load voice models from my key'; }
   });
   $('export-data').addEventListener('click', async () => {
-    const projects = (await DB.all()).map((p) => { const c = Object.assign({}, p); delete c.ideaAudio; delete c.video; if (c.voice) c.voice = Object.assign({}, c.voice, { blob: null }); if (c.pkg && c.pkg.beats) c.pkg = Object.assign({}, c.pkg, { beats: c.pkg.beats.map((b) => Object.assign({}, b, { aiImage: null, aiPrompt: '' })) }); return c; });
+    const projects = (await DB.all()).map((p) => { const c = Object.assign({}, p); delete c.ideaAudio; delete c.video; if (c.voice) c.voice = Object.assign({}, c.voice, { blob: null, parts: null }); delete c.genPartial; delete c.renderState; if (c.pkg && c.pkg.beats) c.pkg = Object.assign({}, c.pkg, { beats: c.pkg.beats.map((b) => Object.assign({}, b, { aiImage: null, aiPrompt: '' })) }); return c; });
     const settings = {}; Object.entries(K).forEach(([k, v]) => { if (k !== 'key' && k !== 'last') { const raw = localStorage.getItem(v); if (raw != null) settings[v] = raw; } });
     const payload = JSON.stringify({ app: 'voice-to-short', version: APP_VERSION, exportedAt: new Date().toISOString(), settings, projects }, null, 2);
     const name = 'voice-to-short-backup-' + new Date().toISOString().slice(0, 10) + '.json';
