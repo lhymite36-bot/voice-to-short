@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.3.1';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 20 * 60; // long dictation (auto-restarts after pauses)
@@ -502,7 +502,7 @@
         mEl.textContent = m && m.score != null ? 'Keyword match ' + m.score + '%' + (m.missing.length ? ' · not shown: ' + m.missing.slice(0, 3).join(', ') : '') : 'No concrete keyword in this line — any scene works.';
         mEl.className = 'small sc-match ' + (m && m.score != null && m.score < 50 ? 'warn' : 'muted');
         const draw = () => { try { SC.drawPreview(cv, sc, P.look.preset, 1.6); } catch (_) { /* ignore */ } };
-        draw(); if (SC.preload) SC.preload(SC.iconsFor(sc)).then(draw, () => {});
+        draw(); if (SC.preload) SC.preload([sc]).then(draw, () => {});
         sum(); paintBeatBadge(li, b);
       };
       const changed = (ev) => {

@@ -165,7 +165,7 @@ function serve() {
   const gc = gen[gen.length - 1].body.generationConfig;
   ok('structured JSON output requested', gc.responseMimeType === 'application/json' && !!gc.responseSchema && gc.responseSchema.required.includes('beats'));
   const scs = gc.responseSchema.properties.beats.items.properties.scene;
-  ok('beat schema has scene spec with vocab enums', !!scs && scs.properties.setting.enum.length >= 10 && scs.properties.pose.enum.length >= 11 && scs.properties.emotion.enum.length >= 8 && scs.properties.props.items.enum.length >= 25 && gc.responseSchema.properties.beats.items.required.includes('scene'), scs && [scs.properties.setting.enum.length, scs.properties.pose.enum.length, scs.properties.emotion.enum.length, scs.properties.props.items.enum.length].join('/'));
+  ok('beat schema has scene spec with vocab enums', !!scs && scs.properties.setting.enum.length >= 10 && scs.properties.pose.enum.length >= 11 && scs.properties.emotion.enum.length >= 8 && !scs.properties.props.items.enum /* v1.3.1: 310-value enum made Google reject the request (400); ids are listed in the prompt */ && gc.responseSchema.properties.beats.items.required.includes('scene'), scs && [scs.properties.setting.enum.length, scs.properties.pose.enum.length, scs.properties.emotion.enum.length].join('/'));
   ok('prompt asks for literal, continuous scenes', /Keep the SAME setting/.test(gen[gen.length - 1].body.contents[0].parts[0].text));
   ok('model switched + saved', (await app(() => JSON.parse(localStorage.getItem('vts.model')))) === 'gemini-flash-latest');
   failFirstModel = false;

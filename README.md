@@ -4,7 +4,7 @@ Talk an idea into your phone and get a finished YouTube video: a hook, clear ste
 
 It's built for faceless psychology and self-help channels (BetterU-style voiceover over aesthetic visuals).
 
-- **Android app:** download `VoiceToShort-1.3.0.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
+- **Android app:** download `VoiceToShort-1.3.1.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
 - **Web version:** https://lhymite36-bot.github.io/voice-to-short/ (works best in Chrome)
 
 ## How it works
@@ -94,11 +94,13 @@ The recommended voice option. It uses Gemini's native text-to-speech with the sa
 - New AI Studio keys start with `AQ.` and work. The default model is `gemini-3.8-flash`.
 - If a model isn't available for your key, the app tries these in order and remembers the one that works:
   1. Any replacement model named in the error
-  2. `gemini-3.8-flash`, `gemini-flash-latest`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-2.5-flash`
+  2. `gemini-3.8-flash`, `gemini-flash-latest`, `gemini-3.7-flash`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-flash-lite-latest`, `gemini-3.1-flash-lite`
   3. The best models from your key's own model list
+- If a model is busy (503 "high demand") or out of its per-model free quota (429), the app tries the next model in the same order but doesn't change your saved model. Busy models are skipped for 30–60 s. Voice (TTS) models work the same way.
+- A `400 INVALID_ARGUMENT` means the request itself was wrong, so the app shows it instead of hiding it behind other models.
 - Saved 1.x/2.x model settings are migrated, because 2.x models fail for new keys.
 - Errors end with a `Details:` line that shows the raw API status. The key is redacted.
-- It uses structured output (`responseMimeType: application/json` plus `responseSchema`). If a model rejects the schema, it retries with JSON-by-prompt.
+- It uses structured output (`responseMimeType: application/json` plus a compact `responseSchema`). The 310 prop ids are listed in the prompt, not in a schema enum: Google rejects schemas with enums that large with a bare `400 Request contains an invalid argument` (the 1.3.0 bug). If a model still rejects the schema, the app retries once in plain JSON mode and validates the reply on the device. `node tests/schema-limits.js` guards the schema size.
 
 ## Honest caveats
 
@@ -112,12 +114,12 @@ The recommended voice option. It uses Gemini's native text-to-speech with the sa
 
 ## Install on Android (6.0+)
 
-1. Download `VoiceToShort-1.3.0.apk` from the latest release.
+1. Download `VoiceToShort-1.3.1.apk` from the latest release.
 2. Open it. If Android asks, allow “Install unknown apps” for your browser or Files app.
 3. Open **Voice to Short**, go to **Settings**, paste your free Gemini key and tap **Save key**.
 4. Allow the microphone when asked. It's used for dictation and voice recording.
 
-To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.3.0.apk`.
+To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.3.1.apk`.
 
 ## Development
 

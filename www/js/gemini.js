@@ -6,8 +6,8 @@
   // Google limits the 2.x models to projects that already used them, so new keys (AQ.… "auth keys")
   // get 404 "no longer available" or 401 ACCESS_TOKEN_TYPE_UNSUPPORTED on them. Default to a current stable model.
   const DEFAULT_MODEL = 'gemini-3.8-flash';
-  const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
-  const BUILTIN_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-2.5-flash'];
+  const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite'];
+  const BUILTIN_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'];
   const LEGACY_MODEL_RE = /^(models\/)?gemini-(1\.0|1\.5|2\.0|2\.5)(-|$)/i;
 
   // Host app wires these in (storage + UI).
@@ -36,6 +36,9 @@
     const lower = message.toLowerCase();
     if (lower.includes('api key not valid') || lower.includes('api_key_invalid') || lower.includes('permission denied') || (lower.includes('api key') && (lower.includes('invalid') || lower.includes('expired')))) {
       return 'Gemini rejected the API key. Check the key in Settings.';
+    }
+    if (err && (err.status === 503 || err.apiStatus === 'UNAVAILABLE') || lower.includes('high demand') || lower.includes('overloaded')) {
+      return 'Gemini is overloaded right now (Google returned “high demand”' + (err && err.allTried ? ' for every model tried' : '') + '). Wait a minute and try again.';
     }
     if (lower.includes('quota') || lower.includes('resource_exhausted') || lower.includes('rate limit') || lower.includes('429')) {
       return 'Gemini rate limit or quota was reached. Wait a bit and try again.';
@@ -93,15 +96,31 @@
       || m.includes('no longer available') || m.includes('is not enabled') || m.includes('does not have access')
       || m.includes('unsupported') || m.includes('deprecated') || m.includes('retired');
   }
+  // Google's temporary overload ("This model is currently experiencing high demand", 503/500/UNAVAILABLE) or a
+  // per-model free-tier quota (429). Other models are often fine, so the chain tries them — but the working one is NOT saved as the new default.
+  function isOverloaded(err) {
+    if (!err || err.friendly) return false;
+    const m = String(err.message || '').toLowerCase();
+    return err.status === 503 || err.status === 500 || err.status === 429 || err.apiStatus === 'RESOURCE_EXHAUSTED' || err.apiStatus === 'UNAVAILABLE' || err.apiStatus === 'INTERNAL' || m.includes('high demand') || m.includes('overloaded');
+  }
+  // Models that just answered 429/503 are skipped for a short while (in memory only), so the next request of a long
+  // job goes straight to a model that works instead of waiting on the busy one again.
+  const cooling = new Map();
+  function coolDown(model, err) { cooling.set(model, Date.now() + (err && err.retryAfter ? Math.min(120, err.retryAfter) * 1000 : err && err.status === 429 ? 60000 : 30000)); }
+  function isCooling(model) { const t = cooling.get(model); if (!t) return false; if (Date.now() > t) { cooling.delete(model); return false; } return true; }
   // Generate with the saved model; if it is unavailable, retry with each fallback model once and save the one that works.
   async function generate(contents, opts) {
     opts = opts || {};
     const first = opts.model || host.getModel();
     try {
+      if (!opts.model && isCooling(first) && FALLBACK_MODELS.some((q) => q !== first && !isCooling(q))) { const e = new Error('model cooling down'); e.status = 503; e.cooling = true; throw e; }
       return await generateWith(first, contents, opts);
     } catch (err) {
-      if (!isModelUnavailable(err)) throw err;
-      let lastErr = err;
+      if (!err.cooling && isOverloaded(err)) coolDown(first, err);
+      // 400 INVALID_ARGUMENT etc. is a problem with the request itself: surface it, never hide it behind other models.
+      const busy = isOverloaded(err);
+      if (!busy && !isModelUnavailable(err)) throw err;
+      let lastErr = err; let onlyBusy = busy;
       const tried = new Set([first]);
       const hint = /\b(?:use|try|migrate to)\s+(?:models\/)?(gemini-[a-z0-9.-]+[a-z0-9])/i.exec(String(err.message || ''));
       const queue = (hint ? [hint[1]] : []).concat(FALLBACK_MODELS);
@@ -116,13 +135,17 @@
         const fb = queue[i];
         if (tried.has(fb)) continue;
         tried.add(fb);
+        if (isCooling(fb) && queue.slice(i + 1).some((q) => !tried.has(q) && !isCooling(q))) continue;
         try {
           const text = await generateWith(fb, contents, opts);
-          if (!opts.model) { host.setModel(fb); host.onModelSwitch(first, fb); }
+          if (!opts.model && !onlyBusy) { host.setModel(fb); host.onModelSwitch(first, fb); }
+          else if (host.onBusyFallback) host.onBusyFallback(first, fb);
           return text;
         } catch (e2) {
           lastErr = e2;
+          if (isOverloaded(e2)) { coolDown(fb, e2); continue; }
           if (!isModelUnavailable(e2)) throw e2;
+          onlyBusy = false;
         }
       }
       if (lastErr && !lastErr.friendly) {
@@ -163,8 +186,12 @@
           delete body.systemInstruction;
           body.contents = [{ role: 'user', parts: [{ text: opts.system + '\n\n' + contents.map((c) => c.parts.map((p) => p.text).join('')).join('\n\n') }] }];
           data = await send(body);
-        } else if (err && err.status === 400 && (m.includes('schema') || m.includes('response_mime') || m.includes('responsemimetype') || m.includes('json mode'))) {
-          // Structured output not supported by this model: fall back to plain JSON-by-prompt.
+        } else if (err && err.status === 400 && gen.responseSchema && (err.apiStatus === 'INVALID_ARGUMENT' || m.includes('schema') || m.includes('invalid argument'))) {
+          // Google rejects schemas it finds too large/complex with a bare "Request contains an invalid argument".
+          // The prompt already describes the JSON shape, so retry once with JSON mode only (parsed + validated locally).
+          delete gen.responseSchema;
+          data = await send(body);
+        } else if (err && err.status === 400 && (m.includes('response_mime') || m.includes('responsemimetype') || m.includes('json mode'))) {
           delete gen.responseSchema; delete gen.responseMimeType;
           data = await send(body);
         } else throw err;
@@ -297,7 +324,7 @@
   async function ttsRequest(text, o) {
     const first = o.model || (host.getTtsModel ? host.getTtsModel() : '') || TTS_DEFAULT_MODEL;
     const queue = [first].concat(TTS_MODELS);
-    const tried = new Set(); let lastErr = null; let discovered = false; let quotaHit = false;
+    const tried = new Set(); let lastErr = null; let discovered = false; let quotaHit = false; let busyHit = false;
     for (let i = 0; i <= queue.length; i++) {
       if (i === queue.length) {
         if (discovered) break;
@@ -308,14 +335,16 @@
       const model = queue[i];
       if (tried.has(model)) continue;
       tried.add(model);
+      if (isCooling(model) && queue.slice(i + 1).some((q) => !tried.has(q) && !isCooling(q))) continue;
       try {
         const out = await ttsWith(model, text, o);
-        if (model !== first && host.setTtsModel) { host.setTtsModel(model); if (host.onTtsModelSwitch) host.onTtsModelSwitch(first, model); }
+        if (model !== first && host.setTtsModel && !busyHit) { host.setTtsModel(model); if (host.onTtsModelSwitch) host.onTtsModelSwitch(first, model); }
         out.model = model;
         return out;
       } catch (err) {
         lastErr = err;
-        if (isQuota(err)) { quotaHit = true; continue; } // quotas are per model: try the next one once
+        if (isQuota(err)) { quotaHit = true; coolDown(model, err); continue; } // quotas are per model: try the next one once
+        if (isOverloaded(err)) { busyHit = true; coolDown(model, err); continue; } // Google overloaded: try the next voice model
         if (!isTtsModelUnavailable(err)) throw err;
         if (i === 0) { const hint = /\b(?:use|try|migrate to)\s+(?:models\/)?(gemini-[a-z0-9.-]+tts[a-z0-9.-]*)/i.exec(String(err.message || '')); if (hint && !tried.has(hint[1])) queue.splice(1, 0, hint[1]); }
       }
@@ -440,5 +469,5 @@
     e.quota = quotaHit; e.unavailable = true;
     throw e;
   }
-  VTS.gemini = { withRetry, speechChunks, hashText, generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
+  VTS.gemini = { isOverloaded, isModelUnavailable, withRetry, speechChunks, hashText, generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
 }());

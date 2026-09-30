@@ -32,7 +32,7 @@
         setting: { type: T.STRING, enum: s.SET_IDS, description: 'Background location.' },
         pose: { type: T.STRING, enum: s.POSE_IDS, description: 'The ACTION the character performs — pick the one that literally shows the main keyword (sketch/draw -> drawing, save money -> saving-money, cook -> cooking).' },
         emotion: { type: T.STRING, enum: s.EMO_IDS },
-        props: { type: T.ARRAY, description: '0 to 3 animated props that illustrate the words literally.', items: { type: T.STRING, enum: s.PROP_IDS } },
+        props: { type: T.ARRAY, description: '0 to 3 animated prop ids from the allowed prop list in the prompt, illustrating the words literally.', items: { type: T.STRING } },
         camera: { type: T.STRING, enum: s.CAM_IDS },
         callout: { type: T.STRING, description: 'Optional 1-3 word sticker label (e.g. "2:07 AM", "Cortisol up"), usually empty.' },
         keywords: { type: T.ARRAY, description: '1-3 LITERAL, drawable keywords from this caption (nouns/verbs actually said, e.g. "pencil", "sketchbook", "cook"), most important first.', items: { type: T.STRING } },
@@ -49,7 +49,8 @@
     'Keep the SAME setting for consecutive beats of one idea (change setting every 2-4 beats, never every beat). Vary pose/emotion/props within a setting to follow the words.',
     'KEYWORDS FIRST: for every beat list the literal keywords actually spoken, then choose the action (pose), props and setting so the MAIN keyword is clearly visible on screen. Prefer literal over metaphorical (a line about sketching shows the character drawing in a sketchbook with a pencil, not a lightbulb). If no action or prop can show it, use setting "keyword-card" with an icon emoji of the keyword.',
     'The problem/hook uses tense emotions; the steps move toward calm/happy; the CTA is talking or celebrating with heart or speech-bubbles. Use camera "zoom-in" for dramatic lines, "shake" for stress, "pan" for walking, otherwise "static". Max 3 props.',
-  ].join('\n');
+    SC() ? 'Allowed prop ids (use only these exact ids in "props"; anything else goes in "objects"/"keywords"): ' + SC().PROP_IDS.join(', ') + '.' : '',
+  ].filter(Boolean).join('\n');
   const SCHEMA = {
     type: T.OBJECT,
     properties: {
@@ -318,7 +319,14 @@
   async function generatePackage(idea, opts) {
     const g = VTS.gemini;
     if (opts && isLong(opts.length)) return generateLong(idea, opts);
-    const text = await g.generate([{ role: 'user', parts: [{ text: buildPrompt(idea, opts) }] }], { system: SYSTEM, json: true, schema: schemaWithScenes(), temperature: 0.85, maxTokens: 16384 });
+    const L = lengthOf(opts && opts.length); const sch = schemaWithScenes(); let system = SYSTEM;
+    if (L.sec > 60) {
+      // 2-min videos use the short (single-call) path: override the 80-110 word rule in the schema and system text too.
+      const w = L.words[0] + '-' + L.words[1] + ' words';
+      sch.properties.script.description = 'Full voiceover, ' + w + ' (about ' + L.label + ' spoken): hooks[0], then the numbered steps with examples, then a soft CTA.';
+      system = SYSTEM + '\nLENGTH OVERRIDE for this request: the full voiceover script must be ' + w + ' (about ' + L.label + ' spoken), not 80-110 words. Use 3 to 5 steps with a concrete example each.';
+    }
+    const text = await g.generate([{ role: 'user', parts: [{ text: buildPrompt(idea, opts) }] }], { system, json: true, schema: sch, temperature: 0.85, maxTokens: 16384 });
     try { return normalize(parseJSONLoose(text)); } catch (err) {
       const e = g.fail('Gemini returned a script in an unexpected format. Tap “Write my Short” again.');
       e.details = 'Could not parse JSON: ' + String(text).slice(0, 160);

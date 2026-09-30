@@ -477,13 +477,13 @@ alarm|p=alarm|w=3
   const baseDescribe = S.describe;
   function describe(sc) {
     const a = A[sc.pose]; const set = (S.SETTINGS.find((x) => x[0] === sc.setting) || [sc.setting, sc.setting])[1];
-    const props = sc.props.map((p) => (P[p] ? P[p].label : p).toLowerCase());
-    if (sc.setting === 'keyword-card') return 'a big friendly illustrated icon of "' + (sc.iconWord || sc.keywords[0] || '') + '" with a small character reacting';
-    return 'a character ' + (a ? a.label.toLowerCase() : sc.pose) + ' (' + sc.emotion + ') in a ' + set.toLowerCase() + (props.length ? ', with ' + props.join(', ') : '') + (sc.keywords.length ? '; must clearly show: ' + sc.keywords.join(', ') : '');
+    const props = (sc.props || []).map((p) => (P[p] ? P[p].label : p).toLowerCase()); const kws = sc.keywords || [];
+    if (sc.setting === 'keyword-card') return 'a big friendly illustrated icon of "' + (sc.iconWord || kws[0] || '') + '" with a small character reacting';
+    return 'a character ' + (a ? a.label.toLowerCase() : sc.pose) + ' (' + sc.emotion + ') in a ' + set.toLowerCase() + (props.length ? ', with ' + props.join(', ') : '') + (kws.length ? '; must clearly show: ' + kws.join(', ') : '');
   }
   function iconsFor(sc) { // emoji files a scene needs (preload before rendering)
-    const out = []; if (sc.icon) out.push(sc.icon);
-    sc.props.forEach((p) => { if (P[p] && P[p].e) out.push(P[p].e); });
+    const out = []; if (!sc || typeof sc !== 'object') return out; if (sc.icon) out.push(sc.icon);
+    (sc.props || []).forEach((p) => { if (P[p] && P[p].e) out.push(P[p].e); });
     const a = A[sc.pose]; if (a) { (a.hold || []).forEach((h) => { const f = ITEM_E[h.item] || (P[h.item] && P[h.item].e); if (f) out.push(f); }); (WORK_E[a.work] || []).forEach((f) => out.push(f)); }
     (SET_E[sc.setting] || []).forEach((f) => out.push(f));
     return uniq(out);
