@@ -1,8 +1,8 @@
 /* App-shell service worker. Gemini API calls are never cached. */
-const CACHE = 'vts-shell-v1.1.0';
+const CACHE = 'vts-shell-v1.2.0';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.json', './capacitor.js',
-  './js/gemini.js', './js/shortgen.js', './js/db.js', './js/speech.js', './js/native.js', './js/render.js', './js/app.js',
+  './js/gemini.js', './js/scenes.js', './js/shortgen.js', './js/db.js', './js/speech.js', './js/native.js', './js/render.js', './js/app.js',
   './fonts/Montserrat.ttf',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-192.png', './icons/maskable-512.png', './icons/apple-touch-icon.png',
 ];

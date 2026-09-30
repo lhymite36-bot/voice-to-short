@@ -22,6 +22,30 @@
   ].join('\n');
 
   const T = { STRING: 'STRING', NUMBER: 'NUMBER', INTEGER: 'INTEGER', ARRAY: 'ARRAY', OBJECT: 'OBJECT' };
+  const SC = () => VTS.scenes;
+  function sceneSchema() {
+    const s = SC();
+    return {
+      type: T.OBJECT,
+      description: 'The animated 2D cartoon scene shown while this caption is spoken, chosen ONLY from the allowed values.',
+      properties: {
+        setting: { type: T.STRING, enum: s.SET_IDS, description: 'Background location.' },
+        pose: { type: T.STRING, enum: s.POSE_IDS, description: 'What the main character is doing.' },
+        emotion: { type: T.STRING, enum: s.EMO_IDS },
+        props: { type: T.ARRAY, description: '0 to 3 animated props that illustrate the words literally.', items: { type: T.STRING, enum: s.PROP_IDS } },
+        camera: { type: T.STRING, enum: s.CAM_IDS },
+        callout: { type: T.STRING, description: 'Optional 1-3 word sticker label (e.g. "2:07 AM", "Cortisol up"), usually empty.' },
+        characters: { type: T.INTEGER, description: '1, or 2 only for a conversation (pose talking).' },
+      },
+      required: ['setting', 'pose', 'emotion', 'props', 'camera'],
+    };
+  }
+  const SCENE_RULES = [
+    'Scenes: every beat gets a "scene" for a faceless psychology channel animated in flat 2D (one relatable cartoon character).',
+    'Illustrate the words literally and specifically (e.g. "why you overthink at night" -> bedroom-night, lying-awake, anxious, props clock + thought-bubbles; "your brain replays it" -> abstract-mind-space with brain; "put your phone away" -> phone-screen or scrolling-phone).',
+    'Keep the SAME setting for consecutive beats of one idea (change setting every 2-4 beats, never every beat). Vary pose/emotion/props within a setting to follow the words.',
+    'The problem/hook uses tense emotions; the steps move toward calm/happy; the CTA is talking or celebrating with heart or speech-bubbles. Use camera "zoom-in" for dramatic lines, "shake" for stress, "pan" for walking, otherwise "static". Max 3 props.',
+  ].join('\n');
   const SCHEMA = {
     type: T.OBJECT,
     properties: {
@@ -37,7 +61,7 @@
             weight: { type: T.NUMBER, description: 'Relative speaking time (about the number of spoken words, 1-8).' },
             step: { type: T.INTEGER, description: '0 = hook, 1/2/3 = the numbered step it belongs to, 4 = call to action.' },
             emphasis: { type: T.STRING, description: 'The single most important word in the phrase (copied exactly), or empty.' },
-            visual: { type: T.STRING, description: 'A b-roll or visual idea for this beat (faceless, aesthetic, stock-footage friendly).' },
+            visual: { type: T.STRING, description: 'A short description of the visual for this beat.' },
           },
           required: ['text', 'weight', 'step', 'visual'],
         },
@@ -51,6 +75,10 @@
     required: ['hooks', 'script', 'beats', 'title', 'description', 'hashtags', 'pinnedComment', 'thumbnailText'],
   };
 
+  function schemaWithScenes() {
+    if (!SC()) return SCHEMA;
+    const sch = JSON.parse(JSON.stringify(SCHEMA)); sch.properties.beats.items.properties.scene = sceneSchema(); sch.properties.beats.items.required.push('scene'); return sch;
+  }
   function buildPrompt(idea, opts) {
     const tone = TONES[opts.tone] || TONES.calm;
     return [
@@ -59,6 +87,7 @@
       'Language for every field: ' + (opts.language || 'English') + '.',
       opts.handle ? 'Channel handle (only use in the CTA if natural): ' + opts.handle : '',
       'Beats: 12 to 22 beats. Hook beats use step 0, CTA beats use step 4. Each beat text must be copied verbatim from the script so captions match the voice.',
+      SC() ? SCENE_RULES : '',
       '',
       'My idea (dictated, may be messy):',
       '"""',
@@ -128,8 +157,19 @@
       for (const c of chunkText(s)) out.push({ text: c, weight: wordCount(c), step: sStep, emphasis: '', visual: '' });
       spoken += wordCount(s);
     });
+    const scenes = (oldBeats || []).map((b) => b.scene).filter(Boolean);
     out.forEach((b, i) => { b.visual = visuals[Math.min(visuals.length - 1, Math.round(i * visuals.length / out.length))] || defaultVisual(b.step); });
+    // keep the old scene plan where it lines up proportionally, otherwise infer from the words
+    out.forEach((b, i) => { if (scenes.length) b.scene = JSON.parse(JSON.stringify(scenes[Math.min(scenes.length - 1, Math.floor(i * scenes.length / out.length))])); });
+    attachScenes(out);
     return out;
+  }
+  // Validate every beat's scene (unknown values are repaired; missing scenes are inferred from the words with continuity).
+  function attachScenes(beats, force) {
+    const s = SC(); if (!s) return beats;
+    let prev = null;
+    beats.forEach((b) => { b.scene = s.normalizeScene(force ? null : b.scene, b.text, b.step, prev); prev = b.scene; });
+    return beats;
   }
   function defaultVisual(step) {
     return ['Slow push-in on a moody sky or city at night', 'Hands writing in a journal, soft window light', 'Person walking alone, golden hour, shallow focus', 'Calm ocean waves in slow motion', 'Warm lamp-lit desk with a cup of tea'][step] || 'Abstract light leaks';
@@ -159,8 +199,10 @@
       step: Math.max(0, Math.min(4, Math.round(Number(b && b.step) || 0))),
       emphasis: toStr(b && b.emphasis, 30),
       visual: toStr(b && b.visual, 200),
+      scene: b && b.scene,
     })).filter((b) => b.text);
     if (beats.length < 3) beats = beatsFromScript(script, hooks[0], beats);
+    attachScenes(beats);
     const hashtags = Array.from(new Set((Array.isArray(obj.hashtags) ? obj.hashtags : String(obj.hashtags || '').split(/[\s,]+/)).map(normHashtag).filter(Boolean))).slice(0, 8);
     if (!hashtags.includes('#shorts') && hashtags.length < 8) hashtags.push('#shorts');
     return {
@@ -175,7 +217,7 @@
 
   async function generatePackage(idea, opts) {
     const g = VTS.gemini;
-    const text = await g.generate([{ role: 'user', parts: [{ text: buildPrompt(idea, opts) }] }], { system: SYSTEM, json: true, schema: SCHEMA, temperature: 0.85 });
+    const text = await g.generate([{ role: 'user', parts: [{ text: buildPrompt(idea, opts) }] }], { system: SYSTEM, json: true, schema: schemaWithScenes(), temperature: 0.85, maxTokens: 16384 });
     try { return normalize(parseJSONLoose(text)); } catch (err) {
       const e = g.fail('Gemini returned a script in an unexpected format. Tap “Write my Short” again.');
       e.details = 'Could not parse JSON: ' + String(text).slice(0, 160);
@@ -203,10 +245,22 @@
   function rebuildHookBeats(pkg) {
     const hook = pkg.hooks[pkg.hookIndex] || '';
     const rest = pkg.beats.filter((b) => b.step !== 0);
-    const vis = (pkg.beats.find((b) => b.step === 0) || {}).visual || defaultVisual(0);
-    pkg.beats = chunkText(hook).map((c) => ({ text: c, weight: wordCount(c), step: 0, emphasis: '', visual: vis })).concat(rest);
+    const first = pkg.beats.find((b) => b.step === 0) || {};
+    const vis = first.visual || defaultVisual(0);
+    pkg.beats = chunkText(hook).map((c) => ({ text: c, weight: wordCount(c), step: 0, emphasis: '', visual: vis, scene: first.scene ? JSON.parse(JSON.stringify(first.scene)) : null })).concat(rest);
+    attachScenes(pkg.beats);
     return pkg;
   }
 
-  VTS.shortgen = { rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
+  async function regenerateScene(pkg, index) {
+    const g = VTS.gemini; const s = SC(); const b = pkg.beats[index];
+    const ctx = pkg.beats.map((x, i) => (i === index ? '>>> ' : '    ') + x.text + (x.scene ? '  [' + x.scene.setting + ', ' + x.scene.pose + ']' : '')).join('\n');
+    const prompt = ['Suggest a NEW, different animated scene for the beat marked >>> in this YouTube Short. Make it literal and visually fresh, but consistent with its neighbours.', SCENE_RULES,
+      'Current scene of that beat: ' + JSON.stringify(b.scene || {}), '', 'Script: ' + pkg.script, '', 'Beats:', ctx].join('\n');
+    const text = await g.generate([{ role: 'user', parts: [{ text: prompt }] }], { json: true, schema: sceneSchema(), temperature: 1.0 });
+    let raw; try { raw = parseJSONLoose(text); } catch (_) { const e = g.fail('Gemini returned an unexpected scene. Try again.'); e.details = String(text).slice(0, 160); throw e; }
+    return s.normalizeScene(raw, b.text, b.step, index > 0 ? pkg.beats[index - 1].scene : null);
+  }
+
+  VTS.shortgen = { attachScenes, regenerateScene, sceneSchema, schemaWithScenes, rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
 }());

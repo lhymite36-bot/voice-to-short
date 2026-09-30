@@ -37,6 +37,17 @@ It's built for faceless psychology and self-help channels (BetterU-style voiceov
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
 
+## Animated scenes (2D cartoon) — new in 1.2.0
+
+Videos are no longer "just talking". Every caption beat gets a **scene**, and a built-in 2D animation engine draws it on the device (canvas, free, no network) in a consistent flat-vector style like faceless psychology channels:
+
+- **Scene planning:** Gemini's structured script now returns a `scene` per beat — `setting`, `pose`, `emotion`, up to 3 `props`, `camera`, optional `callout` sticker, `characters` (1 or 2). Unknown or missing values are repaired (synonyms + keyword heuristics, e.g. "at night … awake" → bedroom-night / lying-awake), and the same setting is kept across beats of one idea.
+- **Vocabulary:** 10 settings (bedroom-night, bedroom-day, office, classroom, street, café, park, mind space, phone screen, plain spotlight), 11 poses (lying awake, head in hands, walking, thinking, talking, celebrating, stressed, scrolling phone, sleeping, meditating, running), 8 emotions, 26 animated props (phone, clock, brain, thought bubbles, question marks, lightbulb, heart, notebook, coffee, moon, sun, calendar, alarm, arrows, checklist, battery, cloud, zzz, sparkles, chains, weights, stairs, mirror, speech bubbles, confetti, exclamation) and 4 camera moves.
+- **Animation:** a rigged character (head, torso, arms, legs, eyes, brows, mouth) blinks, breathes, bobs, darts its eyes when anxious, lip-flaps while talking, tosses and turns in bed, types, paces; props animate (clock hands spin, phone glow pulses, thought bubbles pop and float, brain pulses with sparks, lightbulb flickers on, zzz rise, heart beats…). Shots change with slide / zoom / wipe / pop transitions timed to the beats. Captions sit in the top zone clear of the character; step badge, grade, grain and vignette stay on top.
+- **Edit:** in the Script step tap 🎬 on any beat to change its scene with dropdowns (live preview), "↻ Regenerate scene" (Gemini, with a built-in fallback) or "Same as previous".
+- **Visual style:** "Animated scenes" (default) or "Captions only (classic)" — in the Script step, the Render step and Settings.
+- **Optional AI illustrations (off by default):** "Use AI-drawn illustrations when available" asks Gemini's image models (`gemini-3.1-flash-lite-image` → `gemini-3.1-flash-image` → `gemini-3-pro-image` → preview names → `gemini-2.5-flash-image`) for one flat 2D illustration per shot (max 8 per video), then animates it with Ken Burns/parallax plus the prop overlays. **Google's image models have no free tier** (≈ $0.03–0.04 per image on a billing-enabled key); on a free key or quota error the app silently uses the built-in scenes.
+
 ## AI voice (Gemini text-to-speech) — new in 1.1.0
 
 The recommended voice option. It uses Gemini's native text-to-speech with the same API key (sent only in the `x-goog-api-key` header; `AQ.` keys work).
@@ -71,6 +82,7 @@ The recommended voice option. It uses Gemini's native text-to-speech with the sa
 - **Video format.** Android's WebView usually records H.264 + AAC MP4. When it can't, you get WebM (VP9/Opus). WebM uploads to YouTube fine, but some gallery apps won't play it. The app writes a proper duration into WebM files so they can be scrubbed.
 - **Real-time rendering.** A 40 s Short takes about 40 s to render. Keep the app open and the screen on; the app asks Android to keep the screen awake. Slow phones may drop frames under load.
 - **Dictation** uses the phone's speech service, and most phones need internet for it. Raw-audio capture of the idea is off by default, because on many phones the recogniser and the recorder can't share the mic.
+- **Animated scenes** are a hand-authored flat style with one main character design (plus a second for conversations) and fixed poses: they illustrate each beat with the closest scene in the vocabulary, not a custom animation. AI illustrations need a paid (billing-enabled) Gemini key and weren't verified against a live key.
 - **Backups** hold text only: ideas, scripts and settings. Audio and video stay on the device, and the API key is never exported.
 
 ## Install on Android (6.0+)

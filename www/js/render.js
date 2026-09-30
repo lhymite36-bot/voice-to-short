@@ -50,7 +50,7 @@
       const wsum = ww.reduce((a, x) => a + x, 0) || 1;
       let wacc = 0;
       const wordTimes = words.map((w, i) => { const t = start + (wacc / wsum) * (end - start) * 0.92; wacc += ww[i]; return t; });
-      return { text: String(b.text).trim(), words, wordTimes, start, end, step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') };
+      return { text: String(b.text).trim(), words, wordTimes, start, end, step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), scene: b.scene || null, aiImage: b.aiImage || null };
     });
   }
 
@@ -72,6 +72,9 @@
       this.preset = PRESETS[o.preset] || PRESETS.teal;
       this.timeline = buildTimeline(o.beats, o.speechStart, o.speechEnd);
       this.layoutCache.clear();
+      this.scenes = this.o.visual !== 'classic' && !!VTS.scenes;
+      this.images = [];
+      if (this.scenes) this.setupScenes();
       // Vignette + film grain, pre-baked into a few half-resolution frames (one cheap full-frame draw per frame).
       const c = this.canvas; const fw = Math.round(c.width / 2); const fh = Math.round(c.height / 2);
       this.finish = [];
@@ -92,6 +95,105 @@
           v.putImageData(img, 0, 0);
         }
         this.finish.push(f);
+      }
+    }
+    setupScenes() {
+      const SC = VTS.scenes; const tl = this.timeline;
+      if (!this.stage) this.stage = new SC.Stage();
+      this.stage.setPreset(this.o.preset);
+      let prev = null;
+      tl.forEach((b) => { b.sc = SC.normalizeScene(b.scene, b.text, b.step, prev); prev = b.sc; });
+      // Shots: runs of beats that share a setting (and cast). Transitions happen between shots.
+      this.shots = [];
+      tl.forEach((b, i) => {
+        const last = this.shots[this.shots.length - 1];
+        if (last && last.setting === b.sc.setting && last.count === b.sc.count && !(b.aiImage && tl[last.first].aiImage !== b.aiImage)) { last.last = i; last.end = b.end; }
+        else this.shots.push({ first: i, last: i, start: b.start, end: b.end, setting: b.sc.setting, count: b.sc.count, idx: this.shots.length });
+        b.shot = this.shots.length - 1;
+      });
+      this.shots.forEach((sh, k) => { sh.transition = SC.TRANSITIONS[(k + 1) % SC.TRANSITIONS.length]; if (k === 0) sh.start = Math.min(sh.start, 0); });
+      tl.forEach((b, i) => {
+        const sh = this.shots[b.shot];
+        let j = i; while (j > sh.first && tl[j - 1].sc.pose === b.sc.pose) j--; b.poseStart = j === sh.first ? sh.start : tl[j].start;
+        b.propStart = {};
+        b.sc.props.forEach((p) => { let q = i; while (q > sh.first && tl[q - 1].sc.props.includes(p)) q--; b.propStart[p] = tl[q].start; });
+      });
+      // Pre-draw every background once so transitions never stall a real-time render.
+      const seen = new Set();
+      tl.forEach((b) => { const k = b.sc.setting + '|' + this.stage.kindFor(b.sc.setting, b.sc.pose); if (seen.has(k) || seen.size >= 9) return; seen.add(k); this.stage.drawShot(makeCanvas(8, 8).getContext('2d'), this.shotState(tl.indexOf(b), b.start)); });
+      this.stage.drawShot(makeCanvas(8, 8).getContext('2d'), this.shotState(0, 0));
+    }
+    // Decode AI illustrations (if any) before rendering.
+    async prepare() {
+      if (!this.scenes || !this.o.aiImages) return 0;
+      const cache = new Map(); let n = 0;
+      for (let i = 0; i < this.timeline.length; i++) {
+        const blob = this.timeline[i].aiImage; if (!blob) continue;
+        try { if (!cache.has(blob)) cache.set(blob, await createImageBitmap(blob)); this.images[i] = cache.get(blob); n++; } catch (_) { /* skip */ }
+      }
+      // every beat in a shot uses the shot's illustration
+      if (n) this.shots.forEach((sh) => { let img = null; for (let i = sh.first; i <= sh.last; i++) if (this.images[i]) { img = this.images[i]; break; } if (img) for (let i = sh.first; i <= sh.last; i++) if (!this.images[i]) this.images[i] = img; });
+      return n;
+    }
+    shotState(i, t) {
+      const b = this.timeline[i]; const sh = this.shots[b.shot];
+      return { scene: b.sc, lt: Math.max(0, t - sh.start), t, dur: sh.end - sh.start, s: this.s, img: this.images[i] || null,
+        propAge: (n) => t - (b.propStart[n] != null ? b.propStart[n] : b.start), poseAge: t - b.poseStart, calloutAge: t - b.start };
+    }
+    drawScenes(t) {
+      const ctx = this.ctx; const tl = this.timeline; if (!tl.length) return;
+      const i = Math.max(0, this.beatAt(t)); const sh = this.shots[tl[i].shot];
+      const TR = 0.42; const st = this.stage;
+      ctx.save(); ctx.setTransform(this.s, 0, 0, this.s, 0, 0);
+      const since = t - sh.start;
+      if (sh.idx > 0 && since < TR) {
+        const p = VTS.scenes.easeInOut(since / TR); const prevI = sh.first - 1; const type = sh.transition; const hi = this.preset.hi;
+        const drawOld = () => st.drawShot(ctx, this.shotState(prevI, t));
+        const drawNew = () => st.drawShot(ctx, this.shotState(i, t));
+        if (type === 'slide') {
+          ctx.save(); ctx.translate(-W * p, 0); drawOld(); ctx.restore();
+          ctx.save(); ctx.translate(W * (1 - p), 0); drawNew(); ctx.restore();
+          ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(W * (1 - p) - 18, 0, 18, H);
+        } else if (type === 'zoom') {
+          if (p < 0.5) { const z = 1 + p * 0.8; ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); drawOld(); ctx.restore(); }
+          else { const z = 1.25 - (p - 0.5) * 0.5; ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); drawNew(); ctx.restore(); }
+          ctx.fillStyle = 'rgba(255,255,255,' + (0.85 * (1 - Math.abs(p - 0.5) * 2)) + ')'; ctx.fillRect(0, 0, W, H);
+        } else if (type === 'wipe') {
+          drawOld(); const x = -300 + p * (W + 600);
+          ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(x + 300, 0); ctx.lineTo(x - 300, H); ctx.lineTo(0, H); ctx.closePath(); ctx.clip(); drawNew(); ctx.restore();
+          ctx.strokeStyle = hi; ctx.lineWidth = 26; ctx.beginPath(); ctx.moveTo(x + 300, 0); ctx.lineTo(x - 300, H); ctx.stroke();
+        } else { // pop: iris
+          drawOld(); const r = easeOutBack(p) * 1300;
+          ctx.save(); ctx.beginPath(); ctx.arc(W / 2, 1050, Math.max(1, r), 0, 6.2832); ctx.clip(); drawNew(); ctx.restore();
+          ctx.strokeStyle = hi; ctx.lineWidth = 22; ctx.beginPath(); ctx.arc(W / 2, 1050, Math.max(1, r), 0, 6.2832); ctx.stroke();
+        }
+      } else st.drawShot(ctx, this.shotState(i, t));
+      // soft band behind the captions for readability
+      const g = ctx.createLinearGradient(0, 300, 0, 740); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, 'rgba(0,0,0,0.26)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 300, W, 440);
+      ctx.restore();
+    }
+    drawSceneStep(t) {
+      const i = this.beatAt(t); if (i < 0) return;
+      const beat = this.timeline[i]; const step = beat.step; const ctx = this.ctx; const s = this.s; const p = this.preset;
+      if (step >= 1 && step <= 3) {
+        let first = i; while (first > 0 && this.timeline[first - 1].step === step) first--;
+        let last = i; while (last < this.timeline.length - 1 && this.timeline[last + 1].step === step) last++;
+        const a = easeOutBack(clamp01((t - this.timeline[first].start) / 0.45)); const out = clamp01((this.timeline[last].end - t) / 0.25);
+        ctx.save(); ctx.globalAlpha = out; ctx.translate(W * s / 2, 272 * s); ctx.scale(0.4 + 0.6 * a, 0.4 + 0.6 * a);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = '800 ' + (40 * s) + 'px ' + FONT; const label = 'STEP ' + step + ' OF 3'; const lw = ctx.measureText(label).width + 150 * s;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(ctx, -lw / 2, -40 * s, lw, 80 * s, 40 * s); ctx.fill();
+        ctx.beginPath(); ctx.arc(-lw / 2 + 40 * s, 0, 32 * s, 0, 6.2832); ctx.fillStyle = p.hi; ctx.fill();
+        ctx.fillStyle = '#111'; ctx.font = '900 ' + (40 * s) + 'px ' + FONT; ctx.fillText(String(step), -lw / 2 + 40 * s, 2 * s);
+        ctx.fillStyle = '#fff'; ctx.font = '800 ' + (40 * s) + 'px ' + FONT; ctx.fillText(label, 34 * s, 2 * s);
+        ctx.restore();
+      } else if (step === 4 && this.o.handle) {
+        let first = i; while (first > 0 && this.timeline[first - 1].step === 4) first--;
+        const a = easeOutBack(clamp01((t - this.timeline[first].start) / 0.4));
+        ctx.save(); ctx.translate(W * s / 2, 790 * s); ctx.scale(a, a); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = '800 ' + (46 * s) + 'px ' + FONT; const txt = 'Follow ' + this.o.handle; const tw = ctx.measureText(txt).width + 80 * s;
+        ctx.fillStyle = p.hi; roundRect(ctx, -tw / 2, -45 * s, tw, 90 * s, 45 * s); ctx.fill(); ctx.fillStyle = '#111'; ctx.fillText(txt, 0, 2 * s); ctx.restore();
       }
     }
     beatAt(t) {
@@ -154,7 +256,7 @@
       const upper = this.o.captionCase === 'upper';
       const words = beat.words.map((w) => (upper ? w.toUpperCase() : w));
       const maxW = 900 * s;
-      let size = (words.join(' ').length > 22 ? 104 : 122) * s;
+      let size = (words.join(' ').length > 22 ? 104 : 122) * s * (this.scenes ? 0.9 : 1);
       let lines;
       for (let tries = 0; tries < 6; tries++) {
         ctx.font = '800 ' + size + 'px ' + FONT;
@@ -173,7 +275,7 @@
       ctx.font = '800 ' + size + 'px ' + FONT;
       const space = ctx.measureText(' ').width;
       const lh = size * 1.14;
-      const cy = 1030 * s; const top = cy - (lines.length * lh) / 2 + lh / 2;
+      const cy = (this.scenes ? 500 : 1030) * s; const top = cy - (lines.length * lh) / 2 + lh / 2;
       const pos = [];
       lines.forEach((l, li) => {
         let x = (W * s - l.width) / 2;
@@ -299,6 +401,10 @@
       }
     }
     draw(t) {
+      if (this.scenes) {
+        this.drawScenes(t); this.drawSceneStep(t); this.drawCaptions(t); this.drawWatermark(); this.drawFinish(t);
+        return;
+      }
       const i = this.beatAt(t);
       let pulse = 0;
       if (i >= 0) { const st = this.timeline[i].start; const prevStep = i > 0 ? this.timeline[i - 1].step : -1; if (this.timeline[i].step !== prevStep) pulse = Math.exp(-Math.max(0, t - st) * 4); }
@@ -388,8 +494,9 @@
     const mime = pickVideoType(opts.format);
     const P = plan(buffer);
     const r = new Renderer(canvas);
-    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total }));
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
+    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total }));
+    const illustrated = await r.prepare();
     r.draw(0);
     const ac = audioCtx();
     if (ac.state === 'suspended') await ac.resume();
@@ -410,12 +517,12 @@
     rec.start(1000);
     const startAt = ac.currentTime + 0.12;
     src.start(startAt + LEAD, 0, P.audioDur);
-    let cancelled = false; let raf = 0; let timer = 0; let lastDraw = -1; let frames = 0;
+    let cancelled = false; let raf = 0; let timer = 0; let lastDraw = -1; let frames = 0; let drawMs = 0; let maxDraw = 0;
     const done = new Promise((resolve) => {
       const tick = () => {
         if (opts.signal && opts.signal.aborted) { cancelled = true; resolve(); return; }
         const t = Math.max(0, ac.currentTime - startAt);
-        if (t - lastDraw >= 1 / 31 || t >= P.total) { r.draw(t); lastDraw = t; frames++; }
+        if (t - lastDraw >= 1 / 31 || t >= P.total) { const d0 = performance.now(); r.draw(t); const dd = performance.now() - d0; drawMs += dd; if (dd > maxDraw) maxDraw = dd; lastDraw = t; frames++; }
         if (onProgress) onProgress(Math.min(1, t / P.total), t, P.total);
         if (t >= P.total) { resolve(); return; }
         // rAF pauses when the screen is off / tab hidden; setTimeout keeps going (slower) as a backup.
@@ -434,7 +541,7 @@
     const type = (rec.mimeType || mime || 'video/webm').split(';')[0];
     let out = new Blob(chunks, { type });
     if (/webm/.test(type)) out = await fixWebmDuration(out, P.total);
-    return { blob: out, mime: rec.mimeType || mime, type, duration: P.total, width: canvas.width, height: canvas.height, frames };
+    return { blob: out, mime: rec.mimeType || mime, type, duration: P.total, width: canvas.width, height: canvas.height, frames, fps: frames / P.total, avgDrawMs: frames ? drawMs / frames : 0, maxDrawMs: maxDraw, illustrated, scenes: r.scenes };
   }
 
   // MediaRecorder WebM files have no Duration, so players can't seek and some apps show 0:00. Insert one into Segment > Info.
@@ -489,7 +596,8 @@
     const ac = audioCtx();
     let src = null; let raf = 0; let startAt = 0; let playing = false;
     const api = {
-      duration: P.total,
+      duration: P.total, renderer: r,
+      ready: r.prepare(),
       drawAt(t) { r.draw(t); },
       async play(onEnd) {
         if (ac.state === 'suspended') await ac.resume();

@@ -143,7 +143,7 @@
     return names.sort((a, b) => score(b) - score(a));
   }
   async function generateWith(model, contents, opts) {
-    const gen = { temperature: opts.temperature ?? 0.8, maxOutputTokens: 8192 };
+    const gen = { temperature: opts.temperature ?? 0.8, maxOutputTokens: opts.maxTokens || 8192 };
     if (opts.json) gen.responseMimeType = 'application/json';
     if (opts.schema) gen.responseSchema = opts.schema;
     const body = { contents, generationConfig: gen };
@@ -346,5 +346,63 @@
     return { blob: pcmToWav(pcm, fmt.rate, fmt.channels, chunks.length > 1 ? 0.18 : 0), model, chunks: chunks.length, rate: fmt.rate };
   }
 
-  VTS.gemini = { generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
+
+  // ---------- AI illustrations (Gemini native image generation, "Nano Banana") ----------
+  // Sep 2026 lineup. Image models have NO free tier (billing-enabled keys only); failures fall back to built-in scenes.
+  const IMAGE_MODELS = ['gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image', 'gemini-3-pro-image', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview', 'gemini-2.5-flash-image'];
+  function b64ToBlob(b64, mime) { return new Blob([b64ToBytes(b64)], { type: mime || 'image/png' }); }
+  async function imageWith(model, prompt, o) {
+    const gen = { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: o.aspectRatio || '9:16' } };
+    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: gen };
+    const send = () => geminiRequest('/models/' + encodeURIComponent(model) + ':generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }, o.timeout || 120000);
+    let data;
+    try {
+      try { data = await send(); } catch (err) {
+        const m = String(err && err.message || '').toLowerCase();
+        if (err && err.status === 400 && (m.includes('imageconfig') || m.includes('image_config') || m.includes('aspect'))) { delete gen.imageConfig; data = await send(); }
+        else if (err && err.status === 400 && m.includes('modalit')) { gen.responseModalities = ['TEXT', 'IMAGE']; data = await send(); }
+        else throw err;
+      }
+    } catch (err) { if (err && !err.friendly) { err.model = model; err.details = (err.details || err.message) + ' [model: ' + model + ']'; } throw err; }
+    const cand = data && data.candidates && data.candidates[0];
+    const parts = (cand && cand.content && cand.content.parts) || [];
+    const img = parts.map((p) => p.inlineData || p.inline_data).find((d) => d && d.data);
+    if (!img) {
+      const why = (cand && cand.finishReason) || (data && data.promptFeedback && data.promptFeedback.blockReason) || 'no image in response';
+      const e = fail('Gemini did not return an illustration.'); e.details = 'Model ' + model + ': ' + why; e.noImage = true; throw e;
+    }
+    return b64ToBlob(img.data, img.mimeType || img.mime_type || 'image/png');
+  }
+  // prompt -> Blob. Tries the remembered model then the chain; quota/permission/unavailable -> next model once.
+  async function generateImage(prompt, o) {
+    o = o || {};
+    const first = o.model || (host.getImageModel ? host.getImageModel() : '') || IMAGE_MODELS[0];
+    const queue = [first].concat(IMAGE_MODELS.filter((m) => m !== first));
+    let lastErr = null; let quotaHit = false; const tried = [];
+    for (const model of queue) {
+      tried.push(model);
+      try {
+        const blob = await imageWith(model, prompt, o);
+        if (host.setImageModel && model !== first) host.setImageModel(model);
+        blob.model = model;
+        return blob;
+      } catch (err) {
+        lastErr = err;
+        if (err && (err.reason === 'API_KEY_INVALID' || /api key not valid/i.test(err.message || ''))) break;
+        if (err && err.name === 'AbortError') break;
+        if (isQuota(err)) { quotaHit = true; continue; }
+        if (err && err.noImage) continue;
+        if (err && (err.status === 403 || err.status === 404 || err.status === 400 || isModelUnavailable(err))) continue;
+        break;
+      }
+    }
+    const e = fail(quotaHit ? 'AI illustrations are not available on this key right now (image generation has no free tier, or its quota is used up). Using the built-in animated scenes instead.'
+      : 'AI illustrations are not available for this API key. Using the built-in animated scenes instead.');
+    e.details = redact((lastErr && (lastErr.details || lastErr.message)) || 'unknown') + ' [tried: ' + tried.join(', ') + ']';
+    e.quota = quotaHit; e.unavailable = true;
+    throw e;
+  }
+  VTS.gemini = { generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
 }());

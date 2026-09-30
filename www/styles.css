@@ -127,6 +127,20 @@ audio { width: 100%; height: 44px; margin-top: 4px; filter: invert(.9) hue-rotat
 .beat .b-del { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
 .beat .b-row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
 .beat .b-row label { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.beat .b-scene-btn { grid-column: 1 / -1; text-align: left; font: inherit; font-size: 13px; color: #d4d4ea; padding: 9px 12px; border-radius: 11px; border: 1px dashed var(--border); background: rgba(255,255,255,.03); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.beat .b-scene-btn[aria-expanded="true"] { border-style: solid; color: #fff; }
+.beat .b-scene { grid-column: 1 / -1; display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: start; }
+.beat .b-scene.hidden { display: none; }
+.beat .sc-prev { width: 112px; height: 199px; border-radius: 12px; background: #111; border: 1px solid var(--border); }
+.beat .sc-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; min-width: 0; }
+.beat .sc-fields label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); min-width: 0; }
+.beat .sc-fields select, .beat .sc-fields input[type=text] { width: 100%; font-size: 12.5px; font-weight: 600; padding: 8px 24px 8px 8px; border-radius: 10px; }
+.beat .sc-fields input[type=text] { padding-right: 8px; }
+.beat .sc-props { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+.beat .sc-fields label:nth-child(5), .beat .sc-fields label:nth-child(6) { grid-column: 1 / -1; }
+.beat .sc-two { grid-column: 1 / -1; flex-direction: row !important; align-items: center; }
+.beat .sc-actions { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 420px) { .beat .b-scene { grid-template-columns: 1fr; } .beat .sc-prev { justify-self: center; } }
 .beat.s0 { border-left: 3px solid #ff5c8a; } .beat.s1, .beat.s2, .beat.s3 { border-left: 3px solid #8b5cff; } .beat.s4 { border-left: 3px solid #3ddc97; }
 
 /* Voice options */

@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 90;
@@ -24,7 +24,7 @@
   // ---------- settings ----------
   const K = { key: 'vts.apiKey', model: 'vts.model', models: 'vts.models', handle: 'vts.handle', tone: 'vts.tone', language: 'vts.language', grade: 'vts.grade',
     watermark: 'vts.watermark', speechLang: 'vts.speechLang', wpm: 'vts.wpm', rawAudio: 'vts.rawAudio', last: 'vts.lastProject',
-    ttsVoice: 'vts.ttsVoice', ttsStyle: 'vts.ttsStyle', ttsCustom: 'vts.ttsCustom', ttsModel: 'vts.ttsModel', ttsModels: 'vts.ttsModels' };
+    ttsVoice: 'vts.ttsVoice', ttsStyle: 'vts.ttsStyle', ttsCustom: 'vts.ttsCustom', ttsModel: 'vts.ttsModel', ttsModels: 'vts.ttsModels', visualStyle: 'vts.visualStyle', aiImages: 'vts.aiImages', imageModel: 'vts.imageModel' };
   function load(key, fallback) { try { const raw = localStorage.getItem(key); return raw == null ? fallback : JSON.parse(raw); } catch (_) { return fallback; } }
   function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { toast('Could not save settings: storage is full.', true); } }
   const getKey = () => String(localStorage.getItem(K.key) || '').trim();
@@ -53,6 +53,7 @@
   }
   Object.assign(G.host, {
     getTtsModel, setTtsModel: (m) => save(K.ttsModel, m),
+    getImageModel: () => { const m = String(load(K.imageModel, '') || ''); return /^[a-zA-Z0-9._-]{3,80}$/.test(m) ? m : ''; }, setImageModel: (m) => save(K.imageModel, m),
     onTtsModelSwitch: (from, to) => toast(from + ' is not available for this key. AI voice switched to ' + to + '.'),
     getKey, getModel,
     setModel: (m) => save(K.model, m),
@@ -118,7 +119,8 @@
     const now = new Date().toISOString();
     return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone: load(K.tone, 'calm'),
       pkg: null, voice: null, video: null, thumb: '',
-      look: { preset: load(K.grade, 'teal'), captionStyle: 'pop', captionCase: 'upper', watermark: !!load(K.watermark, false), progress: false, format: 'auto' } };
+      look: { preset: load(K.grade, 'teal'), captionStyle: 'pop', captionCase: 'upper', watermark: !!load(K.watermark, false), progress: false, format: 'auto',
+        visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) } };
   }
   function persist(now) {
     clearTimeout(saveTimer);
@@ -393,30 +395,121 @@
     beatsStale = false; persist(); renderScript(); toast('Captions rebuilt from the script');
   });
   const STEP_LABELS = ['Hook', 'Step 1', 'Step 2', 'Step 3', 'CTA'];
+  const SC = VTS.scenes;
+  const scenesOn = () => !P.look || P.look.visual !== 'classic';
+  const labelOf = (list, id) => (list.find((x) => x[0] === id) || [id, id])[1];
+  function sceneSummary(sc) {
+    if (!sc) return 'Auto scene';
+    return labelOf(SC.SETTINGS, sc.setting) + ' · ' + labelOf(SC.POSES, sc.pose) + ' · ' + labelOf(SC.EMOTIONS, sc.emotion) + (sc.props.length ? ' · ' + sc.props.map((x) => labelOf(SC.PROPS, x)).join(', ') : '');
+  }
+  function ensureScenes() { if (P.pkg && P.pkg.beats.some((b) => !b.scene || !b.scene.setting)) S.attachScenes(P.pkg.beats); }
+  function heuristicNewScene(i) {
+    const b = P.pkg.beats[i]; const cur = b.scene || {}; const prev = i > 0 ? P.pkg.beats[i - 1].scene : null;
+    const inferred = SC.normalizeScene(null, b.text, b.step, null);
+    if (SC.sceneKey(inferred) !== SC.sceneKey(cur)) return inferred;
+    const pick = (arr, not) => { const c = arr.filter((x) => x !== not); return c[Math.floor(Math.random() * c.length)]; };
+    return SC.normalizeScene({ setting: cur.setting, pose: pick(SC.POSE_IDS, cur.pose), emotion: pick(SC.EMO_IDS, cur.emotion), props: [pick(SC.PROP_IDS), pick(SC.PROP_IDS)], camera: pick(SC.CAM_IDS, cur.camera), callout: cur.callout }, b.text, b.step, prev);
+  }
+  function sceneEditor(li, b, i) {
+    const box = li.querySelector('.b-scene'); const btn = li.querySelector('.b-scene-btn');
+    const sum = () => { btn.textContent = '🎬 ' + sceneSummary(b.scene); };
+    sum();
+    let built = false;
+    const build = () => {
+      built = true;
+      box.innerHTML = '<canvas class="sc-prev" width="135" height="240" aria-label="Scene preview"></canvas><div class="sc-fields">'
+        + '<label>Setting<select data-f="setting"></select></label><label>Pose<select data-f="pose"></select></label>'
+        + '<label>Emotion<select data-f="emotion"></select></label><label>Camera<select data-f="camera"></select></label>'
+        + '<label>Props<span class="sc-props"><select data-p="0"></select><select data-p="1"></select><select data-p="2"></select></span></label>'
+        + '<label>Callout<input data-f="callout" type="text" maxlength="28" placeholder="e.g. 2:07 AM (optional)"></label>'
+        + '<label class="sc-two"><input type="checkbox" data-f="count"> Two characters (conversation)</label>'
+        + '<div class="sc-actions"><button type="button" class="chip sc-regen">↻ Regenerate scene</button><button type="button" class="chip sc-same"' + (i ? '' : ' disabled') + '>Same as previous</button></div></div>';
+      const fill = (sel, list, none) => { if (none) sel.add(new Option('— none —', '')); list.forEach(([id, l]) => sel.add(new Option(l, id))); };
+      fill(box.querySelector('[data-f=setting]'), SC.SETTINGS); fill(box.querySelector('[data-f=pose]'), SC.POSES);
+      fill(box.querySelector('[data-f=emotion]'), SC.EMOTIONS); fill(box.querySelector('[data-f=camera]'), SC.CAMERAS);
+      box.querySelectorAll('[data-p]').forEach((sel) => fill(sel, SC.PROPS, true));
+      const cv = box.querySelector('.sc-prev');
+      const paint = () => {
+        const sc = b.scene;
+        box.querySelectorAll('[data-f]').forEach((el) => { const f = el.dataset.f; if (f === 'count') el.checked = sc.count === 2; else el.value = sc[f] || ''; });
+        box.querySelectorAll('[data-p]').forEach((el) => { el.value = sc.props[Number(el.dataset.p)] || ''; });
+        try { SC.drawPreview(cv, sc, P.look.preset, 1.6); } catch (_) { /* ignore */ }
+        sum();
+      };
+      const changed = (ev) => {
+        const raw = Object.assign({}, b.scene); const f = ev && ev.target && ev.target.dataset.f;
+        box.querySelectorAll('[data-f]').forEach((el) => { const f = el.dataset.f; if (f === 'count') raw.count = el.checked ? 2 : 1; else raw[f] = el.value; });
+        raw.props = Array.from(box.querySelectorAll('[data-p]')).map((el) => el.value).filter(Boolean);
+        b.scene = SC.normalizeScene(raw, b.text, b.step, i > 0 ? P.pkg.beats[i - 1].scene : null, f === 'setting' ? 'setting' : 'pose');
+        b.scene.edited = true;
+        markVideoStale(); persist(); paint();
+      };
+      box.querySelectorAll('select, input').forEach((el) => el.addEventListener('change', changed));
+      box.querySelector('[data-f=callout]').addEventListener('input', () => { b.scene.callout = box.querySelector('[data-f=callout]').value.slice(0, 28); markVideoStale(); persist(); });
+      box.querySelector('.sc-same').addEventListener('click', () => { if (!i) return; b.scene = JSON.parse(JSON.stringify(P.pkg.beats[i - 1].scene)); markVideoStale(); persist(); paint(); });
+      const regen = box.querySelector('.sc-regen');
+      regen.addEventListener('click', async () => {
+        regen.disabled = true; regen.textContent = '↻ Thinking…';
+        let sc = null; let note = '';
+        if (getKey()) {
+          try { sc = await S.regenerateScene(P.pkg, i); } catch (err) { note = ' (Gemini: ' + G.friendlyError(err) + ' — used a built-in suggestion)'; }
+        }
+        if (!sc) sc = heuristicNewScene(i);
+        b.scene = sc; markVideoStale(); persist(); paint();
+        regen.disabled = false; regen.textContent = '↻ Regenerate scene';
+        toast('New scene: ' + sceneSummary(sc) + note, !!note);
+      });
+      paint();
+    };
+    btn.addEventListener('click', () => {
+      const open = box.classList.toggle('hidden') === false;
+      btn.setAttribute('aria-expanded', String(open));
+      if (open && !built) build();
+    });
+  }
   function renderBeats() {
     const list = $('beats'); list.innerHTML = '';
+    const scenes = scenesOn();
+    if (scenes) ensureScenes();
+    $('scene-hint').classList.toggle('hidden', !scenes);
     P.pkg.beats.forEach((b, i) => {
       const li = document.createElement('li'); li.className = 'beat s' + b.step;
       li.innerHTML = '<select aria-label="Section"></select><input class="b-text" type="text" aria-label="Caption text"><button type="button" class="b-del" aria-label="Delete beat">×</button>'
         + '<div class="b-row"><label>Weight <input class="b-weight" type="number" min="0.5" max="12" step="0.5" inputmode="decimal"></label><label style="flex:1">Emphasis <input class="b-emph" type="text" placeholder="key word"></label></div>'
-        + '<input class="b-visual" type="text" aria-label="Visual idea" placeholder="🎞 b-roll / visual idea">';
+        + (scenes ? '<button type="button" class="b-scene-btn" aria-expanded="false"></button><div class="b-scene hidden"></div>'
+          : '<input class="b-visual" type="text" aria-label="Visual idea" placeholder="🎞 b-roll / visual idea">');
       const sel = li.querySelector('select'); STEP_LABELS.forEach((l, k) => sel.add(new Option(l, k))); sel.value = b.step;
       const tx = li.querySelector('.b-text'); tx.value = b.text;
       const w = li.querySelector('.b-weight'); w.value = b.weight;
       const em = li.querySelector('.b-emph'); em.value = b.emphasis || '';
-      const vi = li.querySelector('.b-visual'); vi.value = b.visual ? '🎞 ' + b.visual : '';
       sel.addEventListener('change', () => { b.step = Number(sel.value); li.className = 'beat s' + b.step; markVideoStale(); persist(); });
       tx.addEventListener('input', () => { b.text = tx.value; markVideoStale(); persist(); });
       w.addEventListener('input', () => { b.weight = Math.max(0.5, Math.min(12, Number(w.value) || 1)); markVideoStale(); persist(); });
       em.addEventListener('input', () => { b.emphasis = em.value.trim(); markVideoStale(); persist(); });
-      vi.addEventListener('input', () => { b.visual = vi.value.replace(/^🎞\s*/, ''); persist(); });
+      if (scenes) sceneEditor(li, b, i);
+      else {
+        const vi = li.querySelector('.b-visual'); vi.value = b.visual ? '🎞 ' + b.visual : '';
+        vi.addEventListener('input', () => { b.visual = vi.value.replace(/^🎞\s*/, ''); persist(); });
+      }
       li.querySelector('.b-del').addEventListener('click', () => { P.pkg.beats.splice(i, 1); markVideoStale(); persist(); renderBeats(); });
       list.appendChild(li);
     });
+    paintVisualSegs();
   }
+  function paintVisualSegs() {
+    const v = P && P.look && P.look.visual === 'classic' ? 'classic' : 'scenes';
+    document.querySelectorAll('.vis-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+    $('ai-img-row').classList.toggle('hidden', v === 'classic');
+  }
+  document.querySelectorAll('.vis-seg button').forEach((b) => b.addEventListener('click', () => {
+    if (!P) return;
+    P.look.visual = b.dataset.v; markVideoStale(); persist();
+    if (P.pkg) renderBeats();
+    if (P.step === 'render') renderRenderPane(); else paintVisualSegs();
+  }));
   $('add-beat').addEventListener('click', () => {
     const last = P.pkg.beats[P.pkg.beats.length - 1];
-    P.pkg.beats.push({ text: '', weight: 3, step: last ? last.step : 4, emphasis: '', visual: '' });
+    P.pkg.beats.push({ text: '', weight: 3, step: last ? last.step : 4, emphasis: '', visual: '', scene: last && last.scene ? JSON.parse(JSON.stringify(last.scene)) : null });
     persist(); renderBeats();
     const inputs = $('beats').querySelectorAll('.b-text'); inputs[inputs.length - 1].focus();
   });
@@ -707,6 +800,7 @@
       const buf = await getVoiceBuffer();
       pv = R.preview({ canvas: $('preview'), buffer: buf, beats: P.pkg.beats, look: look(), onTime: (t, d) => { $('preview-time').textContent = fmt(t) + ' / ' + fmt(d); } });
       try { await document.fonts.load('800 100px Montserrat'); } catch (_) { /* ignore */ }
+      try { await pv.ready; } catch (_) { /* ignore */ }
       const first = R.buildTimeline(P.pkg.beats, 0.3, 0.3 + buf.duration);
       const stepBeat = first.find((b) => b.step === 1);
       pv.drawAt(stepBeat ? stepBeat.start + 0.9 : 1.2);
@@ -725,6 +819,7 @@
     });
     document.querySelectorAll('#cap-style button').forEach((b) => b.classList.toggle('on', b.dataset.v === P.look.captionStyle));
     document.querySelectorAll('#cap-case button').forEach((b) => b.classList.toggle('on', b.dataset.v === P.look.captionCase));
+    paintVisualSegs(); $('opt-ai-images').checked = !!P.look.aiImages;
     $('opt-watermark').checked = !!P.look.watermark; $('opt-progress').checked = !!P.look.progress; $('opt-format').value = P.look.format || 'auto';
     $('wm-handle').textContent = handle() ? handle() : '(set your handle in Settings)';
     $('render').disabled = rendering;
@@ -737,6 +832,46 @@
   $('opt-watermark').addEventListener('change', (e) => { P.look.watermark = e.target.checked; if (e.target.checked && !handle()) toast('Set your channel handle in Settings.', true); markVideoStale(); persist(); renderRenderPane(); });
   $('opt-progress').addEventListener('change', (e) => { P.look.progress = e.target.checked; markVideoStale(); persist(); renderRenderPane(); });
   $('opt-format').addEventListener('change', (e) => { P.look.format = e.target.value; persist(); });
+  $('opt-ai-images').addEventListener('change', (e) => {
+    P.look.aiImages = e.target.checked; markVideoStale(); persist();
+    if (e.target.checked) toast(getKey() ? 'AI illustrations: uses Gemini image quota (no free tier). If your key can’t make images, the built-in scenes are used.' : 'Add your Gemini API key in Settings to use AI illustrations.', !getKey());
+  });
+
+  // ---------- AI illustrations (optional; falls back silently to built-in scenes) ----------
+  let aiImagesOff = ''; // set for this session once image generation is known to be unavailable/quota'd
+  const MAX_AI_IMAGES = 8;
+  function aiPrompt(b) {
+    const pal = (R.PRESETS[P.look.preset] || {}).name || 'teal';
+    return ['Flat 2D vector illustration for a faceless psychology / self-help YouTube Short. Vertical 9:16, full-bleed background, no borders.',
+      'Style: clean modern flat cartoon like popular animated psychology channels; one simple rounded character with a minimal friendly face, bold clean outlines, soft shading, limited colour palette matching a "' + pal + '" colour grade, cosy and polished.',
+      'Absolutely no text, letters, numbers, logos or watermarks. Keep the upper third of the image calm and uncluttered (captions go there); put the character in the lower two thirds.',
+      'Scene: ' + SC.describe(b.scene) + '.', 'This moment of the voiceover: "' + b.text + '".'].join('\n');
+  }
+  async function prepareAiImages(signal) {
+    const beats = P.pkg.beats;
+    beats.forEach((b) => { if (!b.scene) S.attachScenes(beats); });
+    const want = []; let prevKey = '';
+    beats.forEach((b, i) => { const k = SC.sceneKey(b.scene); if (k !== prevKey) want.push(i); prevKey = k; });
+    const targets = want.slice(0, MAX_AI_IMAGES);
+    let made = 0; let reused = 0; let lastBlob = null;
+    for (let n = 0; n < want.length; n++) {
+      const i = want[n]; const end = n + 1 < want.length ? want[n + 1] : beats.length;
+      const b = beats[i]; const prompt = aiPrompt(b);
+      let blob = b.aiImage && b.aiPrompt === prompt ? b.aiImage : null;
+      if (blob) reused++;
+      else if (targets.includes(i) && !aiImagesOff) {
+        if (signal && signal.aborted) return null;
+        $('render-label').textContent = 'Drawing AI illustration ' + (n + 1) + ' of ' + targets.length + '…';
+        try { blob = await G.generateImage(prompt, { aspectRatio: '9:16' }); made++; }
+        catch (err) { aiImagesOff = (err && err.details) || (err && err.message) || 'unavailable'; console.warn('AI illustrations unavailable', aiImagesOff); }
+      }
+      if (!blob && lastBlob && !targets.includes(i) && !aiImagesOff) blob = lastBlob; // beyond the cap: reuse the previous illustration
+      for (let j = i; j < end; j++) { beats[j].aiImage = blob || null; beats[j].aiPrompt = blob ? prompt : ''; }
+      if (blob) lastBlob = blob;
+    }
+    persist();
+    return { made, reused, failed: aiImagesOff };
+  }
   $('preview-play').addEventListener('click', async () => {
     if (!pv) await buildPreview();
     if (!pv) return;
@@ -762,8 +897,19 @@
     const t0 = Date.now();
     try {
       const buf = await getVoiceBuffer();
+      const lk = look(); let aiNote = '';
+      if (lk.visual !== 'classic') ensureScenes();
+      if (lk.visual !== 'classic' && lk.aiImages) {
+        if (!getKey()) aiNote = ' AI illustrations need a Gemini key, so the built-in scenes were used.';
+        else {
+          const r0 = await prepareAiImages(renderAbort.signal);
+          if (r0 === null) { setStatus('render-status', 'Render cancelled.'); return; }
+          const have = P.pkg.beats.some((b) => b.aiImage);
+          if (!have) { lk.aiImages = false; aiNote = ' AI illustrations weren’t available for this key (image models need billing), so the built-in animated scenes were used.'; }
+        }
+      } else lk.aiImages = false;
       const res = await R.renderVideo({
-        canvas, buffer: buf, beats: P.pkg.beats, look: look(), format: P.look.format, signal: renderAbort.signal,
+        canvas, buffer: buf, beats: P.pkg.beats, look: lk, format: P.look.format, signal: renderAbort.signal,
         onProgress: (p, t, total) => { $('render-bar').style.width = (p * 100).toFixed(1) + '%'; $('render-label').textContent = 'Rendering… ' + Math.round(p * 100) + '% (' + fmt(t) + ' / ' + fmt(total) + ')'; },
       });
       if (!res) { setStatus('render-status', 'Render cancelled.'); return; }
@@ -771,13 +917,13 @@
       // Library thumbnail.
       const th = document.createElement('canvas'); th.width = 270; th.height = 480;
       const rr = new R.Renderer(th); const P2 = R.plan(buf);
-      rr.setup(Object.assign({}, look(), { beats: P.pkg.beats, speechStart: P2.speechStart, speechEnd: P2.speechEnd, duration: P2.total }));
+      rr.setup(Object.assign({}, lk, { aiImages: false, beats: P.pkg.beats, speechStart: P2.speechStart, speechEnd: P2.speechEnd, duration: P2.total }));
       const tl = R.buildTimeline(P.pkg.beats, P2.speechStart, P2.speechEnd); const sb = tl.find((b) => b.step === 1);
       rr.draw(sb ? sb.start + 0.9 : 1.2);
       P.thumb = th.toDataURL('image/jpeg', 0.8);
-      P.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, frames: res.frames };
+      P.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, frames: res.frames, fps: res.fps, avgDrawMs: res.avgDrawMs, illustrated: res.illustrated || 0, visual: res.scenes ? 'scenes' : 'classic' };
       persist(true);
-      setStatus('render-status', 'Done! Share it straight to YouTube or save it to your phone.', 'ok');
+      setStatus('render-status', 'Done! Share it straight to YouTube or save it to your phone.' + aiNote, 'ok');
       paintResult(); paintStepper();
       setTimeout(() => $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     } catch (err) {
@@ -878,6 +1024,7 @@
     fillSelect($('s-language'), S.LANGUAGES.map((l) => [l, l]), load(K.language, 'English'));
     fillSelect($('s-grade'), Object.entries(R.PRESETS).map(([k, p]) => [k, p.name]), load(K.grade, 'teal'));
     $('s-watermark').checked = !!load(K.watermark, false);
+    $('s-visual').value = load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes'; $('s-ai-images').checked = !!load(K.aiImages, false);
     const langs = SPEECH_LANGS.slice(); if (!langs.some(([id]) => id === speechLang())) langs.unshift([speechLang(), speechLang()]);
     fillSelect($('s-speech-lang'), langs, speechLang());
     $('speech-support').textContent = VTS.speech.mode === 'native' ? 'Dictation uses Android’s built-in speech recognition (usually Google). Most phones need internet for it.'
@@ -932,6 +1079,8 @@
   $('s-language').addEventListener('change', (e) => save(K.language, e.target.value));
   $('s-grade').addEventListener('change', (e) => { save(K.grade, e.target.value); if (P && !P.video) P.look.preset = e.target.value; });
   $('s-watermark').addEventListener('change', (e) => save(K.watermark, e.target.checked));
+  $('s-visual').addEventListener('change', (e) => save(K.visualStyle, e.target.value));
+  $('s-ai-images').addEventListener('change', (e) => save(K.aiImages, e.target.checked));
   $('s-speech-lang').addEventListener('change', (e) => save(K.speechLang, e.target.value));
   $('s-wpm').addEventListener('input', (e) => { save(K.wpm, Number(e.target.value)); $('s-wpm-label').textContent = e.target.value + ' words/min'; });
   $('s-raw-audio').addEventListener('change', (e) => save(K.rawAudio, e.target.checked));
@@ -949,7 +1098,7 @@
     } catch (err) { toast(G.friendlyError(err), true); } finally { btn.disabled = false; btn.textContent = 'Load voice models from my key'; }
   });
   $('export-data').addEventListener('click', async () => {
-    const projects = (await DB.all()).map((p) => { const c = Object.assign({}, p); delete c.ideaAudio; delete c.video; if (c.voice) c.voice = Object.assign({}, c.voice, { blob: null }); return c; });
+    const projects = (await DB.all()).map((p) => { const c = Object.assign({}, p); delete c.ideaAudio; delete c.video; if (c.voice) c.voice = Object.assign({}, c.voice, { blob: null }); if (c.pkg && c.pkg.beats) c.pkg = Object.assign({}, c.pkg, { beats: c.pkg.beats.map((b) => Object.assign({}, b, { aiImage: null, aiPrompt: '' })) }); return c; });
     const settings = {}; Object.entries(K).forEach(([k, v]) => { if (k !== 'key' && k !== 'last') { const raw = localStorage.getItem(v); if (raw != null) settings[v] = raw; } });
     const payload = JSON.stringify({ app: 'voice-to-short', version: APP_VERSION, exportedAt: new Date().toISOString(), settings, projects }, null, 2);
     const name = 'voice-to-short-backup-' + new Date().toISOString().slice(0, 10) + '.json';

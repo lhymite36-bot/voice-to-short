@@ -77,7 +77,11 @@
               <div class="row-between small"><span class="muted" id="script-est">≈ 0 s spoken</span><button type="button" class="link-btn hidden" id="rebuild-beats">↻ Update captions from script</button></div>
             </div>
             <div class="card">
-              <div class="card-head"><h2>Caption beats</h2><span class="muted small">One phrase per beat · weight = time</span></div>
+              <div class="card-head"><h2>Caption beats &amp; scenes</h2><span class="muted small">One phrase per beat · weight = time</span></div>
+              <div class="field"><span class="label-row"><span>Visual style</span></span>
+                <div class="seg vis-seg" id="vis-seg-script"><button type="button" data-v="scenes">🎨 Animated scenes</button><button type="button" data-v="classic">Captions only (classic)</button></div>
+              </div>
+              <p class="small muted" id="scene-hint">Each beat gets a 2D animated scene. Tap 🎬 on a beat to change its scene.</p>
               <ol id="beats" class="beats"></ol>
               <button type="button" class="btn ghost" id="add-beat">+ Add beat</button>
             </div>
@@ -160,6 +164,10 @@
               <div class="preview-time" id="preview-time"></div>
             </div>
             <div class="render-controls">
+              <div class="field"><span class="label-row"><span>Visual style</span></span>
+                <div class="seg vis-seg" id="vis-seg-render"><button type="button" data-v="scenes">🎨 Animated scenes</button><button type="button" data-v="classic">Captions only</button></div>
+              </div>
+              <label class="switch" id="ai-img-row"><input type="checkbox" id="opt-ai-images"><span>Use AI-drawn illustrations when available <em class="muted">(uses Gemini image quota · needs a billing-enabled key, ≈ $0.03–0.04 per scene · falls back to built-in scenes)</em></span></label>
               <div class="field"><span class="label-row"><span>Colour grade</span></span><div class="grades" id="grades"></div></div>
               <div class="field"><span class="label-row"><span>Captions</span></span>
                 <div class="seg" id="cap-style"><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button></div>
@@ -222,6 +230,8 @@
           <label class="field"><span>Script language</span><select id="s-language"></select></label>
           <label class="field"><span>Default colour grade</span><select id="s-grade"></select></label>
           <label class="switch"><input type="checkbox" id="s-watermark"><span>Watermark on by default</span></label>
+          <label class="field"><span>Default visual style</span><select id="s-visual"><option value="scenes">Animated scenes (2D cartoon, on-device)</option><option value="classic">Captions only (classic)</option></select></label>
+          <label class="switch"><input type="checkbox" id="s-ai-images"><span>AI-drawn illustrations by default <em class="muted">(Gemini image models have no free tier; uses paid quota)</em></span></label>
         </div>
         <div class="card">
           <div class="card-head"><h2>AI voice (Gemini)</h2></div>
@@ -284,6 +294,7 @@
 
   <script src="capacitor.js"></script>
   <script src="js/gemini.js"></script>
+  <script src="js/scenes.js"></script>
   <script src="js/shortgen.js"></script>
   <script src="js/db.js"></script>
   <script src="js/speech.js"></script>
