@@ -150,7 +150,10 @@
 
   function schemaWithScenes() {
     if (!SC()) return SCHEMA;
-    const sch = JSON.parse(JSON.stringify(SCHEMA)); sch.properties.beats.items.properties.scene = sceneSchema(); sch.properties.beats.items.required.push('scene'); return sch;
+    const sch = JSON.parse(JSON.stringify(SCHEMA)); const it = sch.properties.beats.items;
+    // The scene object already describes the visual: drop the free-text "visual" (about 15% of the reply) in scene mode.
+    delete it.properties.visual; it.required = it.required.filter((k) => k !== 'visual');
+    it.properties.scene = sceneSchema(); it.required.push('scene'); return sch;
   }
   // Comedy path (v1.4): any funny tone, any non-classic format, or humour > 0.
   const isComedy = (opts) => { const t = TONES[opts && opts.tone]; const h = opts && opts.humour != null ? Number(opts.humour) : (t && t.funny ? 2 : 0); return !isLong(opts && opts.length) && ((t && t.funny) || (opts && opts.format && opts.format !== 'classic') || h > 0); };
@@ -277,6 +280,32 @@
   }
 
   function toStr(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 5000); }
+  // Close a JSON reply that was cut off mid-way (MAX_TOKENS): drop a dangling key / half value, close the open
+  // string, then close every open array/object in order. Returns a string (may still be invalid; caller parses).
+  function repairJSON(text) {
+    let raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    const st = raw.indexOf('{'); if (st < 0) return raw; raw = raw.slice(st);
+    const stack = []; let inStr = false; let esc = false; let lastSafe = 0; let safeStack = [];
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === '{' || c === '[') stack.push(c === '{' ? '}' : ']');
+      else if (c === '}' || c === ']') { stack.pop(); lastSafe = i + 1; safeStack = stack.slice(); }
+      else if (c === ',') { lastSafe = i; safeStack = stack.slice(); }
+    }
+    if (!stack.length && !inStr) return raw;
+    // Prefer closing a cut string in place when it is an array item or a value (keeps the partial script text),
+    // otherwise cut back to the last complete element.
+    let out = raw;
+    if (inStr) { if (esc) out = out.slice(0, -1); out += '"'; }
+    out = out.replace(/,\s*$/, '').replace(/:\s*$/, ': ""').replace(/,\s*"[^"]*"\s*$/, '');
+    const tryClose = (body, stk) => body.replace(/[,\s]+$/, '') + stk.slice().reverse().join('');
+    const stk2 = []; { let q = false; let e = false; for (const c of out) { if (q) { if (e) e = false; else if (c === '\\') e = true; else if (c === '"') q = false; continue; } if (c === '"') q = true; else if (c === '{' || c === '[') stk2.push(c === '{' ? '}' : ']'); else if (c === '}' || c === ']') stk2.pop(); } }
+    const a = tryClose(out, stk2);
+    try { JSON.parse(a); return a; } catch (_) { /* fall back */ }
+    return tryClose(raw.slice(0, lastSafe), safeStack);
+  }
   function parseJSONLoose(text) {
     const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     try { return JSON.parse(raw); } catch (_) { /* keep going */ }
@@ -285,6 +314,16 @@
     throw new Error('not json');
   }
 
+  // A cut-off reply can have the whole script but beats for only part of it: keep the planned beats (speakers,
+  // fx, jokes) and add plain beats for the uncovered rest of the script so captions + timing stay complete.
+  function completeBeats(script, beats) {
+    const all = words(script); const covered = wordCount(beats.map((b) => b.text).join(' '));
+    if (all.length - covered < 4 || covered >= all.length * 0.97) return beats;
+    const rest = all.slice(covered).join(' '); const last = beats[beats.length - 1] || {};
+    const extra = beatsFromScript(rest, '', []);
+    extra.forEach((b, k) => { b.step = (k >= extra.length - 2 && CTA_RE.test(b.text)) ? 4 : (last.step === 4 ? 4 : last.step || 0); });
+    return beats.concat(extra);
+  }
   // Validate + repair whatever Gemini returned into a complete package.
   function normalize(obj) {
     if (!obj || typeof obj !== 'object') throw new Error('empty');
@@ -310,6 +349,7 @@
     })).filter((b) => b.text);
     beats.forEach((b) => { ['speaker', 'fx', 'fxText', 'sfx', 'sticker'].forEach((k) => { if (!b[k]) delete b[k]; }); if (!b.punch) delete b.punch; if (b.fx === 'none') delete b.fx; if (b.sfx === 'none') delete b.sfx; });
     if (beats.length < 3) beats = beatsFromScript(script, hooks[0], beats);
+    else beats = completeBeats(script, beats);
     attachScenes(beats);
     const tagList = (v) => Array.from(new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,]+/)).map(normHashtag).filter(Boolean)));
     const hashtags = tagList(obj.hashtags).slice(0, 8);
@@ -342,7 +382,7 @@
     required: ['hooks', 'title', 'sections', 'description', 'hashtags', 'pinnedComment', 'thumbnailText'],
   };
   function sectionSchema() {
-    const beat = JSON.parse(JSON.stringify(SCHEMA.properties.beats.items)); if (SC()) { beat.properties.scene = sceneSchema(); beat.required = beat.required.concat(['scene']); }
+    const beat = JSON.parse(JSON.stringify(SCHEMA.properties.beats.items)); if (SC()) { delete beat.properties.visual; beat.required = beat.required.filter((k) => k !== 'visual').concat(['scene']); beat.properties.scene = sceneSchema(); }
     return { type: T.OBJECT, properties: { text: { type: T.STRING, description: 'The full voiceover of this section only.' }, beats: { type: T.ARRAY, description: 'Caption beats splitting this section text verbatim, 3-6 words each, in order, covering all of it.', items: beat } }, required: ['text', 'beats'] };
   }
   function sectionCount(L) { return Math.max(3, Math.round(L.sec / 80)); }
@@ -350,8 +390,9 @@
   async function callJSON(prompt, schema, system, opts, what) {
     const g = VTS.gemini;
     return g.withRetry(async () => {
-      const text = await g.generate([{ role: 'user', parts: [{ text: prompt }] }], { system, json: true, schema, temperature: 0.8, maxTokens: 16384, timeout: 150000 });
-      try { return parseJSONLoose(text); } catch (_) { const e = new Error('bad json'); e.status = 503; e.details = String(text).slice(0, 160); throw e; } // retried once more as transient
+      const r = await askJSON([{ role: 'user', parts: [{ text: prompt }] }], { system, schema, temperature: 0.8 });
+      if (r.obj) return r.obj;
+      const e = new Error('bad json'); e.status = 503; e.details = 'finishReason ' + (r.meta.finishReason || '?') + ', model ' + (r.meta.model || '?') + ': ' + String(r.text).slice(0, 120); throw e; // retried once more as transient
     }, { tries: 4, base: 5000, signal: opts.signal, onWait: (ms, n, err) => opts.onProgress && opts.onProgress({ phase: 'wait', what, ms, attempt: n, quota: err && (err.status === 429) }) });
   }
   // opts: length, tone, language, handle, partial (saved progress), onPartial(partial), onProgress(info), signal
@@ -402,11 +443,44 @@
       title: toStr(o.title, 100) || hooks[0].slice(0, 90), description: toStr(o.description, 5000) + (partial.sections.length > 2 ? '\n\nChapters:\n' + partial.sections.map((x, k) => (k + 1) + '. ' + x.title).join('\n') : ''), hashtags, pinnedComment: toStr(o.pinnedComment, 500), thumbnailText: toStr(o.thumbnailText, 60) };
   }
 
+  // ---------- robust JSON generation (v1.4.1) ----------
+  // 1.4.0 bug: when gemini-3.8-flash was busy, the fallback model spent ~13k "thinking" tokens of the 16k output
+  // budget and the 2-min script JSON was cut off (finishReason MAX_TOKENS) -> "unexpected format".
+  // Now: low thinking + 32k budget; on a cut-off reply ask the model to continue, then repair; callers add a compact retry
+  // and a split (text first, beats second) as last resorts.
+  const CONTINUE_MSG = 'Your JSON reply was cut off. Continue EXACTLY from the last character you wrote: output only the remaining characters to complete the JSON, with no repetition, no explanation and no code fences.';
+  function tryParse(text) { try { return text ? parseJSONLoose(text) : null; } catch (_) { return null; } }
+  function joinContinuation(text, more) {
+    const m = String(more || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    if (/^\s*\{/.test(m) && tryParse(m)) return m; // the model restarted with a complete object
+    for (let k = Math.min(300, m.length, text.length); k >= 12; k--) if (text.endsWith(m.slice(0, k))) return text + m.slice(k); // repeated overlap
+    return text + m;
+  }
+  async function askJSON(contents, o) {
+    const g = VTS.gemini; let meta = {};
+    const base = Object.assign({ json: true, temperature: 0.85, maxTokens: 32768, timeout: 180000, think: 'low' }, o, { onMeta: (m) => { meta = m || {}; } });
+    let text = ''; const fixes = [];
+    try { text = await g.generate(contents, base); } catch (err) { if (!err.truncated) throw err; meta = Object.assign({ finishReason: 'MAX_TOKENS' }, meta); }
+    let obj = tryParse(text);
+    for (let k = 0; !obj && text && meta.finishReason === 'MAX_TOKENS' && k < 2; k++) {
+      let more = '';
+      try { more = await g.generate(contents.concat([{ role: 'model', parts: [{ text }] }, { role: 'user', parts: [{ text: CONTINUE_MSG }] }]), Object.assign({}, base, { json: false, schema: null, onMeta: (m) => { meta = m || {}; } })); } catch (err) { if (err && (err.status === 429 || err.quota)) throw err; break; }
+      if (!more) break;
+      text = joinContinuation(text, more); fixes.push('continued'); obj = tryParse(text);
+    }
+    if (!obj && text) { obj = tryParse(repairJSON(text)); if (obj) fixes.push('repaired'); }
+    return { obj, text, meta, fixes };
+  }
+  const META_KEYS = ['hooks', 'script', 'textHook', 'title', 'description', 'hashtags', 'tiktokCaption', 'tiktokHashtags', 'cta', 'pinnedComment', 'thumbnailText'];
+  function compactSchema() { const sch = JSON.parse(JSON.stringify(SCHEMA)); const it = sch.properties.beats.items; delete it.properties.visual; it.required = it.required.filter((k) => k !== 'visual'); return sch; }
+  function metaSchema() { const sch = JSON.parse(JSON.stringify(SCHEMA)); delete sch.properties.beats; sch.required = sch.required.filter((k) => k !== 'beats'); return sch; }
+  function beatsOnlySchema() { const it = compactSchema().properties.beats; return { type: T.OBJECT, properties: { beats: it }, required: ['beats'] }; }
+
   async function generatePackage(idea, opts) {
-    const g = VTS.gemini;
-    if (opts && isLong(opts.length)) return generateLong(idea, opts);
-    const L = lengthOf(opts && opts.length); const sch = schemaWithScenes(); let system = SYSTEM;
-    if (isComedy(opts || {})) system = COMEDY_RULES + '\nReturn ONLY JSON matching the schema.';
+    const g = VTS.gemini; opts = opts || {};
+    if (isLong(opts.length)) return generateLong(idea, opts);
+    const L = lengthOf(opts.length); const sch = schemaWithScenes(); let system = SYSTEM;
+    if (isComedy(opts)) system = COMEDY_RULES + '\nReturn ONLY JSON matching the schema.';
     else system = SYSTEM.replace('80 to 110 words (about 30-45 seconds spoken)', L.words[0] + ' to ' + L.words[1] + ' words (about ' + L.sec + ' seconds spoken)');
     if (L.sec > 60) {
       // 2-min videos use the short (single-call) path: override the 80-110 word rule in the schema and system text too.
@@ -415,25 +489,53 @@
       system = system + '\nLENGTH OVERRIDE for this request: the full voiceover script must be ' + w + ' (about ' + L.label + ' spoken), not 80-110 words. Use 3 to 5 steps with a concrete example each.';
     }
     const prompt = buildPrompt(idea, opts);
-    const text = await g.generate([{ role: 'user', parts: [{ text: prompt }] }], { system, json: true, schema: sch, temperature: 0.85, maxTokens: 16384 });
-    let pkg = null;
-    try { pkg = normalize(parseJSONLoose(text)); } catch (_) { pkg = null; }
-    // Smaller fallback models sometimes write a 30 s script for a 60 s request: one retry that asks for the full length.
-    if (pkg && L.sec <= 60 && wordCount(pkg.script) < L.words[0] * 0.85 && !(opts && opts.noLengthRetry)) {
-      const n = wordCount(pkg.script);
-      try {
-        const text2 = await g.generate([{ role: 'user', parts: [{ text: prompt }] }, { role: 'model', parts: [{ text }] }, { role: 'user', parts: [{ text: 'That script is only ' + n + ' words, far too short. Rewrite the whole package with a ' + L.words[0] + '-' + L.words[1] + ' word script (about ' + L.sec + ' seconds spoken) and ' + (L.beats ? L.beats[0] + '-' + L.beats[1] : 'more') + ' beats. Keep the same idea, format and jokes, add more beats and punchlines. Return ONLY JSON.' }] }],
-          { system, json: true, schema: sch, temperature: 0.85, maxTokens: 16384 });
-        const pkg2 = normalize(parseJSONLoose(text2));
-        if (wordCount(pkg2.script) > n) pkg = pkg2;
-      } catch (err) { if (err && (err.quota || err.status === 429) && !pkg) throw err; }
+    const tell = (what) => { if (opts.onProgress) opts.onProgress({ phase: 'repair', what }); };
+    // A complete reply is accepted as before (the length retry below handles short ones); a cut-off/repaired one
+    // must still carry at least half the script, otherwise the next fallback runs.
+    const usable = (o, rr) => { try { const p = normalize(o); const cutOff = rr && (rr.meta.finishReason === 'MAX_TOKENS' || rr.fixes.includes('repaired')); return !cutOff || wordCount(p.script) >= L.words[0] * 0.5 ? p : null; } catch (_) { return null; } };
+    const trail = [];
+    const note = (r, tag) => trail.push(tag + ': ' + (r.meta.finishReason || '?') + (r.meta.model ? ' ' + r.meta.model : '') + (r.fixes.length ? ' (' + r.fixes.join('+') + ')' : '') + ', ' + String(r.text || '').length + ' chars');
+    const user = [{ role: 'user', parts: [{ text: prompt }] }];
+    // 1) one call, full schema (scenes included)
+    let r = await askJSON(user, { system, schema: sch }); note(r, 'full');
+    let pkg = usable(r.obj, r); let lastText = r.text;
+    // 2) compact retry: no scene objects (scenes are inferred locally from the words), about half the size
+    if (!pkg) {
+      tell('compact');
+      r = await askJSON([{ role: 'user', parts: [{ text: prompt + '\n\nKeep the JSON compact: leave optional fields empty unless they matter.' }] }], { system, schema: compactSchema() }); note(r, 'compact');
+      pkg = usable(r.obj, r); lastText = r.text || lastText;
     }
-    if (pkg) return pkg;
-    try { return normalize(parseJSONLoose(text)); } catch (err) {
+    // 3) split: script + publishing text first, then the beats for that exact script (or local beats)
+    if (!pkg) {
+      tell('split');
+      r = await askJSON([{ role: 'user', parts: [{ text: prompt + '\n\nFor this request return everything EXCEPT "beats" (beats are requested separately).' }] }], { system, schema: metaSchema() }); note(r, 'text');
+      const meta = r.obj && typeof r.obj === 'object' ? r.obj : null;
+      if (meta && meta.script) {
+        let beats = [];
+        try {
+          const rb = await askJSON([{ role: 'user', parts: [{ text: 'Split this voiceover VERBATIM into ' + (L.beats ? L.beats[0] + '-' + L.beats[1] : 'short') + ' consecutive caption beats of 3-8 words covering all of it, with the beat fields described in the schema. ' + (isComedy(opts) ? 'Format: ' + ((FORMATS[opts.format] || FORMATS.classic).label) + '. Mark speakers, punchlines, fx and sfx as in a funny Short.' : '') + '\n\nVoiceover:\n' + meta.script }] }], { system, schema: beatsOnlySchema() });
+          note(rb, 'beats'); if (rb.obj && Array.isArray(rb.obj.beats)) beats = rb.obj.beats;
+        } catch (err) { if (err && (err.status === 429 || err.quota)) throw err; }
+        pkg = usable(Object.assign({}, meta, { beats }));
+      }
+      lastText = r.text || lastText;
+    }
+    if (!pkg) {
       const e = g.fail('Gemini returned a script in an unexpected format. Tap “Write my Short” again.');
-      e.details = 'Could not parse JSON: ' + String(text).slice(0, 160);
+      e.details = trail.join(' | ') + ' — ' + String(lastText || '').slice(0, 120);
       throw e;
     }
+    // Smaller fallback models sometimes write a 30 s script for a 60 s request: one retry that asks for the full length.
+    if (L.sec <= 120 && wordCount(pkg.script) < L.words[0] * 0.85 && !opts.noLengthRetry) {
+      const n = wordCount(pkg.script);
+      try {
+        const r2 = await askJSON(user.concat([{ role: 'model', parts: [{ text: JSON.stringify(r.obj || {}) }] }, { role: 'user', parts: [{ text: 'That script is only ' + n + ' words, far too short. Rewrite the whole package with a ' + L.words[0] + '-' + L.words[1] + ' word script (about ' + L.sec + ' seconds spoken) and ' + (L.beats ? L.beats[0] + '-' + L.beats[1] : 'more') + ' beats. Keep the same idea, format and jokes, add more beats and punchlines. Return ONLY JSON.' }] }]), { system, schema: sch });
+        const pkg2 = usable(r2.obj, r2);
+        if (pkg2 && wordCount(pkg2.script) > n) pkg = pkg2;
+      } catch (_) { /* keep the shorter script */ }
+    }
+    pkg.genInfo = trail.join(' | ');
+    return pkg;
   }
 
   // Swap the hook: replace the old hook at the start of the script and rebuild the hook beats.
@@ -473,5 +575,5 @@
     return s.normalizeScene(raw, b.text, b.step, index > 0 ? pkg.beats[index - 1].scene : null);
   }
 
-  VTS.shortgen = { FORMATS, HUMOUR, HUMOUR_PROMPT, COMEDY_RULES, SPEAKERS, FX_IDS, SFX_IDS, isComedy, humourOf, buildComedyPrompt, LENGTHS, lengthOf, isLong, generateLong, stitchLong, sectionCount, SYSTEM_LONG, OUTLINE_SCHEMA, sectionSchema, attachScenes, regenerateScene, sceneSchema, schemaWithScenes, rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
+  VTS.shortgen = { FORMATS, HUMOUR, HUMOUR_PROMPT, COMEDY_RULES, SPEAKERS, FX_IDS, SFX_IDS, isComedy, humourOf, buildComedyPrompt, LENGTHS, lengthOf, isLong, generateLong, stitchLong, sectionCount, SYSTEM_LONG, OUTLINE_SCHEMA, sectionSchema, attachScenes, regenerateScene, sceneSchema, schemaWithScenes, rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, repairJSON, completeBeats, joinContinuation, askJSON, compactSchema, metaSchema, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
 }());

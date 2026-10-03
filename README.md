@@ -4,7 +4,7 @@ Talk an idea into your phone and get a finished YouTube video: a hook, clear ste
 
 It's built for faceless psychology and self-help channels like Quiet Brain Club, with voiceover over animated scenes. Since 1.4 it makes funny, meme-style Shorts for TikTok and YouTube too.
 
-- **Android app:** download `VoiceToShort-1.4.0.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
+- **Android app:** download `VoiceToShort-1.4.1.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
 - **Web version:** https://lhymite36-bot.github.io/voice-to-short/ (works best in Chrome)
 
 ## How it works
@@ -36,6 +36,11 @@ It's built for faceless psychology and self-help channels like Quiet Brain Club,
    - Channel handle, default tone, script language and default grade.
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
+
+## Fixed in 1.4.1
+
+- "Write my Short" no longer fails with *"Gemini returned a script in an unexpected format"* on 2-minute (and long, funny) scripts. When the main model was busy, the fallback model used most of its output budget on hidden "thinking", so the reply was cut off mid-JSON. Script requests now ask for low thinking with a larger output budget. A cut-off reply is continued automatically, then repaired. If that still fails, the app retries with a compact request, and finally writes the script and the beats in separate calls. Short 2-minute scripts also get one "make it longer" retry.
+- Test: `node tests/truncation141.js` (offline); live check: `node tests/live/gen-live.js 120 sarcastic classic 3` (uses `GEMINI_API_KEY`).
 
 ## Funny + engaging Shorts — new in 1.4.0
 
@@ -134,12 +139,12 @@ The recommended voice option. It uses Gemini's native text-to-speech with the sa
 
 ## Install on Android (6.0+)
 
-1. Download `VoiceToShort-1.4.0.apk` from the latest release.
+1. Download `VoiceToShort-1.4.1.apk` from the latest release.
 2. Open it. If Android asks, allow “Install unknown apps” for your browser or Files app.
 3. Open **Voice to Short**, go to **Settings**, paste your free Gemini key and tap **Save key**.
 4. Allow the microphone when asked. It's used for dictation and voice recording.
 
-To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.4.0.apk`.
+To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.4.1.apk`.
 
 ## Development
 

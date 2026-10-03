@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.4.1';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 20 * 60; // long dictation (auto-restarts after pauses)
@@ -443,6 +443,7 @@
         onProgress: (q) => {
           if (q.phase === 'outline') lt.textContent = 'Step 1 / ' + q.n + ': outlining the sections…';
           else if (q.phase === 'section') lt.textContent = 'Step ' + (q.i + 1) + ' / ' + q.n + ': writing “' + (q.title || 'section ' + q.i) + '”…';
+          else if (q.phase === 'repair') lt.textContent = q.what === 'split' ? 'Gemini’s reply was cut off — writing the script and the beats separately…' : 'Gemini’s reply was cut off — retrying with a compact request…';
           else if (q.phase === 'wait') lt.textContent = (q.quota ? 'Gemini rate limit reached — ' : 'Gemini hiccup — ') + 'retrying in ' + Math.round(q.ms / 1000) + ' s (attempt ' + (q.attempt + 1) + ')…';
           if (q.n) $('script-bar-fill').style.width = Math.round(100 * (q.phase === 'section' ? q.i : 0) / q.n) + '%';
         } });

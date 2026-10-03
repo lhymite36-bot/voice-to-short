@@ -169,6 +169,10 @@
   }
   async function generateWith(model, contents, opts) {
     const gen = { temperature: opts.temperature ?? 0.8, maxOutputTokens: opts.maxTokens || 8192 };
+    // Thinking tokens count against maxOutputTokens: a busy-fallback model that "thinks" 13k tokens truncated
+    // 2-min scripts (finishReason MAX_TOKENS). Script calls ask for low thinking; unsupported forms are dropped below.
+    const thinkCfg = (lvl) => (/gemini-(?:[3-9]|\d\d)|flash-latest|flash-lite-latest|pro-latest/.test(model) ? { thinkingLevel: lvl } : { thinkingBudget: lvl === 'high' ? -1 : 1024 });
+    if (opts.think) gen.thinkingConfig = thinkCfg(opts.think);
     if (opts.json) gen.responseMimeType = 'application/json';
     if (opts.schema) gen.responseSchema = opts.schema;
     const body = { contents, generationConfig: gen };
@@ -179,7 +183,22 @@
     let data;
     try {
       try {
-        data = await send(body);
+        try {
+          data = await send(body);
+        } catch (err) {
+          const m = String(err && err.message || '').toLowerCase();
+          if (err && err.status === 400 && gen.thinkingConfig && /thinking/.test(m)) {
+            // e.g. "Thinking level MINIMAL is not supported for this model" / thinking_budget unsupported: try the other form, then none.
+            gen.thinkingConfig = gen.thinkingConfig.thinkingLevel ? { thinkingBudget: 1024 } : undefined;
+            if (!gen.thinkingConfig) delete gen.thinkingConfig;
+            try { data = await send(body); } catch (e2) {
+              if (!(e2 && e2.status === 400 && gen.thinkingConfig && /thinking/.test(String(e2.message || '').toLowerCase()))) throw e2;
+              delete gen.thinkingConfig; data = await send(body);
+            }
+          } else if (err && err.status === 400 && gen.maxOutputTokens > 8192 && /max_?output_?tokens|maxoutputtokens|output token/.test(m)) {
+            gen.maxOutputTokens = 8192; data = await send(body);
+          } else throw err;
+        }
       } catch (err) {
         const m = String(err && err.message || '').toLowerCase();
         if (opts.system && (m.includes('systeminstruction') || m.includes('system instruction') || m.includes('developer instruction'))) {
@@ -203,7 +222,9 @@
     const cand = data && data.candidates && data.candidates[0];
     const text = cand && cand.content && Array.isArray(cand.content.parts)
       ? cand.content.parts.filter((p) => !p.thought).map((p) => p.text || '').join('').trim() : '';
+    if (opts.onMeta) { try { opts.onMeta({ model, finishReason: cand && cand.finishReason, usage: data && data.usageMetadata, chars: text.length }); } catch (_) { /* ignore */ } }
     if (text) return text;
+    if (cand && cand.finishReason === 'MAX_TOKENS') { const e = fail('Gemini ran out of room before writing the reply.'); e.truncated = true; e.details = 'finishReason MAX_TOKENS, model ' + model; throw e; }
     const blocked = data && data.promptFeedback && data.promptFeedback.blockReason;
     if (blocked) throw fail('Gemini blocked that request (' + blocked + ').');
     if (cand && cand.finishReason === 'SAFETY') throw fail('Gemini blocked that reply because of its safety filters.');
