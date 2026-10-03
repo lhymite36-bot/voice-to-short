@@ -207,13 +207,13 @@ function serve() {
   ok('hook beats keep a scene', pkg.beats.every((b) => b.scene && b.scene.setting));
   await page.click('#hooks .hook:nth-child(1)');
   await page.$eval('#f-title', (e) => { e.value = 'Stop the 2 a.m. cringe replay 🌙'; e.dispatchEvent(new Event('input')); });
-  const b5 = await page.$$eval('#beats .b-text', (es) => es[4].value);
-  await page.$$eval('#beats .b-text', (es) => { const e = es[4]; e.value = 'One. Name the loop out loud.'; e.dispatchEvent(new Event('input')); });
+  const b5 = await page.$$eval('#beats .b-text', (es) => es[Math.min(4, es.length - 1)].value);
+  await page.$$eval('#beats .b-text', (es) => { const e = es[Math.min(4, es.length - 1)]; e.value = 'One. Name the loop out loud.'; e.dispatchEvent(new Event('input')); });
   await page.$eval('#f-hashtags', (e) => { e.value = 'psychology selfhelp #overthinking sleep shorts'; e.dispatchEvent(new Event('change')); });
   pkg = await app(() => window.VTS.app.project.pkg);
   ok('title edited', pkg.title === 'Stop the 2 a.m. cringe replay 🌙');
   ok('beat edited', pkg.beats.some((b) => b.text === 'One. Name the loop out loud.'));
-  await page.$$eval('#beats .b-text', (es, v) => { const e = es[4]; e.value = v; e.dispatchEvent(new Event('input')); }, b5);
+  await page.$$eval('#beats .b-text', (es, v) => { const e = es[Math.min(4, es.length - 1)]; e.value = v; e.dispatchEvent(new Event('input')); }, b5);
   ok('hashtags normalised', pkg.hashtags.join(' ') === '#psychology #selfhelp #overthinking #sleep #shorts', pkg.hashtags.join(' '));
   // Script edit + rebuild captions
   await page.$eval('#script', (e) => { e.value = e.value + ' '; e.dispatchEvent(new Event('input')); });
