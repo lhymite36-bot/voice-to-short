@@ -325,6 +325,7 @@
     const r = new R.Renderer(opts.canvas);
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
     r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
+    if (VTS.motion) { try { r.env = await VTS.motion.envelopeFromTrack(opts.track); } catch (_) { r.env = null; } }
     await r.prepare();
     if (opts.probe) r.probe = opts.probe;
     const segSec = opts.segmentSeconds || 75;

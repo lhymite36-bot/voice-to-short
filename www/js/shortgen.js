@@ -404,7 +404,7 @@
     if (!partial.outline) {
       if (opts.onProgress) opts.onProgress({ phase: 'outline', i: 0, n: n + 1 });
       const prompt = ['Plan a ' + L.label + ' YouTube video from my idea below. Make exactly ' + n + ' sections (the video is about ' + L.words[0] + '-' + L.words[1] + ' words in total, about ' + Math.round(L.words[1] / n) + ' words per section).', 'Tone: ' + tone.prompt, lang,
-        opts.handle ? 'Channel handle (only for the final CTA if natural): ' + opts.handle : '', '', 'My idea (may be a messy dictation or an outline):', ', String(idea || ).trim().slice(0, 24000), '].filter(Boolean).join('\n');
+        opts.handle ? 'Channel handle (only for the final CTA if natural): ' + opts.handle : '', '', 'My idea (may be a messy dictation or an outline):', '"""', String(idea || '').trim().slice(0, 24000), '"""'].filter(Boolean).join('\n');
       const o = await callJSON('OUTLINE REQUEST\n' + prompt, OUTLINE_SCHEMA, SYSTEM_LONG, opts, 'outline');
       const secs = (Array.isArray(o.sections) ? o.sections : []).map((x) => ({ title: toStr(x && x.title, 80), summary: toStr(x && x.summary, 400), points: (Array.isArray(x && x.points) ? x.points : []).map((p) => toStr(p, 200)).slice(0, 5) })).filter((x) => x.title || x.summary);
       if (secs.length < 2) { const e = VTS.gemini.fail('Gemini returned an outline without sections. Try again.'); throw e; }
@@ -423,7 +423,12 @@
         'This section covers: ' + secs[i].summary, 'Points: ' + secs[i].points.join('; '),
         'Beats: split the section text verbatim into beats of 3-6 words; weight = spoken words; step 0 (the CTA beats in the final section use step 4).', SC() ? SCENE_RULES + '\nIn long videos change the setting every 3-6 beats and vary actions, while keeping each beat literal.' : '',
         '', 'Full outline for context:', secs.map((x, k) => (k + 1) + '. ' + x.title + ' — ' + x.summary).join('\n')].filter(Boolean).join('\n');
-      const r = await callJSON(prompt, sectionSchema(), SYSTEM_LONG, opts, 'section ' + (i + 1));
+      let r = await callJSON(prompt, sectionSchema(), SYSTEM_LONG, opts, 'section ' + (i + 1));
+      for (let x = 0; x < 2 && wordCount(toStr(r && r.text, 12000)) < per * 0.75; x++) { // light models under-write long sections: ask once or twice for the full length
+        const got = wordCount(toStr(r && r.text, 12000));
+        const r2 = await callJSON(prompt + '\n\nIMPORTANT: a previous draft of this section was only ' + got + ' words. Write the FULL section: at least ' + per + ' words of spoken voiceover (more examples, jokes and concrete detail; no filler).', sectionSchema(), SYSTEM_LONG, opts, 'section ' + (i + 1));
+        if (wordCount(toStr(r2 && r2.text, 12000)) > got) r = r2;
+      }
       const text = toStr(r.text, 12000).replace(/\s+/g, ' ').trim();
       let beats = (Array.isArray(r.beats) ? r.beats : []).map((b) => ({ text: toStr(b && b.text, 80), weight: Math.max(0.5, Math.min(12, Number(b && b.weight) || wordCount(b && b.text) || 1)), step: i === secs.length - 1 && Number(b && b.step) === 4 ? 4 : 0, emphasis: toStr(b && b.emphasis, 30), visual: toStr(b && b.visual, 200), scene: b && b.scene })).filter((b) => b.text);
       if (!text && !beats.length) throw VTS.gemini.fail('Gemini returned an empty section ' + (i + 1) + '. Tap Write again to resume.');

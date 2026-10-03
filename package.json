@@ -1,6 +1,6 @@
 {
   "name": "voice-to-short",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "private": true,
   "description": "Voice to Short: talk an idea, get a colour-graded vertical YouTube Short with captions. Android (Capacitor) + web.",
   "license": "MIT",

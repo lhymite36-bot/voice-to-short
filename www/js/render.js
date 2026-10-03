@@ -180,7 +180,7 @@
     drawScenes(t) {
       const ctx = this.ctx; const tl = this.timeline; if (!tl.length) return;
       const i = Math.max(0, this.beatAt(t)); const sh = this.shots[tl[i].shot];
-      const TR = 0.42; const st = this.stage; const c = this.LY.card;
+      const TR = this.trDur || 0.42; const st = this.stage; const c = this.LY.card;
       if (c) { // backdrop + card frame for landscape / square / 4:5
         this.drawBackground(t, 0);
         ctx.save(); ctx.setTransform(this.s, 0, 0, this.s, 0, 0);
@@ -197,7 +197,16 @@
         const p = VTS.scenes.easeInOut(since / TR); const prevI = sh.first - 1; const type = sh.transition; const hi = this.preset.hi;
         const drawOld = () => st.drawShot(ctx, this.shotState(prevI, t));
         const drawNew = () => st.drawShot(ctx, this.shotState(i, t));
-        if (type === 'slide') {
+        if (type === 'whip') { // v1.5: fast whip pan with motion smear
+          const q = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; const dir = sh.idx % 2 ? 1 : -1;
+          ctx.save(); ctx.translate(dir * W * 1.1 * q, 0); drawOld(); ctx.restore();
+          ctx.save(); ctx.translate(-dir * W * 1.1 * (1 - q), 0); drawNew(); ctx.restore();
+          const sm = Math.sin(p * Math.PI); ctx.save(); ctx.globalAlpha = 0.55 * sm; ctx.fillStyle = '#ffffff'; for (let k = 0; k < 18; k++) { const y = ((k * 137 + sh.idx * 61) % 19) / 19 * H; ctx.fillRect(0, y, W, 6 + (k % 4) * 9); } ctx.restore();
+        } else if (type === 'glitch') { // v1.5: digital glitch cut
+          if (p < 0.5) drawOld(); else drawNew();
+          const g = 1 - Math.abs(p - 0.5) * 2; const cv = this.canvas; const ps = cv.width / W;
+          if (g > 0.05) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); const n = 9; for (let k = 0; k < n; k++) { const hsh = Math.abs(Math.sin((k + 1) * 91.7 + Math.floor(p * 14) * 13.1)); const y = Math.floor(hsh * cv.height * 0.92); const h = Math.max(4, Math.floor((0.02 + hsh * 0.06) * cv.height)); const dx = (hsh - 0.5) * 160 * ps * g; try { ctx.drawImage(cv, 0, y, cv.width, h, dx, y, cv.width, h); } catch (_) { /* ignore */ } ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = k % 2 ? 'rgba(255,0,90,' + (0.22 * g) + ')' : 'rgba(0,220,255,' + (0.22 * g) + ')'; ctx.fillRect(0, y, cv.width, h); ctx.globalCompositeOperation = 'source-over'; } ctx.restore(); }
+        } else if (type === 'slide') {
           ctx.save(); ctx.translate(-W * p, 0); drawOld(); ctx.restore();
           ctx.save(); ctx.translate(W * (1 - p), 0); drawNew(); ctx.restore();
           ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(W * (1 - p) - 18, 0, 18, H);
@@ -567,6 +576,7 @@
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
     r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
     if (opts.probe) r.probe = opts.probe;
+    if (VTS.motion) { try { r.env = VTS.motion.envelopeFromBuffer(buffer); } catch (_) { r.env = null; } }
     const illustrated = await r.prepare();
     r.draw(0);
     const ac = audioCtx();
@@ -669,6 +679,7 @@
     const P = plan(buffer, opts.maxSeconds);
     const r = new Renderer(canvas);
     r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
+    if (VTS.motion) { try { r.env = VTS.motion.envelopeFromBuffer(buffer); } catch (_) { r.env = null; } }
     const ac = audioCtx();
     let src = null; let raf = 0; let startAt = 0; let playing = false; let mixed = null;
     const api = {

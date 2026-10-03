@@ -199,6 +199,10 @@
               <div class="preview-time" id="preview-time"></div>
             </div>
             <div class="render-controls">
+              <div class="field"><span class="label-row"><span>Animation style</span><span class="muted small" id="anim-note"></span></span>
+                <div class="seg" id="anim-seg"><button type="button" data-v="2d">✏️ 2D cartoon</button><button type="button" data-v="3d">🧊 3D clay</button></div></div>
+              <div class="field" id="motion-row"><span class="label-row"><span>Motion</span><span class="muted small" id="motion-note"></span></span>
+                <div class="seg" id="motion-seg"><button type="button" data-v="smooth">✨ Smooth (v1.5)</button><button type="button" data-v="classic">Classic (v1.4)</button></div></div>
               <div class="field"><span class="label-row"><span>Visual style</span></span>
                 <div class="seg vis-seg" id="vis-seg-render"><button type="button" data-v="scenes">🎨 Animated scenes</button><button type="button" data-v="classic">Captions only</button></div>
               </div>
@@ -366,6 +370,8 @@
   <script src="js/segments.js"></script>
   <script src="js/audiofx.js"></script>
   <script src="js/comedy.js"></script>
+  <script src="js/motion.js"></script>
+  <script src="js/three3d.js"></script>
   <script src="js/ideas.js"></script>
   <script src="js/app.js"></script>
 </body>

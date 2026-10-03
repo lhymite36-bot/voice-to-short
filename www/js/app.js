@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.4.2';
+  const APP_VERSION = '1.5.0';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 20 * 60; // long dictation (auto-restarts after pauses)
@@ -58,7 +58,7 @@
   if (!load('vts.v14', false)) { save(K.tone, 'sarcastic'); save('vts.v14', true); }
   const CTAS = ['Follow if your brain does this too 🧠', 'Comment “same” if this is you 👇', 'Send this to the friend who does this 💀', 'Save this for your 3 a.m. brain 📌', 'Follow for more brain stuff 🧠✨', 'Which one are you? Comment 👇'];
   const defaultLook = () => ({ captionStyle: 'tiktok', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, safeZones: false,
-    sfx: true, music: 'quirky', musicVol: 0.5, sfxVol: 0.7, voiceVol: 1, progress: true });
+    sfx: true, music: 'quirky', musicVol: 0.5, sfxVol: 0.7, voiceVol: 1, progress: true, anim: load('vts.anim', '2d') === '3d' ? '3d' : '2d', motion: load('vts.motion', 'smooth') === 'classic' ? 'classic' : 'smooth' });
   function ttsStyle() {
     const mode = load(K.ttsStyle, 'tone');
     if (mode === 'custom') { const c = String(load(K.ttsCustom, '') || '').trim(); if (c) return { style: c, prefix: 'Say in this style (' + c + ')' }; }
@@ -1220,6 +1220,11 @@
     $('render-note').textContent = long ? 'Long video: rendered in real time in ~75 s parts that are saved to storage as they finish, then joined into one WebM file. Keep the app open with the screen on (it stays awake). If it stops, tap Render again to resume from the last finished part.'
       : 'Rendering happens in real time on your phone. Keep the app open and the screen on.';
     $('opt-watermark').checked = !!P.look.watermark; $('opt-progress').checked = !!P.look.progress; $('opt-format').value = P.look.format || 'auto';
+    const an = P.look.anim === '3d' ? '3d' : '2d'; document.querySelectorAll('#anim-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === an));
+    const mo = P.look.motion === 'classic' ? 'classic' : 'smooth'; document.querySelectorAll('#motion-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === mo));
+    $('motion-row').classList.toggle('hidden', an === '3d');
+    $('anim-note').textContent = an === '3d' ? (VTS.three3d && !VTS.three3d.webglOk() ? 'no WebGL here: falls back to 2D' : 'free in-app 3D (Three.js) · heavier on old phones') : 'hand-drawn cartoon';
+    $('motion-note').textContent = mo === 'classic' ? 'the v1.4 animation' : 'lip-sync, squash & stretch, camera moves, meme punch-ins';
     const it = P.look.intensity || 'off'; document.querySelectorAll('#intensity-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === it));
     $('intensity-note').textContent = { off: 'no extra cuts', chill: 'a cut every ~4 s', punchy: 'a cut every ~2.5 s', chaotic: 'a cut every ~1.7 s' }[it];
     $('opt-hook').checked = P.look.hook !== false; $('hook-preview').textContent = P.pkg.textHook ? '“' + P.pkg.textHook + '”' : '(add one in step 2)';
@@ -1250,6 +1255,8 @@
   $('opt-watermark').addEventListener('change', (e) => { P.look.watermark = e.target.checked; if (e.target.checked && !handle()) toast('Set your channel handle in Settings.', true); markVideoStale(); persist(); renderRenderPane(); });
   $('opt-progress').addEventListener('change', (e) => { P.look.progress = e.target.checked; markVideoStale(); persist(); renderRenderPane(); });
   $('opt-format').addEventListener('change', (e) => { P.look.format = e.target.value; persist(); });
+  document.querySelectorAll('#anim-seg button').forEach((b) => b.addEventListener('click', () => { P.look.anim = b.dataset.v; save('vts.anim', P.look.anim); markVideoStale(); persist(); renderRenderPane(); }));
+  document.querySelectorAll('#motion-seg button').forEach((b) => b.addEventListener('click', () => { P.look.motion = b.dataset.v; save('vts.motion', P.look.motion); markVideoStale(); persist(); renderRenderPane(); }));
   document.querySelectorAll('#intensity-seg button').forEach((b) => b.addEventListener('click', () => { P.look.intensity = b.dataset.v; markVideoStale(); persist(); renderRenderPane(); }));
   [['opt-hook', 'hook'], ['opt-cta', 'cta'], ['opt-emoji', 'autoEmoji'], ['opt-loop', 'loop'], ['opt-sfx', 'sfx']].forEach(([id, key]) => $(id).addEventListener('change', (e) => { P.look[key] = e.target.checked; markVideoStale(); persist(); renderRenderPane(); }));
   $('opt-safe').addEventListener('change', (e) => { P.look.safeZones = e.target.checked; persist(); renderRenderPane(); });
