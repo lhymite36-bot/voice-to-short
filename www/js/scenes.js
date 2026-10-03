@@ -379,12 +379,12 @@
       ctx.beginPath(); ctx.moveTo(fx + f * 8 - 6, 28); ctx.quadraticCurveTo(fx + f * 14, 36, fx + f * 8 + 6, 28); ctx.lineWidth = 4.5; ctx.strokeStyle = pal.skinS; ctx.stroke();
       // mouth
       ctx.save(); ctx.translate(fx + f * 6, 52);
-      let m = o.mouth === 'talk' ? 'talk' : (o.mouth || face.mouth);
+      let m = o.mouth === 'talk' || (this._forceTalk && face.mouth !== 'scream') ? 'talk' : (o.mouth || face.mouth);
       if (o.mouth === 'hmm' && face.mouth !== 'smallsmile') m = face.mouth;
       const dark = this.c('#6d2430');
       ctx.lineWidth = 5.5; ctx.strokeStyle = OL; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       if (m === 'talk') {
-        const open = 4 + 13 * Math.abs(noise(t * 7, 2)); const happy = face.mouth === 'grin' || face.mouth === 'smile';
+        const open = this._mouthOpen != null ? this._mouthOpen : 4 + 13 * Math.abs(noise(t * 7, 2)); const happy = face.mouth === 'grin' || face.mouth === 'smile';
         ctx.beginPath(); if (happy) { ctx.moveTo(-18, -4); ctx.quadraticCurveTo(0, open * 2.2, 18, -4); ctx.closePath(); } else ctx.ellipse(0, 2, 15, open, 0, 0, TAU);
         ctx.fillStyle = dark; ctx.fill(); ctx.stroke();
       } else if (m === 'grin') {
@@ -400,7 +400,7 @@
       else if (m === 'grit') { ctx.beginPath(); ctx.rect(-22, -6, 44, 19); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke(); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-22, 3.5); ctx.lineTo(22, 3.5); for (let k = -11; k <= 11; k += 11) { ctx.moveTo(k, -6); ctx.lineTo(k, 13); } ctx.stroke(); }
       else if (m === 'hmm') { ctx.beginPath(); ctx.moveTo(-8, 4); ctx.quadraticCurveTo(4, 0, 14, -2); ctx.stroke(); }
       else if (m === 'smirk') { ctx.beginPath(); ctx.moveTo(-16, 4); ctx.quadraticCurveTo(6, 10, 22, -8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(18, -12); ctx.lineTo(24, -4); ctx.lineWidth = 4; ctx.stroke(); }
-      else if (m === 'scream') { const op = 1 + 0.1 * Math.sin(t * 30); ctx.beginPath(); ctx.ellipse(0, 10, 20, 28 * op, 0, 0, TAU); ctx.fillStyle = dark; ctx.fill(); ctx.stroke(); ctx.save(); ctx.clip(); ctx.beginPath(); ctx.ellipse(0, 30, 12, 9, 0, 0, TAU); ctx.fillStyle = this.c('#ff8a95'); ctx.fill(); ctx.restore(); }
+      else if (m === 'scream') { const op = this._mouthOpen != null ? 0.75 + this._mouthOpen / 40 : 1 + 0.1 * Math.sin(t * 30); ctx.beginPath(); ctx.ellipse(0, 10, 20, 28 * op, 0, 0, TAU); ctx.fillStyle = dark; ctx.fill(); ctx.stroke(); ctx.save(); ctx.clip(); ctx.beginPath(); ctx.ellipse(0, 30, 12, 9, 0, 0, TAU); ctx.fillStyle = this.c('#ff8a95'); ctx.fill(); ctx.restore(); }
       ctx.restore();
       // emotion extras
       if (face.tear) { const p = (t * 0.7) % 1; ctx.save(); ctx.globalAlpha = 1 - p; ctx.translate(fx - 36, 30 + p * 70); this.drop(ctx, 9, this.e('#7cc8ff')); ctx.restore(); }
@@ -1209,6 +1209,7 @@
     }
     // Draw one moment of a shot. sh: { scene, lt, t, dur, s, propAge(name), poseAge, calloutAge, img }
     drawShot(ctx, sh) {
+      if (this.draw3d) return this.draw3d(ctx, sh); // v1.5: 3D style (three3d.js)
       const scene = sh.scene; const setting = scene.setting; this.s = sh.s || 1;
       this.amb = AMBIENT[setting] || null;
       const kind = this.kindFor(setting, scene.pose); const L = this.layout(setting, kind, scene);
@@ -1225,7 +1226,8 @@
       } else if (kind === 'card' && VTS.sceneExt) {
         A = VTS.sceneExt.card(this, ctx, scene, L, t, lt, sh);
       } else {
-        ctx.drawImage(this.bgCanvas(setting, kind, L, this.s), 0, 0, W, H);
+        const bs = this._bgShift; // v1.5 parallax: the backdrop drifts slower than the characters
+        if (bs) ctx.drawImage(this.bgCanvas(setting, kind, L, this.s), -W * 0.035 + bs.x, -H * 0.035 + bs.y, W * 1.07, H * 1.07); else ctx.drawImage(this.bgCanvas(setting, kind, L, this.s), 0, 0, W, H);
         this.dynamicBg(ctx, setting, kind, L, t, lt, scene);
         if (L.bigBrain) this.prop('brain', ctx, 540, 880, 1, sh.propAge('brain'), t, { big: true, emotion: scene.emotion });
         this.furnitureBack(ctx, setting, kind, L, t);

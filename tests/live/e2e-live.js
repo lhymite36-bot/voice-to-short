@@ -17,7 +17,7 @@ function serve() {
 (async () => {
   const srv = await serve(); const ORIGIN = 'http://127.0.0.1:' + srv.address().port; const T0 = Date.now(); const t = () => ((Date.now() - T0) / 1000).toFixed(1) + 's';
   const browser = await puppeteer.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: 'new', protocolTimeout: 0,
-    args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] });
+    args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage(); await page.setViewport({ width: 412, height: 915, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const errors = []; page.on('pageerror', (e) => errors.push(red(e))); page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(red('console: ' + m.text())); });
   page.on('dialog', (d) => d.accept());
@@ -41,17 +41,34 @@ function serve() {
   const voice = await app(() => { const v = window.VTS.app.project.voice; return { src: v && v.source, d: v && v.duration, model: v && v.ttsModel, tv: v && v.ttsVoice, status: document.querySelector('#voice-status').textContent.slice(0, 200) }; });
   console.log(t(), 'VOICE', red(JSON.stringify(voice)));
   if (voice.src !== 'gemini') throw new Error('voice failed');
-  await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="9:16"]'); await sleep(300);
+  await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="9:16"]'); await sleep(300); await click('#anim-seg button[data-v="' + (process.env.ANIM || '2d') + '"]'); await sleep(200); if ((process.env.ANIM || '2d') === '2d') { await click('#motion-seg button[data-v="' + (process.env.MOTION || 'smooth') + '"]'); await sleep(200); } console.log('ANIM', process.env.ANIM || '2d', 'MOTION', process.env.MOTION || 'smooth');
+  // v1.5: ANIM=3d on the box renders frame-exact through tests/live/preview-offline.js (same app renderer + mixer),
+  // because software WebGL here is far below real time; RENDER_MODE=app forces the in-app real-time recorder.
+  const OFFLINE = (process.env.RENDER_MODE || ((process.env.ANIM || '2d') === '3d' ? 'offline' : 'app')) === 'offline';
+  let v; let look; let file; let size;
+  if (OFFLINE) {
+    const vb64 = await app(async () => { const b = window.VTS.app.project.voice.blob; return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); }); });
+    const voiceFile = OUTF + '.voice.wav'; fs.writeFileSync(voiceFile, Buffer.from(vb64, 'base64'));
+    const fullLook = await app(() => Object.assign({}, window.VTS.app.project.look, { textHook: window.VTS.app.project.pkg.textHook || '', ctaSticker: window.VTS.app.project.pkg.cta || '' }));
+    look = { cap: fullLook.captionStyle, intensity: fullLook.intensity, music: fullLook.music, sfx: fullLook.sfx, loop: fullLook.loop, progress: fullLook.progress };
+    file = OUTF + '.mp4'; const t0 = Date.now();
+    const outp = execFileSync('node', [path.join(__dirname, 'preview-offline.js'), OUTF + '.pkg.json', voiceFile, file, '9:16', process.env.ANIM || '2d', process.env.MOTION || 'smooth'], { env: Object.assign({}, process.env, { LOOK_JSON: JSON.stringify(fullLook) }), maxBuffer: 64 * 1024 * 1024 }).toString();
+    console.log(outp.trim().split('\n').map((l) => l.slice(0, 400)).join('\n'));
+    if (!/DONE/.test(outp)) throw new Error('offline render failed');
+    size = fs.statSync(file).size; v = { w: 1080, h: 1920, type: 'video/mp4', ms: Date.now() - t0, mode: 'offline-frame-exact', anim: process.env.ANIM || '2d' };
+    console.log(t(), 'RENDER', JSON.stringify(v)); console.log('LOOK', JSON.stringify(look));
+  } else {
   await click('#render'); await page.waitForSelector('#render-progress:not(.hidden)');
   await page.waitForFunction(() => document.querySelector('#render-progress').classList.contains('hidden'), { timeout: 1800000, polling: 1000 });
-  const v = await app(() => { const v = window.VTS.app.project.video; return v && { w: v.width, h: v.height, d: v.duration, type: v.type, ms: v.renderMs, fps: v.fps, drawMs: v.avgDrawMs, mix: v.audioMix, cues: v.cues, cuts: v.cuts, status: document.querySelector('#render-status').textContent.slice(0, 160) }; });
+  v = await app(() => { const v = window.VTS.app.project.video; return v && { w: v.width, h: v.height, d: v.duration, type: v.type, ms: v.renderMs, fps: v.fps, drawMs: v.avgDrawMs, mix: v.audioMix, cues: v.cues, cuts: v.cuts, status: document.querySelector('#render-status').textContent.slice(0, 160) }; });
   console.log(t(), 'RENDER', JSON.stringify(v));
-  const look = await app(() => { const l = window.VTS.app.project.look; return { cap: l.captionStyle, intensity: l.intensity, music: l.music, sfx: l.sfx, loop: l.loop, progress: l.progress }; }); console.log('LOOK', JSON.stringify(look));
-  const ext = /mp4/.test(v.type) ? '.mp4' : '.webm'; const file = OUTF + ext;
-  const size = await app(async () => { const v = window.VTS.app.project.video; window.__vf = v.blob || await window.VTS.segments.openStore(v.stored.store).then((st) => st.reader(v.stored.name)).then((rd) => rd.file); return window.__vf.size; });
+  look = await app(() => { const l = window.VTS.app.project.look; return { cap: l.captionStyle, intensity: l.intensity, music: l.music, sfx: l.sfx, loop: l.loop, progress: l.progress }; }); console.log('LOOK', JSON.stringify(look));
+  const ext = /mp4/.test(v.type) ? '.mp4' : '.webm'; file = OUTF + ext;
+  size = await app(async () => { const v = window.VTS.app.project.video; window.__vf = v.blob || await window.VTS.segments.openStore(v.stored.store).then((st) => st.reader(v.stored.name)).then((rd) => rd.file); return window.__vf.size; });
   const fd = fs.openSync(file, 'w'); const CH = 8 * 1024 * 1024;
   for (let off = 0; off < size; off += CH) { const b64 = await app(async (o, n) => { const b = window.__vf.slice(o, o + n); return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); }); }, off, Math.min(CH, size - off)); fs.writeSync(fd, Buffer.from(b64, 'base64')); }
   fs.closeSync(fd);
+  }
   const pr = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,duration:format=duration', '-of', 'json', file]).toString());
   console.log(t(), 'FILE', file, size, JSON.stringify(pr));
   console.log('API', JSON.stringify(api)); console.log('ERRORS', JSON.stringify(errors));
