@@ -586,8 +586,11 @@
     const cx = r.cx; const text = cx.cta; if (!text || t < cx.ctaStart + 0.25) return; const ctx = r.ctx; const s = r.s; const nine = r.LY.aspect === '9:16';
     const k = easeOutBack((t - cx.ctaStart - 0.25) / 0.35); const { plain, emojis } = splitEmoji(text); const sz = (nine ? 50 : 40) * (r.LY.cap.size || 1) * s;
     const x = r.DW / 2 * s; const y = (nine ? 930 : r.DH * 0.86) * s; // 9:16: between the captions and the characters' heads
-    ctx.save(); ctx.translate(x, y + Math.sin(t * 4) * 6 * s); ctx.rotate(-0.02); ctx.scale(k, k); ctx.font = '900 ' + sz + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.save(); ctx.font = '900 ' + sz + 'px ' + FONT;
     const lines = wrap(ctx, plain, (nine ? 780 : r.DW * 0.7) * s).slice(0, 2); const es = emojis.length ? sz * 1.4 : 0; const w = Math.max.apply(null, lines.map((l) => ctx.measureText(l).width)) + sz * 1.3 + es; const lh = sz * 1.2; const h = lines.length * lh + sz * 0.8;
+    // v1.5: keep clear of the "Follow @handle" pill (a two-line sticker used to overlap it)
+    let yy = y; if (nine && r.o.handle && r.LY.cta && y - h / 2 < (r.LY.cta[1] + 55) * s) yy = r.LY.cta[1] * s + 50 * s + h / 2 + 14 * s;
+    ctx.translate(x, yy + Math.sin(t * 4) * 6 * s); ctx.rotate(-0.02); ctx.scale(k, k); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(0,0,0,0.3)'; rr(ctx, -w / 2 + 6 * s, -h / 2 + 10 * s, w, h, h / 2.4); ctx.fill(); rr(ctx, -w / 2, -h / 2, w, h, h / 2.4); ctx.fillStyle = r.preset.hi; ctx.fill(); ctx.lineWidth = 6 * s; ctx.strokeStyle = OLC; ctx.stroke();
     ctx.fillStyle = '#111'; lines.forEach((l, q) => ctx.fillText(l, -es / 2, (q - (lines.length - 1) / 2) * lh + 2 * s));
     if (es) { const f = S.emojiFile && S.emojiFile(emojis[0]); const img = emojiImg(f); if (img) ctx.drawImage(img, w / 2 - es - sz * 0.35, -es / 2, es, es); }

@@ -262,7 +262,9 @@
       const scene = sh.scene; const setting = scene.setting; const kind = stage.kindFor(setting, scene.pose); const L = stage.layout(setting, kind, scene); const t = sh.t; const lt = sh.lt; const mo = stage._mo;
       const view = rend.view3d || { x: 0, y: 0, w: W, h: H };
       // resolution: keep the 3D layer under a pixel budget (phones), upscale the rest
-      const ps = (sh.s || 1) * (rend.q3d || 1); const pw = Math.max(64, Math.round(view.w * ps)); const ph = Math.max(64, Math.round(view.h * ps));
+      // real-time recording on a slow GPU: if frames arrive late, lower the 3D pixel budget (down to ~35%) instead of dropping frames
+      if (rend.realtime) { const now = performance.now(); if (rend._t3 && now - rend._t3 < 1000) { const dt = now - rend._t3; rend._slow = (rend._slow || 0) * 0.9 + (dt > 45 ? 1 : 0) * 0.1; if (rend._slow > 0.5 && (rend.q3dAdapt || 1) > 0.6) { rend.q3dAdapt = (rend.q3dAdapt || 1) * 0.85; rend._slow = 0; } } rend._t3 = now; }
+      const ps = (sh.s || 1) * (rend.q3d || 1) * (rend.q3dAdapt || 1); const pw = Math.max(64, Math.round(view.w * ps)); const ph = Math.max(64, Math.round(view.h * ps));
       if (this.pw !== pw || this.ph !== ph) { this.r.setSize(pw, ph, false); this.pw = pw; this.ph = ph; }
       // camera: frames the 1080x1920 world plane; slow orbit + dolly per shot
       const cam = this.cam; const D = 30; const orbit = Math.sin(lt * 0.35 + (scene.count || 1)) * 0.12 + (scene.camera === 'pan' ? (clamp01(lt / Math.max(2, sh.dur)) - 0.5) * 0.3 : 0);

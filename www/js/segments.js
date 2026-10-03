@@ -322,7 +322,7 @@
     // VP8 encodes faster than VP9 in real time (fewer dropped frames on phones); same WebM container for the joiner.
     const vp8 = 'video/webm;codecs=vp8,opus'; const mime = opts.codec !== 'vp9' && typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(vp8) ? vp8 : R.pickVideoType('webm'); const webm = /webm/.test(mime);
     const P = opts.plan || (await planTrack(opts.track, opts.maxSeconds));
-    const r = new R.Renderer(opts.canvas);
+    const r = new R.Renderer(opts.canvas); r.realtime = true;
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
     r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
     if (VTS.motion) { try { r.env = await VTS.motion.envelopeFromTrack(opts.track); } catch (_) { r.env = null; } }

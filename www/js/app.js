@@ -276,6 +276,7 @@
       b.addEventListener('click', () => { P.tone = id; persist(); renderIdea(); });
       seg.appendChild(b);
     });
+    const an0 = P.look && P.look.anim === '3d' ? '3d' : '2d'; document.querySelectorAll('#anim-seg-idea button').forEach((b) => { b.classList.toggle('on', b.dataset.v === an0); b.setAttribute('aria-checked', b.dataset.v === an0); });
     const ex = $('idea-examples');
     if (!ex.childElementCount) EXAMPLES.forEach((t) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = t; b.addEventListener('click', () => { if (ideaEl.value.trim() && !confirm('Replace your idea with this example?')) return; P.idea = t; ideaEl.value = t; updateIdeaCount(); persist(); }); ex.appendChild(b); });
     const tp = $('opt-template');
@@ -1255,7 +1256,8 @@
   $('opt-watermark').addEventListener('change', (e) => { P.look.watermark = e.target.checked; if (e.target.checked && !handle()) toast('Set your channel handle in Settings.', true); markVideoStale(); persist(); renderRenderPane(); });
   $('opt-progress').addEventListener('change', (e) => { P.look.progress = e.target.checked; markVideoStale(); persist(); renderRenderPane(); });
   $('opt-format').addEventListener('change', (e) => { P.look.format = e.target.value; persist(); });
-  document.querySelectorAll('#anim-seg button').forEach((b) => b.addEventListener('click', () => { P.look.anim = b.dataset.v; save('vts.anim', P.look.anim); markVideoStale(); persist(); renderRenderPane(); }));
+  document.querySelectorAll('#anim-seg-idea button').forEach((b) => b.addEventListener('click', () => { if (!P.look) return; P.look.anim = b.dataset.v; save('vts.anim', P.look.anim); markVideoStale(); persist(); renderIdea(); renderRenderPane(); }));
+  document.querySelectorAll('#anim-seg button').forEach((b) => b.addEventListener('click', () => { P.look.anim = b.dataset.v; save('vts.anim', P.look.anim); markVideoStale(); persist(); renderRenderPane(); renderIdea(); }));
   document.querySelectorAll('#motion-seg button').forEach((b) => b.addEventListener('click', () => { P.look.motion = b.dataset.v; save('vts.motion', P.look.motion); markVideoStale(); persist(); renderRenderPane(); }));
   document.querySelectorAll('#intensity-seg button').forEach((b) => b.addEventListener('click', () => { P.look.intensity = b.dataset.v; markVideoStale(); persist(); renderRenderPane(); }));
   [['opt-hook', 'hook'], ['opt-cta', 'cta'], ['opt-emoji', 'autoEmoji'], ['opt-loop', 'loop'], ['opt-sfx', 'sfx']].forEach(([id, key]) => $(id).addEventListener('change', (e) => { P.look[key] = e.target.checked; markVideoStale(); persist(); renderRenderPane(); }));

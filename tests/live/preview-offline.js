@@ -45,7 +45,7 @@ function serve() {
   let AIN = AUDIO; let DELAY = true; if (info.mixWav) { AIN = OUT + '.mix.wav'; fs.writeFileSync(AIN, Buffer.from(info.mixWav, 'base64')); DELAY = false; } delete info.mixWav;
   console.log('INFO', JSON.stringify(info));
   const N = Math.ceil(info.total * 30);
-  const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', '-', '-i', AIN, '-af', DELAY ? 'adelay=300|300,apad' : 'apad', '-t', info.total.toFixed(3), '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', OUT], { stdio: ['pipe', 'inherit', 'inherit'] });
+  const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', '-', '-i', AIN, '-af', DELAY ? 'adelay=300|300,apad' : 'apad', '-t', info.total.toFixed(3), '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-maxrate', '10M', '-bufsize', '20M', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', OUT], { stdio: ['pipe', 'inherit', 'inherit'] });
   const done = new Promise((ok) => ff.on('close', ok)); let drawMs = 0; let maxDraw = 0; const t0 = Date.now();
   for (let i = 0; i < N; i += 15) {
     const batch = await page.evaluate((i0, n, N) => { const out = []; let dm = 0; let mx = 0; for (let k = i0; k < Math.min(N, i0 + n); k++) { const a = performance.now(); window.__r.draw(k / 30); const d = performance.now() - a; dm += d; mx = Math.max(mx, d); out.push(window.__c.toDataURL('image/jpeg', 0.9).split(',')[1]); } return { out, dm, mx }; }, i, 15, N);

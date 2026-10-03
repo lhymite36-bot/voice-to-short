@@ -572,7 +572,7 @@
     if (!canRender()) throw new Error('This browser cannot record canvas video (needs MediaRecorder + canvas.captureStream).');
     const mime = pickVideoType(opts.format);
     const P = plan(buffer, opts.maxSeconds);
-    const r = new Renderer(canvas);
+    const r = new Renderer(canvas); r.realtime = true;
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
     r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
     if (opts.probe) r.probe = opts.probe;
