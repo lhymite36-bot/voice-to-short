@@ -1,0 +1,11 @@
+{ "textHook": "Your brain at 3 a.m. be like 🧠", "cta": "Follow if your brain does this too 🧠",
+  "beats": [
+  {"text":"It's 3 a.m. and my brain just called an emergency meeting.","weight":3,"step":0,"emphasis":"emergency","speaker":"narrator","fx":"notification","fxText":"Your Brain: Emergency meeting. Now. 🚨","sfx":"notif","scene":{"setting":"bedroom-night","pose":"lying-awake","emotion":"shocked","props":["clock"]}},
+  {"text":"Hey. Remember that thing you said in 2014?","weight":2,"step":0,"emphasis":"2014","speaker":"brain","fx":"none","sticker":"","scene":{"setting":"bedroom-day","pose":"talking","emotion":"smug","props":[]}},
+  {"text":"No. Please. I have work in four hours.","weight":2,"step":0,"emphasis":"please","speaker":"me","fx":"zoom-punch","punch":true,"scene":{"setting":"bedroom-day","pose":"talking","emotion":"panicking","props":[]}},
+  {"text":"Cool. Let's replay it forty times. In HD.","weight":2,"step":1,"emphasis":"forty","speaker":"brain","fx":"loading","fxText":"Replaying cringe memory… (40/40)","sticker":"BRUH","scene":{"setting":"bedroom-day","pose":"talking","emotion":"crying-laughing","props":[]}},
+  {"text":"That's rumination. Your brain thinks rehearsing it keeps you safe.","weight":3,"step":1,"emphasis":"rumination","speaker":"narrator","fx":"freeze","fxText":"Yep. That's me.","scene":{"setting":"abstract-mind-space","pose":"standing-thinking","emotion":"dead-inside","props":["overthink-yarn","brain"]}},
+  {"text":"Fix: write the thought down. Brain sees it's handled.","weight":3,"step":2,"emphasis":"write","speaker":"narrator","fx":"checklist","fxText":"Write it down|Close the loop|Go back to sleep","scene":{"setting":"bedroom-night","pose":"writing","emotion":"calm","props":["notebook"]}},
+  {"text":"Wow. Okay. I'll just… think about sharks then.","weight":2,"step":3,"emphasis":"sharks","speaker":"brain","fx":"split","fxText":"Expectation|Reality","punch":true,"scene":{"setting":"bedroom-day","pose":"talking","emotion":"eye-roll","props":[]}},
+  {"text":"Rate your brain's 3 a.m. behaviour. Comment below.","weight":2,"step":4,"emphasis":"comment","speaker":"narrator","fx":"rating","fxText":"My brain at 3am|1","scene":{"setting":"bedroom-night","pose":"lying-awake","emotion":"side-eye","props":["moon"]}}
+]}

@@ -35,7 +35,7 @@
         <div class="pane" id="pane-idea">
           <div class="hero">
             <h1>What’s the idea?</h1>
-            <p class="muted">Tap the mic and ramble — up to 20 minutes, pauses are fine (the transcript is saved as you talk). Or paste text or an outline. Gemini turns it into a hook, clear steps and a soft call to action.</p>
+            <p class="muted">Tap the mic and ramble — up to 20 minutes, pauses are fine (the transcript is saved as you talk). Or paste text or an outline. Gemini turns it into a funny, scroll-stopping Short: a hook, jokes that keep the psychology accurate, and a loopable ending. Stuck? Open the 💡 Idea bank.</p>
           </div>
           <div class="mic-wrap">
             <button type="button" id="mic" class="mic" aria-label="Start dictation" aria-pressed="false">
@@ -51,10 +51,26 @@
           </label>
           <div id="idea-audio-wrap" class="hidden audio-row"><span class="small muted">Raw audio</span><audio id="idea-audio" controls preload="metadata"></audio></div>
           <div class="chips" id="idea-examples" aria-label="Example ideas"></div>
+          <div class="ib-bar"><button type="button" class="chip ib-open" id="ib-open" aria-expanded="false">💡 Idea bank <span id="ib-count"></span></button><button type="button" class="chip hot" id="ib-surprise">🎲 Surprise me</button></div>
+          <div class="card ideabank hidden" id="ideabank">
+            <div class="card-head"><h2>Idea bank</h2><button type="button" class="link-btn" id="ib-close">Close</button></div>
+            <p class="small muted">Trending formats — tap one to use it</p>
+            <div class="trend-cards" id="ib-trends"></div>
+            <p class="small muted">Funny psychology ideas — tap one to fill in the idea, format and length</p>
+            <div class="chips ib-cats" id="ib-cats"></div>
+            <ul class="ib-list" id="ib-list"></ul>
+          </div>
           <div class="field">
             <span class="label-row"><span>Tone</span></span>
             <div class="seg" id="tone-seg" role="radiogroup"></div>
           </div>
+          <label class="field"><span class="label-row"><span>Format</span><span class="muted small" id="template-badge"></span></span>
+            <select id="opt-template"></select></label>
+          <p class="small muted" id="template-why"></p>
+          <div class="field"><span class="label-row"><span>Humour</span><span class="small humour-label" id="humour-label"></span></span>
+            <input type="range" id="opt-humour" min="0" max="3" step="1" value="2" aria-label="Humour level"></div>
+          <div class="field"><span class="label-row"><span>Posting to</span><span class="muted small" id="platform-note"></span></span>
+            <div class="seg" id="platform-seg"><button type="button" data-v="both">TikTok + YouTube</button><button type="button" data-v="tiktok">TikTok</button><button type="button" data-v="youtube">YouTube Shorts</button></div></div>
           <label class="field"><span class="label-row"><span>Video length</span><span class="muted small" id="length-aspect"></span></span>
             <select id="opt-length"></select></label>
           <p class="small muted" id="length-note"></p>
@@ -91,7 +107,19 @@
               <button type="button" class="btn ghost" id="add-beat">+ Add beat</button>
             </div>
             <div class="card">
+              <div class="card-head"><h2>On-screen stickers</h2><span class="muted small">Big text most viewers read with the sound off</span></div>
+              <label class="field"><span class="label-row"><span>First-frame text hook</span><span class="muted small" id="texthook-count"></span></span><input id="f-texthook" type="text" maxlength="60" placeholder="e.g. your brain at 3 a.m. 💀"></label>
+              <label class="field"><span class="label-row"><span>Ending CTA sticker</span></span><input id="f-cta" type="text" maxlength="60"></label>
+              <div class="chips" id="cta-chips" aria-label="CTA ideas"></div>
+            </div>
+            <div class="card">
               <div class="card-head"><h2>Publish kit</h2><button type="button" class="chip" id="copy-all">Copy all</button></div>
+              <div class="kit-block" id="kit-tiktok">
+                <h3 class="kit-h">TikTok</h3>
+                <label class="field"><span class="label-row"><span>Caption</span><button type="button" class="copy" data-copy="tiktok">Copy caption + tags</button></span><textarea id="f-tt-caption" rows="3" maxlength="2200"></textarea></label>
+                <label class="field"><span class="label-row"><span>Hashtags <em class="muted small">(3–5 works best)</em></span></span><input id="f-tt-hashtags" type="text"></label>
+              </div>
+              <h3 class="kit-h" id="kit-yt-h">YouTube Shorts</h3>
               <label class="field"><span class="label-row"><span>Title</span><button type="button" class="copy" data-copy="title">Copy</button></span><input id="f-title" type="text" maxlength="100"></label>
               <label class="field"><span class="label-row"><span>Description</span><button type="button" class="copy" data-copy="description">Copy</button></span><textarea id="f-description" rows="4"></textarea></label>
               <label class="field"><span class="label-row"><span>Hashtags</span><button type="button" class="copy" data-copy="hashtags">Copy</button></span><input id="f-hashtags" type="text"></label>
@@ -116,10 +144,12 @@
             <div class="voice-list" id="ai-voices" role="radiogroup" aria-label="AI voices"></div>
             <label class="field"><span>Delivery style</span>
               <select id="ai-style">
-                <option value="tone">Match my tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="custom">Custom…</option>
+                <option value="tone">Match my tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="sarcastic">Sarcastic bestie</option><option value="deadpan">Deadpan</option><option value="genz">Chaotic Gen-Z</option><option value="roast">Roast me (gently)</option><option value="custom">Custom…</option>
               </select>
             </label>
             <input id="ai-style-custom" class="hidden" type="text" maxlength="160" placeholder="e.g. warm late-night radio host, slow and intimate">
+            <label class="field" id="ai-voice2-row"><span class="label-row"><span>Second voice for dialogue</span><span class="muted small">Brain, friend, boss… in “Brain vs Me” style scripts</span></span>
+              <select id="ai-voice2"></select></label>
             <button type="button" class="btn primary big" id="ai-generate"><span>✨ Generate AI voice</span></button>
             <p class="small muted" id="ai-note">Uses your Gemini key (free tier has a limited voice quota per day). Tap ▶ to hear a voice first.</p>
           </div>
@@ -177,11 +207,26 @@
                 <div class="seg" id="aspect-seg"><button type="button" data-v="9:16">9:16</button><button type="button" data-v="16:9">16:9</button><button type="button" data-v="1:1">1:1</button><button type="button" data-v="4:5">4:5</button></div></div>
               <div class="field"><span class="label-row"><span>Colour grade</span></span><div class="grades" id="grades"></div></div>
               <div class="field"><span class="label-row"><span>Captions</span></span>
-                <div class="seg" id="cap-style"><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button></div>
+                <div class="seg" id="cap-style"><button type="button" data-v="tiktok">TikTok bold</button><button type="button" data-v="beast">Big &amp; loud</button><button type="button" data-v="clean">Clean</button><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button><button type="button" data-v="none">None</button></div>
                 <div class="seg" id="cap-case"><button type="button" data-v="upper">UPPERCASE</button><button type="button" data-v="sentence">Sentence case</button></div>
               </div>
+              <div class="field"><span class="label-row"><span>Energy · pattern interrupts</span><span class="muted small" id="intensity-note"></span></span>
+                <div class="seg" id="intensity-seg"><button type="button" data-v="off">Off</button><button type="button" data-v="chill">Chill</button><button type="button" data-v="punchy">Punchy</button><button type="button" data-v="chaotic">Chaotic</button></div></div>
+              <label class="switch"><input type="checkbox" id="opt-hook"><span>First-frame text hook <em class="muted" id="hook-preview"></em></span></label>
+              <label class="switch"><input type="checkbox" id="opt-cta"><span>CTA sticker at the end</span></label>
+              <label class="switch"><input type="checkbox" id="opt-emoji"><span>Auto emoji &amp; reaction stickers</span></label>
+              <label class="switch"><input type="checkbox" id="opt-loop"><span>Loop ending <em class="muted">(last frame melts into the first, so it replays seamlessly)</em></span></label>
+              <label class="switch"><input type="checkbox" id="opt-safe"><span>Show TikTok / YouTube safe zones <em class="muted">(preview only, never rendered)</em></span></label>
+              <div class="card sound-card">
+                <div class="card-head"><h2>🔊 Sound</h2><span class="muted small">Your voice always stays on top</span></div>
+                <label class="switch"><input type="checkbox" id="opt-sfx"><span>Sound effects on cuts &amp; punchlines</span></label>
+                <label class="field"><span class="label-row"><span>Background music</span><button type="button" class="chip" id="music-play">▶ Listen</button></span><select id="opt-music"></select></label>
+                <label class="slider"><span>Voice</span><input type="range" id="vol-voice" min="0.5" max="1.5" step="0.05"><em id="vol-voice-v"></em></label>
+                <label class="slider"><span>Music</span><input type="range" id="vol-music" min="0" max="1" step="0.05"><em id="vol-music-v"></em></label>
+                <label class="slider"><span>Effects</span><input type="range" id="vol-sfx" min="0" max="1" step="0.05"><em id="vol-sfx-v"></em></label>
+              </div>
               <label class="switch"><input type="checkbox" id="opt-watermark"><span>Channel watermark <em id="wm-handle" class="muted"></em></span></label>
-              <label class="switch"><input type="checkbox" id="opt-progress"><span>Thin progress bar</span></label>
+              <label class="switch"><input type="checkbox" id="opt-progress"><span>Progress bar <em class="muted">(keeps people watching to the end)</em></span></label>
               <label class="field"><span class="label-row"><span>File format</span></span>
                 <select id="opt-format"><option value="auto">Auto (MP4 when supported)</option><option value="webm">WebM</option></select>
               </label>
@@ -198,6 +243,7 @@
             <video id="result-video" controls playsinline preload="metadata"></video>
             <div class="actions wrap">
               <button type="button" class="btn primary" id="share-video">Share to YouTube…</button>
+              <button type="button" class="btn" id="cover-png">🖼 Save cover PNG</button>
               <button type="button" class="btn" id="save-video">Save to phone</button>
             </div>
             <div class="chips">
@@ -248,7 +294,7 @@
         <div class="card">
           <div class="card-head"><h2>AI voice (Gemini)</h2></div>
           <label class="field"><span>Default voice</span><select id="s-tts-voice"></select></label>
-          <label class="field"><span>Delivery style</span><select id="s-tts-style"><option value="tone">Match the project tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="custom">Custom…</option></select></label>
+          <label class="field"><span>Delivery style</span><select id="s-tts-style"><option value="tone">Match the project tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="sarcastic">Sarcastic bestie</option><option value="deadpan">Deadpan</option><option value="genz">Chaotic Gen-Z</option><option value="roast">Roast me (gently)</option><option value="custom">Custom…</option></select></label>
           <input id="s-tts-custom" class="hidden" type="text" maxlength="160" placeholder="Custom style, e.g. warm late-night radio host">
           <label class="field"><span>Voice model</span><select id="s-tts-model"></select></label>
           <button type="button" class="btn ghost" id="load-tts-models">Load voice models from my key</button>
@@ -271,7 +317,7 @@
           <p class="small muted">Backups contain your ideas, scripts and settings (not audio or video files, and never your API key).</p>
         </div>
         <p class="center small muted" id="app-version"></p>
-        <p class="center small muted" id="credits">Keyword icons: <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener">Twemoji</a> © Twitter/X and contributors, CC-BY 4.0 (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">license</a>). Emoji names: emojibase (MIT). Scenes and characters are drawn in code on your device.</p>
+        <p class="center small muted" id="credits">Keyword icons: <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener">Twemoji</a> © Twitter/X and contributors, CC-BY 4.0 (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">license</a>). Sound effects: <a href="https://kenney.nl/assets" target="_blank" rel="noopener">Kenney</a> (CC0); laugh: “Laughter” by lonemonk (freesound #72844), CC BY 3.0; other sounds and music are generated in the app. Emoji names: emojibase (MIT). Scenes and characters are drawn in code on your device.</p>
       </section>
     </main>
 
@@ -318,6 +364,9 @@
   <script src="js/native.js"></script>
   <script src="js/render.js"></script>
   <script src="js/segments.js"></script>
+  <script src="js/audiofx.js"></script>
+  <script src="js/comedy.js"></script>
+  <script src="js/ideas.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 // LIVE end-to-end in headless Chrome with the real Gemini key from $GEMINI_API_KEY (never printed).
+// v1.4: env TONE (default sarcastic), FORMAT (default classic), HUMOUR (default 2).
 // idea -> Write my Short -> AI voice (Gemini TTS) -> render 9:16, then ffprobe. Usage: node tests/live/e2e-live.js <len> <outfile>
 const puppeteer = require('puppeteer-core'); const http = require('http'); const fs = require('fs'); const path = require('path'); const { execFileSync } = require('child_process');
 const WWW = path.join(__dirname, '..', '..', 'www'); const KEY = process.env.GEMINI_API_KEY; if (!KEY) throw new Error('no key');
@@ -26,22 +27,26 @@ function serve() {
   await page.goto(ORIGIN + '/'); await page.waitForSelector('#idea');
   await app((k) => { localStorage.setItem('vts.apiKey', k); }, KEY); await page.reload(); await page.waitForSelector('#idea');
   await page.type('#idea', IDEA); await page.select('#opt-length', LEN);
-  await app(() => { const b = document.querySelector('#tone-seg [data-v="calm"]'); if (b) b.click(); });
+  await app((tone) => { const b = document.querySelector('#tone-seg [data-v="' + tone + '"]'); if (b) b.click(); }, process.env.TONE || 'sarcastic');
+  await page.select('#opt-template', process.env.FORMAT || 'classic');
+  await app((h) => { const el = document.querySelector('#opt-humour'); el.value = h; el.dispatchEvent(new Event('input', { bubbles: true })); }, process.env.HUMOUR || '2');
   await click('#generate');
   await page.waitForFunction(() => (window.VTS.app.project.pkg && !document.querySelector('#script-body').classList.contains('hidden')) || /err/.test(document.querySelector('#gen-status').className), { timeout: 900000, polling: 1000 });
-  const pkg = await app(() => { const p = window.VTS.app.project.pkg; return p && { words: window.VTS.shortgen.wordCount(p.script), beats: p.beats.length, title: p.title, hook: p.hooks[0], model: localStorage.getItem('vts.model'), low: p.beats.filter((b) => b.scene && window.VTS.scenes.matchScore(b.text, b.scene) < 0.5).length, poses: new Set(p.beats.map((b) => b.scene && b.scene.pose)).size, settings: new Set(p.beats.map((b) => b.scene && b.scene.setting)).size }; });
+  const pkg = await app(() => { const p = window.VTS.app.project.pkg; return p && { textHook: p.textHook, cta: p.cta, tiktokCaption: p.tiktokCaption, tiktokHashtags: p.tiktokHashtags, ytHashtags: p.hashtags, speakers: p.beats.map((b) => b.speaker || '-').join(','), fx: p.beats.map((b) => b.fx || '-').join(','), stickers: p.beats.map((b) => b.sticker).filter(Boolean), words: window.VTS.shortgen.wordCount(p.script), beats: p.beats.length, title: p.title, hook: p.hooks[0], model: localStorage.getItem('vts.model'), low: p.beats.filter((b) => b.scene && window.VTS.scenes.matchScore(b.text, b.scene) < 0.5).length, poses: new Set(p.beats.map((b) => b.scene && b.scene.pose)).size, settings: new Set(p.beats.map((b) => b.scene && b.scene.setting)).size }; });
   console.log(t(), 'SCRIPT', JSON.stringify(pkg), '| gen-status:', red(await page.$eval('#gen-status', (e) => e.textContent)));
   if (!pkg) throw new Error('script failed');
+  fs.writeFileSync(OUTF + '.pkg.json', JSON.stringify(await app(() => window.VTS.app.project.pkg), null, 1));
   await click('.step[data-step=voice]'); await click('#ai-generate');
   await page.waitForFunction(() => (window.VTS.app.project.voice && window.VTS.app.project.voice.source === 'gemini') || /fail|error|quota/i.test(document.querySelector('#voice-status').textContent), { timeout: 900000, polling: 1000 });
-  const voice = await app(() => { const v = window.VTS.app.project.voice; return { src: v && v.source, d: v && v.duration, model: v && v.model, status: document.querySelector('#voice-status').textContent.slice(0, 200) }; });
+  const voice = await app(() => { const v = window.VTS.app.project.voice; return { src: v && v.source, d: v && v.duration, model: v && v.ttsModel, tv: v && v.ttsVoice, status: document.querySelector('#voice-status').textContent.slice(0, 200) }; });
   console.log(t(), 'VOICE', red(JSON.stringify(voice)));
   if (voice.src !== 'gemini') throw new Error('voice failed');
   await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="9:16"]'); await sleep(300);
   await click('#render'); await page.waitForSelector('#render-progress:not(.hidden)');
   await page.waitForFunction(() => document.querySelector('#render-progress').classList.contains('hidden'), { timeout: 1800000, polling: 1000 });
-  const v = await app(() => { const v = window.VTS.app.project.video; return v && { w: v.width, h: v.height, d: v.duration, type: v.type, ms: v.renderMs, status: document.querySelector('#render-status').textContent.slice(0, 160) }; });
+  const v = await app(() => { const v = window.VTS.app.project.video; return v && { w: v.width, h: v.height, d: v.duration, type: v.type, ms: v.renderMs, fps: v.fps, drawMs: v.avgDrawMs, mix: v.audioMix, cues: v.cues, cuts: v.cuts, status: document.querySelector('#render-status').textContent.slice(0, 160) }; });
   console.log(t(), 'RENDER', JSON.stringify(v));
+  const look = await app(() => { const l = window.VTS.app.project.look; return { cap: l.captionStyle, intensity: l.intensity, music: l.music, sfx: l.sfx, loop: l.loop, progress: l.progress }; }); console.log('LOOK', JSON.stringify(look));
   const ext = /mp4/.test(v.type) ? '.mp4' : '.webm'; const file = OUTF + ext;
   const size = await app(async () => { const v = window.VTS.app.project.video; window.__vf = v.blob || await window.VTS.segments.openStore(v.stored.store).then((st) => st.reader(v.stored.name)).then((rd) => rd.file); return window.__vf.size; });
   const fd = fs.openSync(file, 'w'); const CH = 8 * 1024 * 1024;

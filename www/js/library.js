@@ -77,10 +77,13 @@
   addProps('travel', 'airplane:Airplane:2708:fly; car:Car:1f697:bob; bus:Bus:1f68c:bob; train:Train:1f686:bob; map:Map:1f5fa:bob; luggage:Luggage:1f9f3:bob; compass:Compass:1f9ed:spin; tent:Tent:26fa:bob; beach:Beach:1f3d6:bob; ticket:Ticket:1f3ab:tilt; fuel:Fuel pump:26fd:bob; city:City:1f3d9:bob; world-map:World map:1f5fa:bob; ship:Ship:1f6a2:tilt; taxi:Taxi:1f695:bob');
   addProps('music', 'music-notes:Music notes:1f3b6:float; music-note:Music note:1f3b5:float; guitar:Guitar:1f3b8:tilt; piano:Piano:1f3b9:bob; drum:Drum:1f941:bounce; violin:Violin:1f3bb:tilt; trumpet:Trumpet:1f3ba:tilt; radio:Radio:1f4fb:bob; speaker:Speaker:1f50a:pulse');
   addProps('sports', 'football:American football:1f3c8:spin; baseball:Baseball:26be:spin; ping-pong:Ping pong:1f3d3:bounce; goal:Goal net:1f945:bob; gamepad:Game controller:1f3ae:shake; joystick:Joystick:1f579:tilt; chess:Chess:265f:bob; dart:Bullseye:1f3af:pulse; flag:Chequered flag:1f3c1:swing; mountain-top:Summit flag:1f6a9:swing');
+  // v1.4 hand-drawn psychology topic props (drawn in comedy.js)
+  addProps('psych', 'social-battery:Social battery::pulse; anxiety-meter:Anxiety meter::shake; overthink-yarn:Overthinking tangle::spin0; dopamine-meter:Dopamine meter::pulse; burnout-match:Burnt-out match::bob; people-pleaser:People-pleaser sign::bounce; red-flag:Red flag::swing; green-flag:Green flag::swing; attachment-hearts:Attachment hearts::pulse; habit-tracker:Habit tracker::bob; motivation-fuel:Motivation fuel gauge::bob; discipline-streak:Streak flame::pulse; self-care:Self-care kit::bob; exam-f:Failed exam::tilt; sleep-debt:Sleep debt::bob; screen-time:Screen time::bob; notif-badge:Notification badge::bounce; brain-loading:Brain loading::bob; tomorrow-calendar:"Tomorrow" calendar::bob; money-burn:Burning money::bob; boundary-wall:Boundary wall::bob; therapy-couch:Therapy couch::bob; inner-critic:Inner critic::shake; comfort-zone:Comfort zone::pulse; confidence-meter:Confidence meter::pulse; cortisol-alarm:Cortisol alarm::shake');
   // legacy (hand-drawn in scenes.js) props get a category + label here too
   S.PROPS.forEach(([id, label]) => { if (!P[id]) P[id] = { label, e: '', anim: 'legacy', cat: 'mind' }; });
   // hand-drawn custom props implemented in this file
-  const CUSTOM = new Set(['pencil', 'sketchbook', 'paintbrush', 'pen', 'easel', 'paint-canvas', 'open-book', 'code-window', 'dumbbell', 'yoga-mat', 'water-bottle', 'glass-water', 'plate', 'money-jar', 'piggy', 'calculator', 'watering-can', 'trash', 'soda']);
+  const CUSTOM = new Set(['pencil', 'sketchbook', 'paintbrush', 'pen', 'easel', 'paint-canvas', 'open-book', 'code-window', 'dumbbell', 'yoga-mat', 'water-bottle', 'glass-water', 'plate', 'money-jar', 'piggy', 'calculator', 'watering-can', 'trash', 'soda',
+    'social-battery', 'anxiety-meter', 'overthink-yarn', 'dopamine-meter', 'burnout-match', 'people-pleaser', 'red-flag', 'green-flag', 'attachment-hearts', 'habit-tracker', 'motivation-fuel', 'discipline-streak', 'self-care', 'exam-f', 'sleep-debt', 'screen-time', 'notif-badge', 'brain-loading', 'tomorrow-calendar', 'money-burn', 'boundary-wall', 'therapy-couch', 'inner-critic', 'comfort-zone', 'confidence-meter', 'cortisol-alarm']);
   Object.keys(P).forEach((id) => { if (!P[id].e && P[id].anim !== 'legacy' && !CUSTOM.has(id)) delete P[id]; });
   Object.keys(P).forEach((id) => { if (!S.PROP_IDS.includes(id)) { S.PROPS.push([id, P[id].label]); S.PROP_IDS.push(id); } });
 
@@ -185,6 +188,31 @@
   // ======================= lexicon (keyword → visual) =======================
   // "word,word | a=action | p=prop,prop | s=setting | w=weight"   (words are base forms; the lemmatizer handles -s/-ing/-ed/irregulars)
   const LEX_SRC = `
+social battery,introvert,introverts,introverted,socialising,socializing,social event,small talk|p=social-battery|w=3.2
+anxiety,anxious,worry,worried,worrying,nervous,panic,panicking|p=anxiety-meter|w=2.6
+overthink,overthinking,overthinker,overthinkers,ruminate,ruminating,rumination,spiral,spiralling,spiraling,replaying|p=overthink-yarn|w=3.2
+dopamine,reward system,doomscroll,doomscrolling,instant gratification,cheap dopamine|p=dopamine-meter|w=3.2
+burnout,burned out,burnt out,drained|p=burnout-match|w=3.2
+people pleaser,people pleasing,people-pleasing,pleaser,approval|p=people-pleaser|w=3.2
+red flag,red flags,toxic|p=red-flag|w=3.2
+green flag,green flags|p=green-flag|w=3.2
+attachment,attachment style,avoidant,clingy,anxiously attached|p=attachment-hearts|w=3.2
+habit,habits,routine,routines,tracker|p=habit-tracker|w=2.6
+motivation,motivated,unmotivated|p=motivation-fuel|w=2.8
+discipline,disciplined,consistency,consistent,streak|p=discipline-streak|w=2.8
+self care,self-care,selfcare,recharge|p=self-care|w=2.8
+exam,exams,test,tests,grade,grades,fail,failed,failing|a=studying|p=exam-f,books|s=library|w=2.6
+sleep debt,insomnia,sleepless|p=sleep-debt|w=2.8
+screen time,screentime,phone addiction,addicted,addiction|p=screen-time|w=3
+notification,notifications,unread,texts,texting|p=notif-badge|w=2.6
+procrastinate,procrastinating,procrastination,procrastinator,tomorrow,putting off|p=tomorrow-calendar|w=3.2
+impulse buy,impulse buying,spending,broke,online shopping|p=money-burn|w=2.8
+boundary,boundaries|p=boundary-wall|w=3.2
+therapy,therapist,therapists,counsellor,counselor|p=therapy-couch|w=3
+inner critic,self-talk,negative self-talk,imposter,impostor|p=inner-critic|w=3
+comfort zone|p=comfort-zone|w=3.2
+confidence,confident,insecure,insecurity,self-esteem|p=confidence-meter|w=2.8
+cortisol,stress response,fight or flight,amygdala|p=cortisol-alarm|w=2.8
 sketch,draw,doodle,drawing,sketchbook,sketching,illustrate,illustration,sketchpad,artwork,drawer|a=drawing|p=pencil,sketchbook|s=art-studio|w=3
 pencil|a=drawing|p=pencil|w=2.5
 art,artist,creative,creativity|a=painting|p=palette|s=art-studio|w=2
@@ -732,7 +760,7 @@ alarm|p=alarm|w=3
       case 'watering-can': rr(ctx, -60, -40, 110, 90, 16); st.fs(ctx, c('#4cb7a0')); ctx.beginPath(); ctx.moveTo(45, 10); ctx.lineTo(120, -40); ctx.lineWidth = 16; ctx.strokeStyle = st.OL; ctx.stroke(); ctx.lineWidth = 8; ctx.strokeStyle = c('#4cb7a0'); ctx.stroke(); break;
       case 'trash': ctx.beginPath(); ctx.moveTo(-56, -50); ctx.lineTo(56, -50); ctx.lineTo(44, 70); ctx.lineTo(-44, 70); ctx.closePath(); st.fs(ctx, c('#9aa0ad')); rr(ctx, -66, -70, 132, 22, 8); st.fs(ctx, c('#6d6f7e')); break;
       case 'soda': rr(ctx, -40, -70, 80, 140, 16); st.fs(ctx, c('#ef6f6c')); ctx.fillStyle = c('#ffffff'); ctx.fillRect(-40, -12, 80, 18); break;
-      default: break;
+      default: if (VTS.comedy && VTS.comedy.drawProp) VTS.comedy.drawProp(st, ctx, name, t, age); break;
     }
     ctx.restore();
   }

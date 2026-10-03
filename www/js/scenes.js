@@ -10,7 +10,9 @@
     ['cafe', 'Café'], ['park', 'Park'], ['abstract-mind-space', 'Mind space'], ['phone-screen', 'Phone screen'], ['void', 'Plain spotlight']];
   const POSES = [['lying-awake', 'Lying awake'], ['sitting-head-in-hands', 'Head in hands'], ['walking', 'Walking'], ['standing-thinking', 'Thinking'], ['talking', 'Talking'],
     ['celebrating', 'Celebrating'], ['stressed', 'Stressed'], ['scrolling-phone', 'Scrolling phone'], ['sleeping', 'Sleeping'], ['meditating', 'Meditating'], ['running', 'Running']];
-  const EMOTIONS = [['neutral', 'Neutral'], ['anxious', 'Anxious'], ['sad', 'Sad'], ['happy', 'Happy'], ['angry', 'Angry'], ['calm', 'Calm'], ['tired', 'Tired'], ['surprised', 'Surprised']];
+  const EMOTIONS = [['neutral', 'Neutral'], ['anxious', 'Anxious'], ['sad', 'Sad'], ['happy', 'Happy'], ['angry', 'Angry'], ['calm', 'Calm'], ['tired', 'Tired'], ['surprised', 'Surprised'],
+    // v1.4 cartoon expressions
+    ['eye-roll', 'Eye-roll'], ['side-eye', 'Side-eye'], ['shocked', 'Shocked'], ['crying-laughing', 'Crying-laughing'], ['smug', 'Smug'], ['dead-inside', 'Dead inside'], ['panicking', 'Panicking'], ['blushing', 'Blushing'], ['rage', 'Rage'], ['facepalm', 'Facepalm']];
   const PROPS = [['phone', 'Phone'], ['clock', 'Clock'], ['brain', 'Brain'], ['thought-bubbles', 'Thought bubbles'], ['question-marks', 'Question marks'], ['lightbulb', 'Lightbulb'],
     ['heart', 'Heart'], ['notebook', 'Notebook'], ['coffee', 'Coffee'], ['moon', 'Moon'], ['sun', 'Sun'], ['calendar', 'Calendar'], ['alarm', 'Alarm clock'], ['arrows', 'Arrows'],
     ['checklist', 'Checklist'], ['battery', 'Battery'], ['cloud', 'Cloud'], ['zzz', 'Zzz'], ['sparkles', 'Sparkles'], ['chains', 'Chains'], ['weights', 'Weights'],
@@ -31,7 +33,10 @@
       phone: 'scrolling-phone', texting: 'scrolling-phone', scrolling: 'scrolling-phone', asleep: 'sleeping', sleep: 'sleeping', breathing: 'meditating', relaxing: 'meditating', yoga: 'meditating', meditate: 'meditating',
       jogging: 'running', run: 'running', exercise: 'running' },
     emotion: { nervous: 'anxious', worried: 'anxious', scared: 'anxious', fear: 'anxious', upset: 'sad', lonely: 'sad', depressed: 'sad', joyful: 'happy', excited: 'happy', proud: 'happy', relieved: 'calm',
-      peaceful: 'calm', relaxed: 'calm', mad: 'angry', frustrated: 'angry', annoyed: 'angry', exhausted: 'tired', sleepy: 'tired', shocked: 'surprised', amazed: 'surprised', curious: 'surprised', confused: 'anxious' },
+      peaceful: 'calm', relaxed: 'calm', mad: 'angry', frustrated: 'angry', annoyed: 'eye-roll', exhausted: 'tired', sleepy: 'tired', amazed: 'surprised', curious: 'surprised', confused: 'anxious',
+      eyeroll: 'eye-roll', 'rolling-eyes': 'eye-roll', unimpressed: 'side-eye', suspicious: 'side-eye', skeptical: 'side-eye', sideeye: 'side-eye', shook: 'shocked', horrified: 'shocked', stunned: 'shocked', laughing: 'crying-laughing', lol: 'crying-laughing', hysterical: 'crying-laughing',
+      smirk: 'smug', smirking: 'smug', confident: 'smug', cocky: 'smug', numb: 'dead-inside', empty: 'dead-inside', 'dead': 'dead-inside', drained: 'dead-inside', burnt: 'dead-inside', burnedout: 'dead-inside', panic: 'panicking', panicked: 'panicking', freaking: 'panicking', stressed: 'panicking',
+      shy: 'blushing', flustered: 'blushing', embarrassed: 'blushing', crush: 'blushing', furious: 'rage', livid: 'rage', raging: 'rage', 'face-palm': 'facepalm', cringe: 'facepalm', cringing: 'facepalm', 'why': 'facepalm' },
     prop: { thoughts: 'thought-bubbles', thought: 'thought-bubbles', 'thought-bubble': 'thought-bubbles', 'question-mark': 'question-marks', question: 'question-marks', idea: 'lightbulb', bulb: 'lightbulb', light: 'lightbulb',
       journal: 'notebook', diary: 'notebook', pen: 'notebook', book: 'notebook', tea: 'coffee', mug: 'coffee', cup: 'coffee', stars: 'sparkles', star: 'sparkles', sparkle: 'sparkles', 'alarm-clock': 'alarm',
       arrow: 'arrows', loop: 'arrows', cycle: 'arrows', 'to-do': 'checklist', todo: 'checklist', list: 'checklist', energy: 'battery', rain: 'cloud', storm: 'cloud', clouds: 'cloud', sleep: 'zzz', z: 'zzz', zz: 'zzz',
@@ -238,6 +243,16 @@
       case 'calm': Object.assign(f, { eyes: 'closed', brow: [-2, -2], mouth: 'smile' }); break;
       case 'tired': Object.assign(f, { eyes: 'half', brow: [-4, 4], mouth: 'flat', bags: true }); break;
       case 'surprised': Object.assign(f, { eyes: 'wide', brow: [-18, -18], mouth: 'o' }); break;
+      case 'eye-roll': Object.assign(f, { eyes: 'roll', brow: [-6, -10], mouth: 'flat' }); break;
+      case 'side-eye': Object.assign(f, { eyes: 'side', brow: [10, -4], mouth: 'hmm' }); break;
+      case 'shocked': Object.assign(f, { eyes: 'shock', brow: [-22, -22], mouth: 'scream', gloom: true, sweat: true }); break;
+      case 'crying-laughing': Object.assign(f, { eyes: 'happy', brow: [-10, -6], mouth: 'grin', laughTears: true, blush: true }); break;
+      case 'smug': Object.assign(f, { eyes: 'half', brow: [6, -12], mouth: 'smirk', blush: true }); break;
+      case 'dead-inside': Object.assign(f, { eyes: 'dead', brow: [0, 2], mouth: 'flat', bags: true, gloom: true }); break;
+      case 'panicking': Object.assign(f, { eyes: 'wide', brow: [-14, 8], mouth: 'wavy', sweat: true, sweats: true, dart: true, fastDart: true }); break;
+      case 'blushing': Object.assign(f, { eyes: 'dot', brow: [-8, 2], mouth: 'smallsmile', blush: true, blushBig: true, lookDown: true }); break;
+      case 'rage': Object.assign(f, { eyes: 'dot', brow: [16, -12], mouth: 'grit', steam: true, blush: true, redFace: true }); break;
+      case 'facepalm': Object.assign(f, { eyes: 'closed', brow: [-8, 6], mouth: 'flat', palm: true }); break;
       default: break;
     }
     if (pose === 'sleeping') Object.assign(f, { eyes: 'closed', mouth: 'smallo', dart: false, sweat: false, tear: false });
@@ -286,14 +301,19 @@
     // ---------- head ----------
     head(ctx, pal, face, t, o) {
       const f = o.facing || 0; const fx = f * 24; const lw = this.lw; const OL = this.OL;
+      if (pal.headBehind) pal.headBehind(ctx, this, face, t, f);
       const blinkT = (t + (o.seed || 0) * 1.7) % 3.6; const blink = face.eyes === 'closed' || face.eyes === 'happy' ? 1 : (blinkT < 0.14 ? Math.abs(Math.cos(blinkT / 0.14 * Math.PI)) : 1);
+      if (pal.headShape) pal.headShape(ctx, this, face, t, f); else {
       if (pal.long) { ctx.beginPath(); ctx.moveTo(-104, -20); ctx.bezierCurveTo(-112, 60, -100, 118, -70, 126); ctx.lineTo(70, 126); ctx.bezierCurveTo(100, 118, 112, 60, 104, -20); ctx.closePath(); this.fs(ctx, pal.hair); }
       // ears
       [-1, 1].forEach((s) => { if (f && s === -f) return; ctx.beginPath(); ctx.arc(s * 88 + fx * 0.3, 10, 19, 0, TAU); this.fs(ctx, pal.skin); ctx.beginPath(); ctx.arc(s * 88 + fx * 0.3, 10, 8, 0, TAU); ctx.fillStyle = pal.skinS; ctx.fill(); });
       ctx.beginPath(); ctx.ellipse(0, 0, 92, 90, 0, 0, TAU); this.fs(ctx, pal.skin);
       // soft shade on the face edge
       ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, 88, 86, 0, 0, TAU); ctx.clip(); ctx.beginPath(); ctx.ellipse(-f * 30 + 30, 18, 92, 96, 0, 0, TAU); ctx.rect(-200, -200, 400, 400); ctx.fillStyle = rgba(pal.skinS, 0.35); ctx.fill('evenodd'); ctx.restore();
-      if (face.blush) { ctx.fillStyle = pal.blush; ctx.beginPath(); ctx.ellipse(fx - 52, 36, 17, 10, 0, 0, TAU); ctx.ellipse(fx + 52, 36, 17, 10, 0, 0, TAU); ctx.fill(); }
+      if (face.redFace) { ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, 90, 88, 0, 0, TAU); ctx.clip(); const g = ctx.createLinearGradient(0, -90, 0, 60); g.addColorStop(0, 'rgba(230,40,40,0.55)'); g.addColorStop(1, 'rgba(230,40,40,0.08)'); ctx.fillStyle = g; ctx.fillRect(-100, -100, 200, 200); ctx.restore(); }
+      if (face.gloom) { ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, 90, 88, 0, 0, TAU); ctx.clip(); ctx.strokeStyle = 'rgba(70,80,160,0.55)'; ctx.lineWidth = 5; for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(k * 16 + fx * 0.5, -88); ctx.lineTo(k * 16 + fx * 0.5, -40 - Math.abs(k) * 6); ctx.stroke(); } ctx.restore(); }
+      if (face.blush) { const bb = face.blushBig ? 1.7 : 1; ctx.fillStyle = face.blushBig ? rgba('#ff4f6d', 0.55) : pal.blush; ctx.beginPath(); ctx.ellipse(fx - 52, 36, 17 * bb, 10 * bb, 0, 0, TAU); ctx.ellipse(fx + 52, 36, 17 * bb, 10 * bb, 0, 0, TAU); ctx.fill();
+        if (face.blushBig) { ctx.strokeStyle = rgba('#d6334f', 0.7); ctx.lineWidth = 3.5; [-1, 1].forEach((sd) => { for (let q = 0; q < 3; q++) { ctx.beginPath(); ctx.moveTo(fx + sd * 52 - 14 + q * 12, 30); ctx.lineTo(fx + sd * 52 - 20 + q * 12, 44); ctx.stroke(); } }); } }
       if (face.steam) { ctx.fillStyle = this.ca('#ff3b3b', 0.16); ctx.beginPath(); ctx.ellipse(0, 20, 86, 70, 0, 0, TAU); ctx.fill(); }
       // hair
       ctx.beginPath();
@@ -306,9 +326,11 @@
       }
       ctx.closePath(); this.fs(ctx, pal.hair);
       ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(-6, -30, 70, -2.5, -1.9); ctx.stroke();
+      }
+      if (pal.headShape && face.blush) { ctx.fillStyle = face.blushBig ? rgba('#ff4f6d', 0.6) : pal.blush; ctx.beginPath(); ctx.ellipse(fx - 52, 40, 18, 11, 0, 0, TAU); ctx.ellipse(fx + 52, 40, 18, 11, 0, 0, TAU); ctx.fill(); }
       // eyes
       const look = o.look || { x: 0, y: 0 };
-      const dart = face.dart ? { x: Math.sign(Math.sin(t * 3.3 + 0.5)) * 0.8, y: Math.sin(t * 1.7) * 0.3 } : look;
+      const dart = face.dart ? { x: Math.sign(Math.sin(t * (face.fastDart ? 9 : 3.3) + 0.5)) * 0.8, y: Math.sin(t * 1.7) * 0.3 } : (face.lookDown ? { x: 0.3, y: 0.8 } : look);
       ctx.lineCap = 'round';
       [-1, 1].forEach((s) => {
         const ex = fx + s * 32 * (f ? 0.8 : 1); const ey = 10;
@@ -322,12 +344,28 @@
           ctx.beginPath(); ctx.moveTo(-13, 6); ctx.quadraticCurveTo(0, -14, 13, 6); ctx.lineWidth = 6.5; ctx.strokeStyle = OL; ctx.stroke();
         } else if (mode === 'closed') {
           ctx.beginPath(); ctx.moveTo(-13, 0); ctx.quadraticCurveTo(0, 11, 13, 0); ctx.lineWidth = 6; ctx.strokeStyle = OL; ctx.stroke();
+        } else if (mode === 'roll') { // eye-roll: whites with the pupils rolled up under a heavy lid
+          ctx.beginPath(); ctx.ellipse(0, 0, 18, 20, 0, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = lw * 0.6; ctx.strokeStyle = OL; ctx.stroke();
+          ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, 18, 20, 0, 0, TAU); ctx.clip(); ctx.beginPath(); ctx.arc(s * 3, -15, 9, 0, TAU); ctx.fillStyle = OL; ctx.fill(); ctx.restore();
+          ctx.beginPath(); ctx.moveTo(-19, -4); ctx.lineTo(19, -4); ctx.lineWidth = 5; ctx.strokeStyle = OL; ctx.stroke();
+        } else if (mode === 'side') { // side-eye: half lid, pupils slammed to one side
+          ctx.beginPath(); ctx.ellipse(0, 3, 18, 13, 0, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = lw * 0.6; ctx.strokeStyle = OL; ctx.stroke();
+          ctx.save(); ctx.beginPath(); ctx.ellipse(0, 3, 18, 13, 0, 0, TAU); ctx.clip(); ctx.beginPath(); ctx.arc(-11, 5, 8.5, 0, TAU); ctx.fillStyle = OL; ctx.fill(); ctx.restore();
+          ctx.beginPath(); ctx.moveTo(-21, -8); ctx.quadraticCurveTo(0, -12, 21, -8); ctx.lineWidth = 6; ctx.strokeStyle = OL; ctx.stroke();
+        } else if (mode === 'shock') { // huge white eyes, tiny pupils
+          const k = 1 + 0.06 * Math.sin(t * 40);
+          ctx.beginPath(); ctx.ellipse(0, -2, 24 * k, 28 * k, 0, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = lw * 0.7; ctx.strokeStyle = OL; ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, -2, 4.5, 0, TAU); ctx.fillStyle = OL; ctx.fill();
+        } else if (mode === 'dead') { // dead inside: hollow rings, no shine
+          ctx.beginPath(); ctx.arc(0, 2, 11, 0, TAU); ctx.lineWidth = 4.5; ctx.strokeStyle = OL; ctx.stroke(); ctx.beginPath(); ctx.arc(0, 2, 3, 0, TAU); ctx.fillStyle = OL; ctx.fill();
+          ctx.beginPath(); ctx.moveTo(-15, -9); ctx.lineTo(15, -9); ctx.lineWidth = 5; ctx.stroke();
         } else if (mode === 'half') {
           ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(12, 0); ctx.ellipse(0, 0, 12, 12 * blink, 0, 0, Math.PI); ctx.closePath(); ctx.fillStyle = OL; ctx.fill();
           ctx.beginPath(); ctx.moveTo(-16, -1); ctx.lineTo(16, -1); ctx.lineWidth = 6; ctx.strokeStyle = OL; ctx.stroke();
         } else {
-          ctx.beginPath(); ctx.ellipse(look.x * 4, look.y * 4, 10.5, 14 * Math.max(0.1, blink), 0, 0, TAU); ctx.fillStyle = OL; ctx.fill();
-          if (blink > 0.5) { ctx.beginPath(); ctx.arc(look.x * 4 - 3, look.y * 4 - 5, 3.6, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); }
+          const lk = face.lookDown ? { x: 0.3, y: 0.8 } : look;
+          ctx.beginPath(); ctx.ellipse(lk.x * 4, lk.y * 4, 10.5, 14 * Math.max(0.1, blink), 0, 0, TAU); ctx.fillStyle = OL; ctx.fill();
+          if (blink > 0.5) { ctx.beginPath(); ctx.arc(lk.x * 4 - 3, lk.y * 4 - 5, 3.6, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); }
         }
         if (face.bags) { ctx.beginPath(); ctx.moveTo(-12, 20); ctx.quadraticCurveTo(0, 28, 12, 20); ctx.lineWidth = 4; ctx.strokeStyle = rgba(pal.skinS, 0.9); ctx.stroke(); }
         // brow: [inner, outer] offsets
@@ -361,11 +399,16 @@
       else if (m === 'wavy') { ctx.beginPath(); ctx.moveTo(-20, 4); ctx.bezierCurveTo(-13, -4, -7, -4, 0, 4); ctx.bezierCurveTo(7, 12, 13, 12, 20, 4); ctx.stroke(); }
       else if (m === 'grit') { ctx.beginPath(); ctx.rect(-22, -6, 44, 19); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke(); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-22, 3.5); ctx.lineTo(22, 3.5); for (let k = -11; k <= 11; k += 11) { ctx.moveTo(k, -6); ctx.lineTo(k, 13); } ctx.stroke(); }
       else if (m === 'hmm') { ctx.beginPath(); ctx.moveTo(-8, 4); ctx.quadraticCurveTo(4, 0, 14, -2); ctx.stroke(); }
+      else if (m === 'smirk') { ctx.beginPath(); ctx.moveTo(-16, 4); ctx.quadraticCurveTo(6, 10, 22, -8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(18, -12); ctx.lineTo(24, -4); ctx.lineWidth = 4; ctx.stroke(); }
+      else if (m === 'scream') { const op = 1 + 0.1 * Math.sin(t * 30); ctx.beginPath(); ctx.ellipse(0, 10, 20, 28 * op, 0, 0, TAU); ctx.fillStyle = dark; ctx.fill(); ctx.stroke(); ctx.save(); ctx.clip(); ctx.beginPath(); ctx.ellipse(0, 30, 12, 9, 0, 0, TAU); ctx.fillStyle = this.c('#ff8a95'); ctx.fill(); ctx.restore(); }
       ctx.restore();
       // emotion extras
       if (face.tear) { const p = (t * 0.7) % 1; ctx.save(); ctx.globalAlpha = 1 - p; ctx.translate(fx - 36, 30 + p * 70); this.drop(ctx, 9, this.e('#7cc8ff')); ctx.restore(); }
+      if (face.laughTears) { [-1, 1].forEach((sd) => { for (let q = 0; q < 2; q++) { const p = (t * 1.6 + q * 0.5) % 1; ctx.save(); ctx.globalAlpha = 1 - p; ctx.translate(fx + sd * (44 + p * 60), 14 + p * 40 - Math.sin(p * Math.PI) * 30); this.drop(ctx, 9, this.e('#7cc8ff')); ctx.restore(); } }); }
+      if (face.sweats) { [[-80, -30], [-70, 10], [84, -10]].forEach(([dx, dy], q) => { const p = (t * 0.9 + q * 0.33) % 1; ctx.save(); ctx.globalAlpha = Math.min(1, (1 - p) * 2); ctx.translate(dx, dy + p * 50); this.drop(ctx, 10, this.e('#9fdcff')); ctx.restore(); }); }
       if (face.sweat) { const p = (t * 0.45) % 1; ctx.save(); ctx.globalAlpha = Math.min(1, (1 - p) * 2); ctx.translate(-f * 60 + 74, -46 + p * 50); this.drop(ctx, 13, this.e('#9fdcff')); ctx.restore(); }
       if (face.steam) { for (let k = 0; k < 3; k++) { const p = (t * 0.8 + k / 3) % 1; ctx.beginPath(); ctx.arc((k - 1) * 60 + Math.sin(p * 6 + k) * 10, -120 - p * 90, 16 + p * 16, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,' + (0.55 * (1 - p)) + ')'; ctx.fill(); } }
+      if (pal.headAfter) pal.headAfter(ctx, this, face, t, f);
     }
     drop(ctx, r, color) {
       ctx.beginPath(); ctx.moveTo(0, -r * 1.8); ctx.bezierCurveTo(r * 0.6, -r * 0.8, r, -r * 0.1, r, r * 0.3); ctx.arc(0, r * 0.3, r, 0, Math.PI); ctx.bezierCurveTo(-r, -r * 0.1, -r * 0.6, -r * 0.8, 0, -r * 1.8); ctx.closePath();
@@ -395,7 +438,8 @@
       if (sp.crying) Object.assign(face, { tear: true, mouth: 'frown', eyes: 'closed', brow: [-12, 8] });
       if (sp.cameraFace) face.hidden = true;
       const pal = this.pal(o.variant || 0);
-      if (o.facing != null && sp.facing) sp.facing = o.facing;
+      if (face.palm) { sp.handsFront = true; sp.armR = { x: 34, y: -296 + sp.headDy, bend: 1 }; sp.holding = null; }
+      if (o.expr) Object.assign(face, o.expr);
       const f = sp.facing;
       let hipX = x; let hipY;
       if (sp.lotus) hipY = groundY - 70 * scale + sp.hipY * scale;

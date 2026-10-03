@@ -4,11 +4,47 @@
   const VTS = (window.VTS = window.VTS || {});
 
   const TONES = {
+    sarcastic: { label: 'Sarcastic bestie', funny: true, prompt: 'Sarcastic best friend: dry, teasing, relatable ("oh sure, 3 a.m. is the perfect time to replay 2014"), eye-roll energy, but clearly on the viewer\'s side and kind underneath. Quick lines, comic timing, then real help.' },
+    deadpan: { label: 'Deadpan', funny: true, prompt: 'Deadpan and dry: flat, understated, perfectly unimpressed statements that are funny because they are so matter-of-fact. Short sentences. No exclamation marks.' },
+    genz: { label: 'Chaotic Gen-Z', funny: true, prompt: 'Chaotic Gen-Z internet voice: fast, expressive, meme-literate ("the brain said no", "be so fr", "it\'s giving anxiety", "not me doing X"), playful exaggeration. Keep slang light enough for everyone to follow; never mean.' },
+    roast: { label: 'Roast me (gently)', funny: true, prompt: 'Gentle roast: lovingly call the viewer out on their habits like a friend who knows them too well, then hype them up and give the real fix. Tease behaviour, never identity, looks or mental-health conditions.' },
     calm: { label: 'Calm teacher', prompt: 'Calm, warm, confident teacher. Short clear sentences. Reassuring, never preachy.' },
     bold: { label: 'Bold', prompt: 'Bold, direct, high-energy. Punchy sentences, pattern interrupts, a little provocative but never rude.' },
     soft: { label: 'Soft', prompt: 'Soft, gentle, compassionate, like a kind friend. Slow pace, validating, cosy.' },
   };
   const LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Portuguese', 'Italian', 'Hindi', 'Indonesian', 'Filipino', 'Swahili', 'Arabic', 'Japanese', 'Korean'];
+
+  // Video formats (templates). step numbers: 0 = hook/body, 1-3 = numbered items (badge "LABEL n OF 3"), 4 = CTA.
+  const FORMATS = {
+    classic: { label: 'Classic: hook + 3 steps + CTA', badge: 'STEP', prompt: 'Structure: hook, then exactly 3 numbered steps ("One", "Two", "Three") each concrete and actionable with a tiny why, then a CTA. Steps use step 1/2/3.' },
+    'brain-like': { label: 'Your brain be like…', badge: '', prompt: 'Format "Your brain be like": open with a situation, then act out what the brain does with it in escalating absurd steps (the Brain is a character with lines, speaker "brain"), then name the real psychology concept and one fix. Mostly step 0.' },
+    pov: { label: 'POV:', badge: '', prompt: 'Format "POV": the hook starts with "POV:" and puts the viewer inside a hyper-specific relatable moment (second person, present tense), escalate it with 2-3 beats of inner monologue, then a twist that explains the psychology and a quick fix. Use fx "freeze" once on the most relatable moment. Mostly step 0.' },
+    'nobody-me': { label: 'Nobody: / Me:', badge: '', prompt: 'Format "Nobody: / Me:": the hook is literally "Nobody:" then "Me:" followed by the over-the-top thing you do (speaker "me"), then the narrator explains why brains do this (real concept) and one kinder alternative. Mostly step 0.' },
+    expectation: { label: 'Expectation vs Reality', badge: '', prompt: 'Format "Expectation vs Reality": set up the expectation (confident plan), then the reality (what actually happens), then why (real psychology), then a realistic fix. Use fx "split" with fxText "Expectation|Reality" on the reveal beat. Mostly step 0.' },
+    'brain-vs-me': { label: 'Brain vs Me (dialogue)', badge: '', prompt: 'Format "Brain vs Me": a comic argument between the viewer (speaker "me") and their Brain as a character (speaker "brain", smug, dramatic, unhelpful, sometimes accidentally wise). Alternate short lines like a sketch; a narrator (speaker "narrator") steps in once to name the real psychology concept and the fix; the Brain gets the last funny line before the CTA. Each beat is ONE speaker. Mostly step 0.' },
+    rating: { label: 'Rating your habits', badge: 'HABIT', prompt: 'Format "Rating your habits": rate 3 common habits about the topic out of 10 with brutal-but-kind humour and the real reason each helps or hurts (steps 1-3, fx "rating" with fxText "Habit|score" on each rating beat).' },
+    signs: { label: "Signs you're secretly…", badge: 'SIGN', prompt: 'Format "3 signs you\'re secretly ___": the hook names the label (e.g. "a people-pleaser"), then 3 hyper-relatable signs (steps 1-3) with a funny example each, then what to do about it and the CTA "which one are you?". Never diagnose; say "might" and "a lot of people".' },
+    therapist: { label: 'Things your therapist wants you to know', badge: 'TRUTH', prompt: 'Format "Things your therapist wants you to know": 3 gentle truths (steps 1-3), each with a relatable joke and a real, accurate concept. The therapist can be a character (speaker "therapist"). Not medical advice; encourage real support where relevant.' },
+    'myth-fact': { label: 'Myth vs Fact', badge: 'MYTH', prompt: 'Format "Myth vs Fact": 3 popular psychology myths (steps 1-3); for each, say the myth (fx "myth-fact", fxText "MYTH"), then the fact (fx "myth-fact", fxText "FACT") with the real explanation. Only well-established facts; no invented numbers.' },
+    storytime: { label: 'Storytime', badge: '', prompt: 'Format "Storytime": a short, funny first-person story about a relatable moment (speaker "me", with a friend/boss/crush/mom as characters if useful), a twist, then the psychology behind it and one takeaway. Mostly step 0.' },
+  };
+  const HUMOUR = ['Straight (no jokes)', 'Light smile', 'Funny', 'Unhinged (still kind)'];
+  const HUMOUR_PROMPT = [
+    'Humour: none. Warm and clear, no jokes.',
+    'Humour: light. One or two gentle, relatable smiles; mostly teaching.',
+    'Humour: funny. A joke or sarcastic aside every 2-3 lines, relatable exaggeration, one clear punchline (punch true).',
+    'Humour: unhinged but kind. Rapid-fire jokes, absurd escalation, meme energy, 2-3 punchlines (punch true), stickers on punchlines. Still accurate and never mean.',
+  ];
+  const COMEDY_RULES = [
+    'You write for "Quiet Brain Club": a faceless, animated psychology / self-help channel posted to TikTok and YouTube Shorts. Viewers are overthinkers, students and young adults.',
+    'Goals: stop the scroll in 1-2 seconds, make people laugh or feel seen, teach ONE real psychology idea accurately, and make them comment, share and rewatch.',
+    'Hook: max 12 words, first 1-2 seconds, a relatable pain, a bold claim or a curiosity gap. No greetings, no "in this video", no "hey guys".',
+    'Pattern interrupts: a new beat every 2-3 seconds; alternate setup / punchline; vary speakers and overlays (fx) so something changes on screen constantly, but use fx on at most 1 in 3 beats.',
+    'Accuracy: name real concepts only when they fit (e.g. rumination, the Zeigarnik effect, negative bias, dopamine and reward prediction, the spotlight effect, cognitive distortions, attachment styles, habit loops, decision fatigue). Never invent studies, statistics, percentages or experts. No diagnosis, no medical claims; jokes target habits and situations, never conditions, identities or looks.',
+    'Loop: the last line should flow back into the first line (so a rewatch feels seamless), e.g. end on a set-up that the hook answers.',
+    'CTA: one comment-bait line (a question, "which one are you?", "send this to your overthinker", "comment your 3 a.m. thought"). Never beg for likes.',
+    'Spoken text is what the AI voice reads: no emoji, no hashtags, no stage directions, no speaker labels inside "script" or beat text.',
+  ].join('\n');
 
   const SYSTEM = [
     'You are a top YouTube Shorts scriptwriter for a faceless psychology and self-help channel (BetterU style: calm voiceover over aesthetic visuals).',
@@ -21,7 +57,7 @@
     'Return ONLY JSON matching the schema.',
   ].join('\n');
 
-  const T = { STRING: 'STRING', NUMBER: 'NUMBER', INTEGER: 'INTEGER', ARRAY: 'ARRAY', OBJECT: 'OBJECT' };
+  const T = { STRING: 'STRING', NUMBER: 'NUMBER', INTEGER: 'INTEGER', ARRAY: 'ARRAY', OBJECT: 'OBJECT', BOOLEAN: 'BOOLEAN' };
   const SC = () => VTS.scenes;
   function sceneSchema() {
     const s = SC();
@@ -29,16 +65,16 @@
       type: T.OBJECT,
       description: 'The animated 2D cartoon scene shown while this caption is spoken, chosen ONLY from the allowed values.',
       properties: {
-        setting: { type: T.STRING, enum: s.SET_IDS, description: 'Background location.' },
-        pose: { type: T.STRING, enum: s.POSE_IDS, description: 'The ACTION the character performs — pick the one that literally shows the main keyword (sketch/draw -> drawing, save money -> saving-money, cook -> cooking).' },
-        emotion: { type: T.STRING, enum: s.EMO_IDS },
-        props: { type: T.ARRAY, description: '0 to 3 animated prop ids from the allowed prop list in the prompt, illustrating the words literally.', items: { type: T.STRING } },
+        setting: { type: T.STRING, enum: s.SET_IDS },
+        pose: { type: T.STRING, enum: s.POSE_IDS, description: 'Action that literally shows the main keyword.' },
+        emotion: { type: T.STRING, enum: s.EMO_IDS, description: 'Exaggerated cartoon expression of the speaker.' },
+        props: { type: T.ARRAY, description: '0-3 prop ids from the list in the prompt.', items: { type: T.STRING } },
         camera: { type: T.STRING, enum: s.CAM_IDS },
-        callout: { type: T.STRING, description: 'Optional 1-3 word sticker label (e.g. "2:07 AM", "Cortisol up"), usually empty.' },
-        keywords: { type: T.ARRAY, description: '1-3 LITERAL, drawable keywords from this caption (nouns/verbs actually said, e.g. "pencil", "sketchbook", "cook"), most important first.', items: { type: T.STRING } },
-        objects: { type: T.ARRAY, description: '0-3 physical objects that should be visible (plain English nouns).', items: { type: T.STRING } },
-        icon: { type: T.STRING, description: 'One emoji that literally depicts the main keyword (e.g. ✏️ for pencil, 💰 for money).' },
-        characters: { type: T.INTEGER, description: '1, or 2 only for a conversation (pose talking).' },
+        callout: { type: T.STRING, description: 'Optional 1-3 word label, usually empty.' },
+        keywords: { type: T.ARRAY, description: '1-3 literal drawable keywords said in this beat.', items: { type: T.STRING } },
+        objects: { type: T.ARRAY, description: '0-3 visible objects (nouns).', items: { type: T.STRING } },
+        icon: { type: T.STRING, description: 'One emoji for the main keyword.' },
+        characters: { type: T.INTEGER, description: '1, or 2 for a conversation.' },
       },
       required: ['setting', 'pose', 'emotion', 'props', 'camera'],
     };
@@ -51,45 +87,59 @@
     'The problem/hook uses tense emotions; the steps move toward calm/happy; the CTA is talking or celebrating with heart or speech-bubbles. Use camera "zoom-in" for dramatic lines, "shake" for stress, "pan" for walking, otherwise "static". Max 3 props.',
     SC() ? 'Allowed prop ids (use only these exact ids in "props"; anything else goes in "objects"/"keywords"): ' + SC().PROP_IDS.join(', ') + '.' : '',
   ].filter(Boolean).join('\n');
+  const SPEAKERS = ['narrator', 'me', 'brain', 'friend', 'boss', 'crush', 'mom', 'therapist', 'cat'];
+  const FX_IDS = ['none', 'zoom-punch', 'freeze', 'spotlight', 'impact', 'split', 'before-after', 'chat', 'notification', 'loading', 'xp', 'checklist', 'rating', 'argument', 'myth-fact', 'countdown'];
+  const SFX_IDS = ['none', 'whoosh', 'pop', 'ding', 'boom', 'scratch', 'boing', 'bruh', 'trombone', 'laugh', 'typing', 'notif', 'heartbeat', 'tick', 'cash', 'levelup', 'wrong', 'tada', 'riser'];
   const SCHEMA = {
     type: T.OBJECT,
     properties: {
-      hooks: { type: T.ARRAY, description: 'Exactly 3 alternative hook lines, strongest first. The script starts with hooks[0] verbatim.', items: { type: T.STRING } },
-      script: { type: T.STRING, description: 'Full voiceover, 80-110 words: hooks[0], then One/Two/Three steps, then a soft CTA.' },
+      hooks: { type: T.ARRAY, description: '3 alternative spoken hooks, strongest first; script starts with hooks[0].', items: { type: T.STRING } },
+      script: { type: T.STRING, description: 'Full voiceover: hooks[0], body, CTA.' },
       beats: {
         type: T.ARRAY,
-        description: 'On-screen caption beats that split the script into consecutive chunks, in order, verbatim, 2-6 words each, covering the whole script.',
+        description: 'Consecutive beats splitting the script verbatim, covering all of it.',
         items: {
           type: T.OBJECT,
           properties: {
-            text: { type: T.STRING, description: 'Caption phrase, verbatim from the script, 2-6 words.' },
-            weight: { type: T.NUMBER, description: 'Relative speaking time (about the number of spoken words, 1-8).' },
-            step: { type: T.INTEGER, description: '0 = hook, 1/2/3 = the numbered step it belongs to, 4 = call to action.' },
-            emphasis: { type: T.STRING, description: 'The single most important word in the phrase (copied exactly), or empty.' },
-            visual: { type: T.STRING, description: 'A short description of the visual for this beat.' },
+            text: { type: T.STRING, description: 'Verbatim script words.' },
+            weight: { type: T.NUMBER, description: 'Spoken words count.' },
+            step: { type: T.INTEGER, description: '0 hook/body, 1-3 numbered item, 4 CTA.' },
+            emphasis: { type: T.STRING, description: 'Key word copied exactly, or empty.' },
+            visual: { type: T.STRING, description: 'Short visual idea.' },
+            speaker: { type: T.STRING, enum: SPEAKERS, description: 'Who says it.' },
+            fx: { type: T.STRING, enum: FX_IDS, description: 'Meme overlay, mostly none.' },
+            fxText: { type: T.STRING, description: 'Overlay text (see prompt), or empty.' },
+            sfx: { type: T.STRING, enum: SFX_IDS },
+            sticker: { type: T.STRING, description: '1-3 word reaction sticker or emoji, usually empty.' },
+            punch: { type: T.BOOLEAN, description: 'true on punchlines.' },
           },
           required: ['text', 'weight', 'step', 'visual'],
         },
       },
-      title: { type: T.STRING, description: 'YouTube Shorts title, under 70 characters, curiosity-driven, may end with one emoji.' },
-      description: { type: T.STRING, description: '2-4 short lines for the video description, then a soft CTA line. No hashtags here.' },
-      hashtags: { type: T.ARRAY, description: '5 to 8 hashtags, each starting with #, include #shorts.', items: { type: T.STRING } },
-      pinnedComment: { type: T.STRING, description: 'A pinned comment that invites replies (a question or a mini challenge).' },
-      thumbnailText: { type: T.STRING, description: '2-5 word thumbnail/cover text, punchy.' },
+      textHook: { type: T.STRING, description: 'First-frame on-screen text, max 7 words.' },
+      title: { type: T.STRING, description: 'YouTube Shorts title, under 70 chars.' },
+      description: { type: T.STRING, description: 'YouTube description, 2-4 lines + CTA, no hashtags.' },
+      hashtags: { type: T.ARRAY, description: 'YouTube: 3-6 hashtags incl. #Shorts.', items: { type: T.STRING } },
+      tiktokCaption: { type: T.STRING, description: 'TikTok caption, 1-2 lines ending in a question, no hashtags.' },
+      tiktokHashtags: { type: T.ARRAY, description: 'TikTok: 3-5 hashtags.', items: { type: T.STRING } },
+      cta: { type: T.STRING, description: 'On-screen CTA sticker, max 8 words, may end with one emoji.' },
+      pinnedComment: { type: T.STRING, description: 'Pinned comment that invites replies.' },
+      thumbnailText: { type: T.STRING, description: '2-5 word cover text.' },
     },
     required: ['hooks', 'script', 'beats', 'title', 'description', 'hashtags', 'pinnedComment', 'thumbnailText'],
   };
 
   // ---------- video length ----------
   const LENGTHS = [
-    { id: '60', label: '30–60 s (Short)', sec: 60, words: [80, 110] },
+    { id: '30', label: '~30 s Short', sec: 30, words: [70, 85], beats: [9, 14] },
+    { id: '60', label: '~60 s Short', sec: 60, words: [120, 140], beats: [14, 24] },
     { id: '120', label: '2 min', sec: 120, words: [250, 300] },
     { id: '300', label: '5 min', sec: 300, words: [640, 740] },
     { id: '600', label: '10 min', sec: 600, words: [1300, 1450] },
     { id: '900', label: '15 min', sec: 900, words: [1950, 2150] },
     { id: '1200', label: '20 min', sec: 1200, words: [2600, 2850] },
   ];
-  const lengthOf = (id) => LENGTHS.find((l) => l.id === String(id)) || LENGTHS[0];
+  const lengthOf = (id) => LENGTHS.find((l) => l.id === String(id)) || LENGTHS[1];
   const isLong = (id) => lengthOf(id).sec >= 300;
   const SYSTEM_LONG = [
     'You are an expert YouTube scriptwriter for a faceless explainer / self-improvement channel (calm voiceover over flat 2D animated scenes).',
@@ -102,10 +152,36 @@
     if (!SC()) return SCHEMA;
     const sch = JSON.parse(JSON.stringify(SCHEMA)); sch.properties.beats.items.properties.scene = sceneSchema(); sch.properties.beats.items.required.push('scene'); return sch;
   }
+  // Comedy path (v1.4): any funny tone, any non-classic format, or humour > 0.
+  const isComedy = (opts) => { const t = TONES[opts && opts.tone]; const h = opts && opts.humour != null ? Number(opts.humour) : (t && t.funny ? 2 : 0); return !isLong(opts && opts.length) && ((t && t.funny) || (opts && opts.format && opts.format !== 'classic') || h > 0); };
+  const humourOf = (opts) => { const t = TONES[opts && opts.tone]; const h = opts && opts.humour != null ? Number(opts.humour) : (t && t.funny ? 2 : 0); return Math.max(0, Math.min(3, Math.round(h))); };
+  function buildComedyPrompt(idea, opts) {
+    const tone = TONES[opts.tone] || TONES.sarcastic; const L = lengthOf(opts.length); const F = FORMATS[opts.format] || FORMATS.classic; const bt = L.beats || [14, 24];
+    return [
+      'Turn my idea below into a ' + L.label + ' vertical video package for TikTok and YouTube Shorts (posted to both).',
+      'Format: ' + F.prompt,
+      'Tone: ' + tone.prompt,
+      HUMOUR_PROMPT[humourOf(opts)],
+      'Length: the script is ' + L.words[0] + '-' + L.words[1] + ' words (about ' + L.sec + ' seconds spoken, never more). Beats: ' + bt[0] + '-' + bt[1] + ' beats; each beat is one sentence or clause of 3-12 words with ONE speaker, text copied verbatim from the script, in order, covering all of it; weight = spoken words.',
+      'Per beat: speaker (narrator | me = the viewer as a cartoon | brain = their Brain as a cute pink character | friend | boss | crush | mom | therapist | cat). scene.emotion is an exaggerated cartoon expression of the speaker (eye-roll, side-eye, shocked, crying-laughing, smug, dead-inside, panicking, blushing, rage, facepalm, or the basic ones). punch = true on punchlines. sticker = optional 1-3 word reaction (BRUH, WAIT WHAT, NOT AGAIN, SIR??, IT ME, or one emoji like 💀 😭) on at most 3 beats. sfx: boom on dramatic reveals, scratch before a "wait", bruh on facepalms, ding on tips, typing/notif on phone moments, cash for money, heartbeat for anxiety, tick for time pressure, trombone for fails, else none.',
+      'fx overlays (at most 1 in 3 beats, never two in a row) with fxText: zoom-punch (optional short caption), freeze (caption like "Yep. That\'s me."), spotlight (short label), impact (1-2 word POW text), split ("Expectation|Reality"), before-after ("Before|After"), chat (2-4 texts "Name: message|me: message"), notification ("App: message"), loading ("Loading motivation…"), xp ("+50 XP · Self-respect"), checklist ("item|item|item"), rating ("Habit|score/10"), argument ("Me: line|Brain: line"), myth-fact ("MYTH" or "FACT"), countdown ("5 second rule").',
+      'textHook: 3-7 words of on-screen text for the very first frame that makes people stay (different wording from the spoken hook; e.g. "POV: it\'s 3 a.m. again" or "your brain at 3am:").',
+      'Platform text: YouTube title + description + 3-6 hashtags including #Shorts; TikTok tiktokCaption (short, conversational, ends with a question) + 3-5 tiktokHashtags (one broad like #psychology plus niche ones); cta for the on-screen sticker (e.g. "Follow if your brain does this too 🧠"); pinnedComment; thumbnailText.',
+      'Language for every field: ' + (opts.language || 'English') + '.',
+      opts.handle ? 'Channel handle (only in the CTA if natural): ' + opts.handle : '',
+      SC() ? SCENE_RULES + '\nFor two-character beats (dialogue with brain/friend/boss/…) use pose talking or arguing, characters 2, and the same setting for the whole conversation.' : '',
+      '',
+      'My idea (dictated, may be messy):',
+      '"""',
+      String(idea || '').trim().slice(0, 24000),
+      '"""',
+    ].filter((l) => l !== '').join('\n');
+  }
   function buildPrompt(idea, opts) {
+    if (isComedy(opts)) return buildComedyPrompt(idea, opts);
     const tone = TONES[opts.tone] || TONES.calm; const L = lengthOf(opts.length);
     return [
-      L.sec <= 60 ? 'Turn my rambling idea below into a complete YouTube Short package.' : 'Turn my idea below into a complete ' + L.label + ' YouTube video package. Ignore the 80-110 word rule: the script must be ' + L.words[0] + '-' + L.words[1] + ' words (about ' + L.label + ' spoken); use as many numbered steps as fit naturally (3-5).',
+      L.sec <= 60 ? 'Turn my rambling idea below into a complete YouTube Short package. The full voiceover script is ' + L.words[0] + '-' + L.words[1] + ' words.' : 'Turn my idea below into a complete ' + L.label + ' YouTube video package. Ignore the 80-110 word rule: the script must be ' + L.words[0] + '-' + L.words[1] + ' words (about ' + L.label + ' spoken); use as many numbered steps as fit naturally (3-5).',
       'Tone: ' + tone.prompt,
       'Language for every field: ' + (opts.language || 'English') + '.',
       opts.handle ? 'Channel handle (only use in the CTA if natural): ' + opts.handle : '',
@@ -225,12 +301,22 @@
       emphasis: toStr(b && b.emphasis, 30),
       visual: toStr(b && b.visual, 200),
       scene: b && b.scene,
+      speaker: SPEAKERS.includes(String(b && b.speaker || '').toLowerCase()) ? String(b.speaker).toLowerCase() : '',
+      fx: FX_IDS.includes(String(b && b.fx || '').toLowerCase()) ? String(b.fx).toLowerCase() : '',
+      fxText: toStr(b && b.fxText, 200),
+      sfx: SFX_IDS.includes(String(b && b.sfx || '').toLowerCase()) ? String(b.sfx).toLowerCase() : '',
+      sticker: toStr(b && b.sticker, 18),
+      punch: !!(b && (b.punch === true || b.punch === 'true')),
     })).filter((b) => b.text);
+    beats.forEach((b) => { ['speaker', 'fx', 'fxText', 'sfx', 'sticker'].forEach((k) => { if (!b[k]) delete b[k]; }); if (!b.punch) delete b.punch; if (b.fx === 'none') delete b.fx; if (b.sfx === 'none') delete b.sfx; });
     if (beats.length < 3) beats = beatsFromScript(script, hooks[0], beats);
     attachScenes(beats);
-    const hashtags = Array.from(new Set((Array.isArray(obj.hashtags) ? obj.hashtags : String(obj.hashtags || '').split(/[\s,]+/)).map(normHashtag).filter(Boolean))).slice(0, 8);
-    if (!hashtags.includes('#shorts') && hashtags.length < 8) hashtags.push('#shorts');
+    const tagList = (v) => Array.from(new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,]+/)).map(normHashtag).filter(Boolean)));
+    const hashtags = tagList(obj.hashtags).slice(0, 8);
+    if (!hashtags.some((h) => h.toLowerCase() === '#shorts') && hashtags.length < 8) hashtags.push('#Shorts');
+    const tiktokHashtags = tagList(obj.tiktokHashtags).filter((h) => h.toLowerCase() !== '#shorts').slice(0, 5);
     return {
+      textHook: toStr(obj.textHook, 60), tiktokCaption: toStr(obj.tiktokCaption, 300), tiktokHashtags, cta: toStr(obj.cta, 60),
       hooks, hookIndex: 0, script, beats,
       title: toStr(obj.title, 100) || hooks[0].slice(0, 90),
       description: toStr(obj.description, 3000),
@@ -320,13 +406,29 @@
     const g = VTS.gemini;
     if (opts && isLong(opts.length)) return generateLong(idea, opts);
     const L = lengthOf(opts && opts.length); const sch = schemaWithScenes(); let system = SYSTEM;
+    if (isComedy(opts || {})) system = COMEDY_RULES + '\nReturn ONLY JSON matching the schema.';
+    else system = SYSTEM.replace('80 to 110 words (about 30-45 seconds spoken)', L.words[0] + ' to ' + L.words[1] + ' words (about ' + L.sec + ' seconds spoken)');
     if (L.sec > 60) {
       // 2-min videos use the short (single-call) path: override the 80-110 word rule in the schema and system text too.
       const w = L.words[0] + '-' + L.words[1] + ' words';
       sch.properties.script.description = 'Full voiceover, ' + w + ' (about ' + L.label + ' spoken): hooks[0], then the numbered steps with examples, then a soft CTA.';
-      system = SYSTEM + '\nLENGTH OVERRIDE for this request: the full voiceover script must be ' + w + ' (about ' + L.label + ' spoken), not 80-110 words. Use 3 to 5 steps with a concrete example each.';
+      system = system + '\nLENGTH OVERRIDE for this request: the full voiceover script must be ' + w + ' (about ' + L.label + ' spoken), not 80-110 words. Use 3 to 5 steps with a concrete example each.';
     }
-    const text = await g.generate([{ role: 'user', parts: [{ text: buildPrompt(idea, opts) }] }], { system, json: true, schema: sch, temperature: 0.85, maxTokens: 16384 });
+    const prompt = buildPrompt(idea, opts);
+    const text = await g.generate([{ role: 'user', parts: [{ text: prompt }] }], { system, json: true, schema: sch, temperature: 0.85, maxTokens: 16384 });
+    let pkg = null;
+    try { pkg = normalize(parseJSONLoose(text)); } catch (_) { pkg = null; }
+    // Smaller fallback models sometimes write a 30 s script for a 60 s request: one retry that asks for the full length.
+    if (pkg && L.sec <= 60 && wordCount(pkg.script) < L.words[0] * 0.85 && !(opts && opts.noLengthRetry)) {
+      const n = wordCount(pkg.script);
+      try {
+        const text2 = await g.generate([{ role: 'user', parts: [{ text: prompt }] }, { role: 'model', parts: [{ text }] }, { role: 'user', parts: [{ text: 'That script is only ' + n + ' words, far too short. Rewrite the whole package with a ' + L.words[0] + '-' + L.words[1] + ' word script (about ' + L.sec + ' seconds spoken) and ' + (L.beats ? L.beats[0] + '-' + L.beats[1] : 'more') + ' beats. Keep the same idea, format and jokes, add more beats and punchlines. Return ONLY JSON.' }] }],
+          { system, json: true, schema: sch, temperature: 0.85, maxTokens: 16384 });
+        const pkg2 = normalize(parseJSONLoose(text2));
+        if (wordCount(pkg2.script) > n) pkg = pkg2;
+      } catch (err) { if (err && (err.quota || err.status === 429) && !pkg) throw err; }
+    }
+    if (pkg) return pkg;
     try { return normalize(parseJSONLoose(text)); } catch (err) {
       const e = g.fail('Gemini returned a script in an unexpected format. Tap “Write my Short” again.');
       e.details = 'Could not parse JSON: ' + String(text).slice(0, 160);
@@ -371,5 +473,5 @@
     return s.normalizeScene(raw, b.text, b.step, index > 0 ? pkg.beats[index - 1].scene : null);
   }
 
-  VTS.shortgen = { LENGTHS, lengthOf, isLong, generateLong, stitchLong, sectionCount, SYSTEM_LONG, OUTLINE_SCHEMA, sectionSchema, attachScenes, regenerateScene, sceneSchema, schemaWithScenes, rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
+  VTS.shortgen = { FORMATS, HUMOUR, HUMOUR_PROMPT, COMEDY_RULES, SPEAKERS, FX_IDS, SFX_IDS, isComedy, humourOf, buildComedyPrompt, LENGTHS, lengthOf, isLong, generateLong, stitchLong, sectionCount, SYSTEM_LONG, OUTLINE_SCHEMA, sectionSchema, attachScenes, regenerateScene, sceneSchema, schemaWithScenes, rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
 }());

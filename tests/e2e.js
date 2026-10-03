@@ -195,7 +195,7 @@ function serve() {
   await page.click('#vis-seg-script button[data-v=scenes]');
   ok('visual style back to animated scenes (default)', (await app(() => window.VTS.app.project.look.visual)) === 'scenes' && !!(await page.$('#beats .b-scene-btn')));
   ok('3 hooks rendered', nHooks === 3); ok('beats rendered', nBeats === PKG.beats.length, String(nBeats));
-  ok('word badge ok (80-110)', /ok/.test(await page.$eval('#word-badge', (e) => e.className)), await page.$eval('#word-badge', (e) => e.textContent));
+  ok('word badge counts words (v1.4: ~60 s target is 120-140 words, so 101 words shows as a bit short)', /101 words/.test(await page.$eval('#word-badge', (e) => e.textContent)) && /(ok|warn)/.test(await page.$eval('#word-badge', (e) => e.className)), await page.$eval('#word-badge', (e) => e.textContent));
   ok('hashtags field', (await page.$eval('#f-hashtags', (e) => e.value)).includes('#psychology'));
   await shot('03-script');
 
@@ -257,7 +257,7 @@ function serve() {
   await page.click('#ai-voices .voice[data-voice=Charon] .v-play');
   await page.waitForFunction(() => document.querySelector('#ai-voices .voice[data-voice=Charon] .v-play').classList.contains('playing'), { timeout: 10000 });
   const pv = ttsCalls[n0];
-  ok('preview request shape (AUDIO + prebuiltVoiceConfig + speech_metadata style)', pv && pv.body.generationConfig.responseModalities[0] === 'AUDIO' && pv.body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Charon' && /calm/.test(pv.body.contents[0].parts[0].speech_metadata.style) && pv.key === KEY && !/key=/.test(pv.query), JSON.stringify(pv && pv.body).slice(0, 260));
+  ok('preview request shape (AUDIO + prebuiltVoiceConfig + speech_metadata style; v1.4 default tone = sarcastic)', pv && pv.body.generationConfig.responseModalities[0] === 'AUDIO' && pv.body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Charon' && /calm|sarcastic/.test(pv.body.contents[0].parts[0].speech_metadata.style) && pv.key === KEY && !/key=/.test(pv.query), JSON.stringify(pv && pv.body).slice(0, 260));
   await page.click('#ai-voices .voice[data-voice=Charon] .v-play'); // stop
   // 2) quota on every model -> clear message
   ttsMode = 'quota'; n0 = ttsCalls.length;

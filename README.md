@@ -2,9 +2,9 @@
 
 Talk an idea into your phone and get a finished YouTube video: a hook, clear steps, captions, keyword-accurate 2D animated scenes, a colour-graded video and the publishing text. Make a 30–60 s Short or a long video up to 20 minutes, in 9:16, 16:9, 1:1 or 4:5. It's free and runs on your own phone.
 
-It's built for faceless psychology and self-help channels (BetterU-style voiceover over aesthetic visuals).
+It's built for faceless psychology and self-help channels like Quiet Brain Club, with voiceover over animated scenes. Since 1.4 it makes funny, meme-style Shorts for TikTok and YouTube too.
 
-- **Android app:** download `VoiceToShort-1.3.1.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
+- **Android app:** download `VoiceToShort-1.4.0.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
 - **Web version:** https://lhymite36-bot.github.io/voice-to-short/ (works best in Chrome)
 
 ## How it works
@@ -36,6 +36,25 @@ It's built for faceless psychology and self-help channels (BetterU-style voiceov
    - Channel handle, default tone, script language and default grade.
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
+
+## Funny + engaging Shorts — new in 1.4.0
+
+Based on research into what keeps people watching faceless animated psychology Shorts and TikToks in 2026 ([docs/engagement-research.md](docs/engagement-research.md)):
+
+- **Funny scripts.** New tones: *Sarcastic bestie* (the default for new projects), *Deadpan*, *Chaotic Gen-Z* and *Roast me (gently)*, alongside Calm teacher, Bold and Soft. A humour dial goes from 0 (straight) to 3 (unhinged but kind).
+- **11 formats:** Classic (hook + 3 steps), Your brain be like…, POV:, Nobody: / Me:, Expectation vs Reality, Brain vs Me (a dialogue), Rating your habits, Signs you're secretly…, Things your therapist wants you to know, Myth vs Fact and Storytime.
+- **What every script includes:** a 1–2 s hook, a pattern interrupt every few seconds, real psychology concepts named correctly (no invented statistics), a loopable last line and a comment-bait CTA. Lengths are ~30 s or ~60 s.
+- **Separate publishing text.** You get a TikTok caption with 3–5 hashtags, a YouTube title and description with #Shorts, a 7-word first-frame text hook and a CTA sticker.
+- **Cast.** A pink **Brain** sidekick with arms and legs, plus the friend, boss, crush, mom, therapist and cat, each with a distinct look. Dialogue lines put two characters on screen. There are 10 new exaggerated expressions: eye-roll, side-eye, shocked, crying-laughing, smug, dead-inside, panicking (sweat drops), blushing, rage (steam) and facepalm.
+- **Meme inserts.** Reaction stickers (BRUH, WAIT WHAT, NOT AGAIN, 💀…), zoom-punch with speed lines, dramatic spotlight, a record-scratch freeze-frame (“YEP, THAT'S ME”) and split-screen expectation vs reality or before/after. Also text-message chats, notification pop-ups, a “loading…” brain bar, XP / level-up bars, checklists, star ratings, argument thought-bubbles, myth/fact stamps and countdowns.
+- **Topic art.** 26 hand-drawn psychology props: social battery, anxiety meter, overthinking yarn, dopamine meter, burnout match, red/green flags, attachment hearts, habit tracker, sleep debt, screen time, comfort zone, cortisol alarm, and more.
+- **Kinetic captions.** Presets are TikTok bold, Big & loud and Clean (the older Word pop and Karaoke are still there). Key words get emphasis colours, emoji are added automatically, and captions shake on punchlines.
+- **Camera.** Punch-ins, whip pans, flash cuts, speed ramps, shake and impact frames. Energy is Off, Chill (~4 s), Punchy (~2.5 s) or Chaotic (~1.7 s). There's an optional progress bar, and loop mode blends the last frame into the first.
+- **Sound design.** 21 bundled or synthesised sound effects are placed automatically on cuts, stickers and punchlines. Background music comes in 5 styles (quirky, lo-fi, upbeat, soft pads, suspense), generated on the device as seamless loops, so there are no licence worries. Music is ducked under the voice and effects sit below it. There are separate voice, music and effects sliders. The voice is never turned down.
+- **Two-voice dialogue.** In Brain vs Me style scripts, the AI voice can use two voices, one for Me and one for the Brain (Gemini multi-speaker TTS). If that isn't available, one voice reads everything.
+- **Engagement helpers.** Platform presets (TikTok, YouTube Shorts or both), a TikTok / YouTube safe-zone overlay (preview only), a cover PNG export with big text, and a 💡 **Idea bank** of 114 funny psychology ideas in 14 categories. It also has a 🎲 Surprise me button and trending-format cards.
+
+Long videos (5–20 min) keep the calm chaptered style and don't get music or effects yet.
 
 ## Keyword-driven scenes — new in 1.3.0
 
@@ -108,18 +127,19 @@ The recommended voice option. It uses Gemini's native text-to-speech with the sa
 - **Video format.** Android's WebView usually records H.264 + AAC MP4. When it can't, you get WebM (VP9/Opus). WebM uploads to YouTube fine, but some gallery apps won't play it. The app writes a proper duration into WebM files so they can be scrubbed.
 - **Real-time rendering.** A 40 s Short takes about 40 s to render. Keep the app open and the screen on; the app asks Android to keep the screen awake. Slow phones may drop frames under load.
 - **Dictation** uses the phone's speech service, and most phones need internet for it. Raw-audio capture of the idea is off by default, because on many phones the recogniser and the recorder can't share the mic.
-- **Animated scenes** are a hand-authored flat style with one main character design (plus a second for conversations) and fixed poses: they illustrate each beat with the closest scene in the vocabulary, not a custom animation. AI illustrations need a paid (billing-enabled) Gemini key and weren't verified against a live key.
+- **Humour** comes from Gemini, so check that jokes land for your audience and that the psychology stays accurate. The prompt forbids invented statistics, but always review the script before posting. Two-voice dialogue depends on the Gemini TTS model accepting multi-speaker requests; otherwise one voice is used.
+- **Animated scenes** are a hand-authored flat style with a fixed cast and poses: they illustrate each beat with the closest scene in the vocabulary, not a custom animation. AI illustrations need a paid (billing-enabled) Gemini key and weren't verified against a live key.
 - **Long videos** were verified in headless desktop Chrome. On a real phone, a 20-minute real-time render takes over 20 minutes and uses about 6 MB of storage per 10 s at 720p (about 0.9 GB for 20 min). The A/V timing compensation was tuned on desktop Chrome and hasn't been verified on a physical Android phone, and neither has the Capacitor Filesystem storage fallback. Importing one long audio file decodes it in full, so AI voice or recording section by section is lighter. YouTube Shorts can be at most 3 minutes long; longer vertical videos upload as regular videos.
 - **Backups** hold text only: ideas, scripts and settings. Audio and video stay on the device, and the API key is never exported.
 
 ## Install on Android (6.0+)
 
-1. Download `VoiceToShort-1.3.1.apk` from the latest release.
+1. Download `VoiceToShort-1.4.0.apk` from the latest release.
 2. Open it. If Android asks, allow “Install unknown apps” for your browser or Files app.
 3. Open **Voice to Short**, go to **Settings**, paste your free Gemini key and tap **Save key**.
 4. Allow the microphone when asked. It's used for dictation and voice recording.
 
-To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.3.1.apk`.
+To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.4.0.apk`.
 
 ## Development
 
@@ -131,6 +151,9 @@ npm run serve                     # web version at http://localhost:8080
 npm run apk:debug                 # needs the Android SDK (JDK 21)
 node tests/e2e.js /path/voice.wav # headless Chrome end-to-end test with a mocked Gemini API
 node tests/e2e13.js               # v1.3: keyword scenes, picker, 4 frame shapes, long-video flow
+node tests/comedy14.js            # v1.4: formats, schema size, director, audio mix levels, idea bank, cover
+node tests/frames14.js tests/fixtures/brain-vs-me.json /tmp/f14   # v1.4 comedy frames
+GEMINI_API_KEY=… TONE=sarcastic FORMAT=brain-vs-me node tests/live/e2e-live.js 60 /tmp/live/bvm   # live run (uses your key)
 node tests/long.js s10 16:9 0.6667 out.webm 3   # long segmented render + resume (see tests/long.html)
 ```
 
@@ -146,6 +169,8 @@ Plugins:
 - `.github/workflows/pages.yml` deploys `www/` to GitHub Pages.
 
 Keyword icons: [Twemoji](https://github.com/jdecked/twemoji) by Twitter/X and contributors, licensed [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (`www/emoji/LICENSE.txt`). Emoji names and tags: [emojibase](https://github.com/milesj/emojibase) (MIT).
+
+Sound effects: [Kenney](https://kenney.nl/assets) audio packs (CC0); “Laughter” by lonemonk ([freesound #72844](https://freesound.org/s/72844/), CC BY 3.0). The whoosh, boom, record scratch, boing, “bruh” horn, trombone, heartbeat, riser, typing and clock sounds, and all the music, are synthesised in code. See `www/sfx/ATTRIBUTION.txt`.
 
 Font: [Montserrat](https://github.com/google/fonts/tree/main/ofl/montserrat) (SIL Open Font License), bundled in `www/fonts/`.
 

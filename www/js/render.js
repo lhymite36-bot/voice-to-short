@@ -81,7 +81,8 @@
       const wsum = ww.reduce((a, x) => a + x, 0) || 1;
       let wacc = 0;
       const wordTimes = words.map((w, i) => { const t = start + (wacc / wsum) * (end - start) * 0.92; wacc += ww[i]; return t; });
-      return { text: String(b.text).trim(), words, wordTimes, start, end, step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), scene: b.scene || null, aiImage: b.aiImage || null, section: b.section || 0, chapter: b.chapter || '' };
+      return { text: String(b.text).trim(), words, wordTimes, start, end, step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), scene: b.scene || null, aiImage: b.aiImage || null, section: b.section || 0, chapter: b.chapter || '',
+        speaker: b.speaker || '', fx: b.fx || '', fxText: b.fxText || '', sfx: b.sfx || '', sticker: b.sticker || '', punch: !!b.punch, expr: (b.scene && b.scene.emotion) || '' };
     });
   }
 
@@ -137,6 +138,7 @@
       this.stage.setPreset(this.o.preset);
       let prev = null;
       tl.forEach((b) => { b.sc = SC.normalizeScene(b.scene, b.text, b.step, prev); prev = b.sc; });
+      if (VTS.comedy && this.o.comedy !== false) VTS.comedy.setupCast(this, tl);
       // Shots: runs of beats that share a setting (and cast). Transitions happen between shots.
       this.shots = [];
       tl.forEach((b, i) => {
@@ -226,13 +228,14 @@
     drawSceneStep(t) {
       const i = this.beatAt(t); if (i < 0) return;
       const beat = this.timeline[i]; const step = beat.step; const ctx = this.ctx; const s = this.s; const p = this.preset;
-      if (step >= 1 && step <= 3) {
+      const stepLab = this.o.stepLabel == null ? 'STEP' : String(this.o.stepLabel);
+      if (step >= 1 && step <= 3 && stepLab) {
         let first = i; while (first > 0 && this.timeline[first - 1].step === step) first--;
         let last = i; while (last < this.timeline.length - 1 && this.timeline[last + 1].step === step) last++;
         const a = easeOutBack(clamp01((t - this.timeline[first].start) / 0.45)); const out = clamp01((this.timeline[last].end - t) / 0.25);
         ctx.save(); ctx.globalAlpha = out; ctx.translate(this.LY.step[0] * s, this.LY.step[1] * s); ctx.scale(0.4 + 0.6 * a, 0.4 + 0.6 * a);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.font = '800 ' + (40 * s) + 'px ' + FONT; const label = 'STEP ' + step + ' OF 3'; const lw = ctx.measureText(label).width + 150 * s;
+        ctx.font = '800 ' + (40 * s) + 'px ' + FONT; const label = stepLab + ' ' + step + ' OF 3'; const lw = ctx.measureText(label).width + 150 * s;
         ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(ctx, -lw / 2, -40 * s, lw, 80 * s, 40 * s); ctx.fill();
         ctx.beginPath(); ctx.arc(-lw / 2 + 40 * s, 0, 32 * s, 0, 6.2832); ctx.fillStyle = p.hi; ctx.fill();
         ctx.fillStyle = '#111'; ctx.font = '900 ' + (40 * s) + 'px ' + FONT; ctx.fillText(String(step), -lw / 2 + 40 * s, 2 * s);
@@ -406,7 +409,7 @@
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         // label
         ctx.font = '800 ' + (40 * s) + 'px ' + FONT;
-        const label = 'STEP ' + step + ' / 3';
+        const label = (this.o.stepLabel == null ? 'STEP' : String(this.o.stepLabel) || 'PART') + ' ' + step + ' / 3';
         const lw = ctx.measureText(label).width + 64 * s;
         const cyk = this.LY.classicY; const cx = this.LY.cap.cx * s; const ly = (this.DW > this.DH ? 170 : 360 * cyk) * s;
         ctx.fillStyle = hexA('#000000', 0.32);
@@ -569,7 +572,12 @@
     const ac = audioCtx();
     if (ac.state === 'suspended') await ac.resume();
     const dest = ac.createMediaStreamDestination();
-    const src = ac.createBufferSource(); src.buffer = buffer;
+    // v1.4: music + sound effects are pre-mixed around the voice (the voice itself is never turned down)
+    let mixed = null;
+    if (VTS.audiofx && r.cx && opts.look && (opts.look.sfx !== false || (opts.look.music && opts.look.music !== 'none'))) {
+      try { mixed = await VTS.audiofx.mix(buffer, { total: P.total, lead: LEAD, audioDur: P.audioDur, cues: opts.look.sfx === false ? [] : r.cx.cues, music: opts.look.music || 'none', musicVol: opts.look.musicVol, sfxVol: opts.look.sfxVol, voiceVol: opts.look.voiceVol }); } catch (e) { mixed = null; }
+    }
+    const src = ac.createBufferSource(); src.buffer = mixed || buffer;
     const gain = ac.createGain(); gain.gain.value = 1;
     src.connect(gain); gain.connect(dest);
     let monitor = null;
@@ -584,7 +592,7 @@
     const stopped = new Promise((resolve, reject) => { rec.onstop = resolve; rec.onerror = (e) => reject(e.error || new Error('Recorder error')); });
     rec.start(1000);
     const startAt = ac.currentTime + 0.12;
-    src.start(startAt + LEAD, 0, P.audioDur);
+    if (mixed) src.start(startAt, 0, P.total); else src.start(startAt + LEAD, 0, P.audioDur);
     let cancelled = false; let raf = 0; let timer = 0; let lastDraw = -1; let frames = 0; let drawMs = 0; let maxDraw = 0;
     const done = new Promise((resolve) => {
       const tick = () => {
@@ -609,7 +617,7 @@
     const type = (rec.mimeType || mime || 'video/webm').split(';')[0];
     let out = new Blob(chunks, { type });
     if (/webm/.test(type)) out = await fixWebmDuration(out, P.total);
-    return { blob: out, mime: rec.mimeType || mime, type, duration: P.total, width: canvas.width, height: canvas.height, frames, fps: frames / P.total, avgDrawMs: frames ? drawMs / frames : 0, maxDrawMs: maxDraw, illustrated, scenes: r.scenes };
+    return { blob: out, mime: rec.mimeType || mime, type, duration: P.total, audioMix: mixed ? mixed.vtsInfo : null, cues: r.cx ? r.cx.cues.length : 0, cuts: r.cx ? r.cx.cuts.length : 0, width: canvas.width, height: canvas.height, frames, fps: frames / P.total, avgDrawMs: frames ? drawMs / frames : 0, maxDrawMs: maxDraw, illustrated, scenes: r.scenes };
   }
 
   // MediaRecorder WebM files have no Duration, so players can't seek and some apps show 0:00. Insert one into Segment > Info.
@@ -662,15 +670,19 @@
     const r = new Renderer(canvas);
     r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
     const ac = audioCtx();
-    let src = null; let raf = 0; let startAt = 0; let playing = false;
+    let src = null; let raf = 0; let startAt = 0; let playing = false; let mixed = null;
     const api = {
       duration: P.total, renderer: r,
-      ready: r.prepare(),
+      ready: r.prepare().then(async (n) => {
+        const lk = opts.look || {};
+        if (VTS.audiofx && r.cx && (lk.sfx !== false || (lk.music && lk.music !== 'none'))) { try { mixed = await VTS.audiofx.mix(buffer, { total: P.total, lead: LEAD, audioDur: P.audioDur, cues: lk.sfx === false ? [] : r.cx.cues, music: lk.music || 'none', musicVol: lk.musicVol, sfxVol: lk.sfxVol, voiceVol: lk.voiceVol }); } catch (_) { mixed = null; } }
+        return n;
+      }),
       drawAt(t) { r.draw(t); },
       async play(onEnd) {
         if (ac.state === 'suspended') await ac.resume();
-        src = ac.createBufferSource(); src.buffer = buffer; src.connect(ac.destination);
-        startAt = ac.currentTime + 0.05; src.start(startAt + LEAD, 0, P.audioDur); playing = true;
+        src = ac.createBufferSource(); src.buffer = mixed || buffer; src.connect(ac.destination);
+        startAt = ac.currentTime + 0.05; if (mixed) src.start(startAt, 0, P.total); else src.start(startAt + LEAD, 0, P.audioDur); playing = true;
         const tick = () => {
           if (!playing) return;
           const t = Math.max(0, ac.currentTime - startAt);

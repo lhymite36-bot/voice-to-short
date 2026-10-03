@@ -1,0 +1,31 @@
+Voice to Short: bundled sound effects and music
+===============================================
+
+Sound effects (www/sfx/*.ogg). The files were re-encoded to mono OGG, trimmed and loudness-normalised.
+
+CC0 1.0 (public domain) by Kenney (www.kenney.nl). Credit is not required, but it's given here with thanks.
+  pop.ogg      <- Interface Sounds / drop_002
+  pluck.ogg    <- Interface Sounds / pluck_001
+  ding.ogg     <- Interface Sounds / glass_001
+  tick.ogg     <- Interface Sounds / tick_001
+  wrong.ogg    <- Interface Sounds / error_004
+  notif.ogg    <- Digital Audio / twoTone1
+  levelup.ogg  <- Digital Audio / powerUp3
+  punch.ogg    <- Impact Sounds / impactPunch_heavy_002
+  bell.ogg     <- Impact Sounds / impactBell_heavy_001
+  cash.ogg     <- Casino Audio / chips-stack-3
+  click.ogg    <- UI Audio / click3
+  tada.ogg     <- Music Jingles / jingles_NES03
+
+CC BY 3.0 (attribution required)
+  laugh.ogg    <- "approx-800-laughter-and-clapter-1.wav" by lonemonk (freesound.org, sound 72844),
+                  via Wikimedia Commons. Licence: https://creativecommons.org/licenses/by/3.0/
+                  Change: trimmed to a 2.6 s excerpt with fades, loudness-normalised, and converted to mono OGG.
+
+Synthesised in the app (www/js/audiofx.js), original work with no third-party samples:
+  whoosh, boom (deep bass hit), record scratch, boing, "bruh"-style womp, sad trombone,
+  heartbeat, riser, typing bursts, and every background music loop (lo-fi, upbeat, chill, suspense).
+  These are generated on the device when a video is rendered.
+
+No copyrighted meme audio is included. If you add a TikTok "trending sound" in the TikTok app after uploading,
+that sound is licensed by TikTok for use on TikTok only.

@@ -119,7 +119,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   async function renderNow(timeout) {
     await page.click('#render');
     await page.waitForSelector('#render-progress:not(.hidden)');
-    await page.waitForFunction(() => document.querySelector('#render-progress').classList.contains('hidden'), { timeout: timeout || 180000, polling: 500 });
+    try { await page.waitForFunction(() => document.querySelector('#render-progress').classList.contains('hidden'), { timeout: timeout || 180000, polling: 500 }); } catch (e) { console.log('RENDER TIMEOUT', await app(() => document.querySelector('#render-label').textContent + ' | ' + document.querySelector('#render-bar').style.width + ' | ' + document.querySelector('#render-status').textContent), errors); throw e; }
     return app(() => { const v = window.VTS.app.project.video; return v && { w: v.width, h: v.height, d: v.duration, type: v.type, aspect: v.aspect, ms: v.renderMs, stored: v.stored, segments: v.segments, status: document.querySelector('#render-status').textContent }; });
   }
   async function beatTimes() {
@@ -131,7 +131,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (ONLY.includes('short')) {
     // ---------- Sketch: keyword scenes ----------
     await page.type('#idea', 'why you should sketch daily, pencil, sketchbook, small drawings every morning');
-    ok('length select: 6 options, default 30-60 s for 9:16', await app(() => document.querySelectorAll('#opt-length option').length === 6 && document.querySelector('#opt-length').value === '60'));
+    ok('length select: 6 options, default 30-60 s for 9:16', await app(() => document.querySelectorAll('#opt-length option').length === 7 && document.querySelector('#opt-length').value === '60'));
     await page.select('#opt-length', '1200');
     ok('20 min on 9:16 warns about the 3-min Shorts limit', /3 minutes/.test(await page.$eval('#length-note', (e) => e.textContent)), await page.$eval('#length-note', (e) => e.textContent.slice(0, 120)));
     await page.select('#opt-length', '60');

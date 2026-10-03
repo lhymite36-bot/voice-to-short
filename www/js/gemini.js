@@ -287,12 +287,26 @@
   }
   async function ttsWith(model, text, o) {
     const structured = ttsIsStructured(model);
+    const multi = Array.isArray(o.speakers) && o.speakers.length === 2;
     const part = { text };
-    if (structured && o.style) part.speech_metadata = { style: o.style };
-    if (!structured && o.prefix) part.text = o.prefix.replace(/:?\s*$/, ': ') + text;
+    let reqParts = [part];
+    if (multi && structured && Array.isArray(o.lines) && o.lines.length) {
+      // 3.8+ TTS: one part per turn with speech_metadata.speaker (+ that speaker's turn style); text stays verbatim.
+      const styleOf = (who) => { const sp = o.speakers.find((x) => x.speaker === who); return (sp && sp.style) || o.style || ''; };
+      reqParts = o.lines.map((l) => { const md = { speaker: l.speaker }; const st = styleOf(l.speaker); if (st) md.style = st; return { text: String(l.text).replace(/\s+/g, ' ').trim(), speech_metadata: md }; });
+    } else if (multi) {
+      // Older TTS models: "Name: line" per line, with an instruction naming both speakers.
+      part.text = 'TTS the following conversation between ' + o.speakers[0].speaker + ' and ' + o.speakers[1].speaker + (o.style ? ' (' + o.style + ')' : '') + ':\n' + text;
+    } else {
+      if (structured && o.style) part.speech_metadata = { style: o.style };
+      if (!structured && o.prefix) part.text = o.prefix.replace(/:?\s*$/, ': ') + text;
+    }
+    const speechConfig = multi
+      ? { multiSpeakerVoiceConfig: { speakerVoiceConfigs: o.speakers.map((sp) => ({ speaker: sp.speaker, voiceConfig: { prebuiltVoiceConfig: { voiceName: sp.voice } } })) } }
+      : { voiceConfig: { prebuiltVoiceConfig: { voiceName: o.voice || 'Sulafat' } } };
     const body = {
-      contents: [{ role: 'user', parts: [part] }],
-      generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: o.voice || 'Sulafat' } } } },
+      contents: [{ role: 'user', parts: reqParts }],
+      generationConfig: { responseModalities: ['AUDIO'], speechConfig },
     };
     const send = () => geminiRequest('/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -410,6 +424,28 @@
     }
     return { blob: pcmToWav(pcm, fmt.rate, fmt.channels, chunks.length > 1 ? 0.18 : 0), model, chunks: chunks.length, rate: fmt.rate };
   }
+  // Two-voice dialogue ("Brain vs Me"): lines = [{speaker:'You'|'Brain', text}], speakers = [{speaker, voice}, {speaker, voice}].
+  // Chunks on line boundaries so every chunk keeps its speaker labels.
+  function dialogueChunks(lines, maxWords) {
+    const out = []; let cur = []; let n = 0;
+    lines.forEach((l) => { const w = String(l.text).split(/\s+/).length; if (cur.length && n + w > (maxWords || 110)) { out.push(cur); cur = []; n = 0; } cur.push(l); n += w; });
+    if (cur.length) out.push(cur);
+    return out;
+  }
+  async function generateDialogueSpeech(lines, o) {
+    o = o || {};
+    const chunks = dialogueChunks(lines, o.maxWords || 110);
+    const pcm = []; let fmt = null; let model = '';
+    for (let i = 0; i < chunks.length; i++) {
+      if (o.onProgress) o.onProgress(i, chunks.length);
+      const text = chunks[i].map((l) => l.speaker + ': ' + String(l.text).replace(/\s+/g, ' ').trim()).join('\n');
+      const r = await ttsRequest(text, Object.assign({}, o, { model: model || o.model, lines: chunks[i] }));
+      model = r.model;
+      if (!fmt) fmt = r; else if (r.rate !== fmt.rate || r.channels !== fmt.channels) throw fail('Gemini returned mismatched audio formats between parts. Try again.');
+      pcm.push(r.pcm);
+    }
+    return { blob: pcmToWav(pcm, fmt.rate, fmt.channels, chunks.length > 1 ? 0.12 : 0), model, chunks: chunks.length, rate: fmt.rate, dialogue: true };
+  }
 
 
   // ---------- AI illustrations (Gemini native image generation, "Nano Banana") ----------
@@ -469,5 +505,5 @@
     e.quota = quotaHit; e.unavailable = true;
     throw e;
   }
-  VTS.gemini = { isOverloaded, isModelUnavailable, withRetry, speechChunks, hashText, generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
+  VTS.gemini = { generateDialogueSpeech, dialogueChunks, isOverloaded, isModelUnavailable, withRetry, speechChunks, hashText, generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
 }());

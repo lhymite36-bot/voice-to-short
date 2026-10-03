@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.3.1';
+  const APP_VERSION = '1.4.0';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 20 * 60; // long dictation (auto-restarts after pauses)
@@ -49,11 +49,20 @@
     calm: { style: 'calm, warm and confident, like a kind teacher; unhurried pace with small natural pauses', prefix: 'Say in a calm, warm, confident voice' },
     bold: { style: 'bold, energetic and direct; punchy, confident delivery', prefix: 'Say in a bold, energetic, confident voice' },
     soft: { style: 'soft, gentle and soothing; slow, intimate pace', prefix: 'Say in a soft, gentle, soothing voice' },
+    sarcastic: { style: 'sarcastic best friend: dry, teasing and playful, with knowing pauses before punchlines and a smile in the voice; quick, conversational pace', prefix: 'Say in a dry, teasing, sarcastic best-friend voice, with a smile' },
+    deadpan: { style: 'deadpan: flat, understated and unimpressed, perfectly timed pauses, never over-acted', prefix: 'Say in a flat, deadpan, unimpressed voice' },
+    genz: { style: 'chaotic Gen-Z: fast, expressive and animated, big reactions, playful emphasis on punchlines', prefix: 'Say in a fast, expressive, playful Gen-Z voice' },
+    roast: { style: 'gentle roast: amused, teasing and warm, like a friend lovingly calling you out; punchy timing', prefix: 'Say in an amused, teasing but warm voice' },
   };
+  // v1.4: sarcastic bestie becomes the default tone for new projects (once).
+  if (!load('vts.v14', false)) { save(K.tone, 'sarcastic'); save('vts.v14', true); }
+  const CTAS = ['Follow if your brain does this too 🧠', 'Comment “same” if this is you 👇', 'Send this to the friend who does this 💀', 'Save this for your 3 a.m. brain 📌', 'Follow for more brain stuff 🧠✨', 'Which one are you? Comment 👇'];
+  const defaultLook = () => ({ captionStyle: 'tiktok', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, safeZones: false,
+    sfx: true, music: 'quirky', musicVol: 0.5, sfxVol: 0.7, voiceVol: 1, progress: true });
   function ttsStyle() {
     const mode = load(K.ttsStyle, 'tone');
     if (mode === 'custom') { const c = String(load(K.ttsCustom, '') || '').trim(); if (c) return { style: c, prefix: 'Say in this style (' + c + ')' }; }
-    const key = mode === 'tone' || mode === 'custom' ? (P && P.tone) || load(K.tone, 'calm') : mode;
+    const key = mode === 'tone' || mode === 'custom' ? (P && P.tone) || load(K.tone, 'sarcastic') : mode;
     return TTS_STYLES[key] || TTS_STYLES.calm;
   }
   Object.assign(G.host, {
@@ -123,10 +132,12 @@
   function blankProject() {
     const now = new Date().toISOString();
     const aspect = defAspect();
-    return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone: load(K.tone, 'calm'), length: defLength(aspect),
+    const tone = load(K.tone, 'sarcastic');
+    return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone, length: defLength(aspect),
+      template: 'classic', humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, platform: load('vts.platform', 'both'),
       pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null,
-      look: { aspect, quality: 'auto', preset: load(K.grade, 'teal'), captionStyle: 'pop', captionCase: 'upper', watermark: !!load(K.watermark, false), progress: false, format: 'auto',
-        visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) } };
+      look: Object.assign({ aspect, quality: 'auto', preset: load(K.grade, 'teal'), captionCase: 'upper', watermark: !!load(K.watermark, false), format: 'auto',
+        visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) }, defaultLook()) };
   }
   function persist(now) {
     clearTimeout(saveTimer);
@@ -140,7 +151,7 @@
     if (now) run(); else saveTimer = setTimeout(run, 500);
   }
   const lengthId = () => (P && P.length) || '60';
-  const isShortLen = () => lengthId() === '60';
+  const isShortLen = () => lengthId() === '60' || lengthId() === '30';
   const maxVoice = () => (isShortLen() ? MAX_VOICE_SEC : MAX_LONG_VOICE);
   const aspectOf = () => (P && P.look && R.ASPECTS[P.look.aspect] ? P.look.aspect : '9:16');
   const voiceIsLong = () => !!(P && P.voice && (P.voice.parts || (!isShortLen() && P.voice.duration > LONG_RENDER_SEC)));
@@ -169,6 +180,8 @@
     stopAll();
     P = Object.assign(blankProject(), p);
     P.look = Object.assign(blankProject().look, p.look || {});
+    if (p.look && p.look.intensity === undefined) Object.assign(P.look, { intensity: 'off', music: 'none', sfx: false, loop: false, autoEmoji: false, hook: false, cta: false, progress: !!p.look.progress }); // pre-1.4 projects keep their look
+    if (p.humour === undefined) { P.template = 'classic'; P.humour = S.TONES[P.tone] && S.TONES[P.tone].funny ? 2 : 0; }
     if (!p.look || !p.look.aspect) P.look.aspect = '9:16'; // projects from v1.2 were vertical
     if (!p.length) P.length = p.pkg && p.pkg.long ? String((p.pkg.lengthSec || 600)) : '60';
     voiceBuffer = null; save(K.last, P.id);
@@ -265,6 +278,18 @@
     });
     const ex = $('idea-examples');
     if (!ex.childElementCount) EXAMPLES.forEach((t) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = t; b.addEventListener('click', () => { if (ideaEl.value.trim() && !confirm('Replace your idea with this example?')) return; P.idea = t; ideaEl.value = t; updateIdeaCount(); persist(); }); ex.appendChild(b); });
+    const tp = $('opt-template');
+    if (!tp.options.length) Object.entries(S.FORMATS).forEach(([id, f]) => tp.add(new Option(f.label, id)));
+    tp.value = S.FORMATS[P.template] ? P.template : 'classic';
+    const tr = (VTS.ideas && VTS.ideas.TRENDS || []).find((x) => x.id === tp.value);
+    $('template-why').textContent = tr ? tr.why + ' Example: ' + tr.ex : '';
+    const long = S.isLong(lengthId()); tp.disabled = long; $('opt-humour').disabled = long;
+    $('template-badge').textContent = long ? 'long videos use chapters' : '';
+    const hv = P.humour == null ? 2 : P.humour; $('opt-humour').value = hv;
+    $('humour-label').textContent = ['😐', '🙂', '😂', '🤪'][hv] + ' ' + S.HUMOUR[hv];
+    document.querySelectorAll('#platform-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === (P.platform || 'both')));
+    $('platform-note').textContent = { both: 'captions for both apps', tiktok: 'TikTok caption + hashtags', youtube: 'YouTube title + #Shorts' }[P.platform || 'both'];
+    $('ib-count').textContent = VTS.ideas ? '(' + VTS.ideas.COUNT + ')' : '';
     const ls = $('opt-length');
     if (ls.options.length !== S.LENGTHS.length) { ls.innerHTML = ''; S.LENGTHS.forEach((l) => ls.add(new Option(l.label + (l.sec >= 300 ? ' · long video' : ''), l.id))); }
     ls.value = lengthId(); paintLengthNote();
@@ -280,7 +305,47 @@
     if (L.sec > 60 && a !== '9:16') notes.push('Tip: 16:9 is the classic YouTube shape for long videos.');
     $('length-note').textContent = notes.join(' ');
   }
-  $('opt-length').addEventListener('change', (e) => { P.length = e.target.value; save(K.length, P.length); persist(); paintLengthNote(); if (P.pkg) updateScriptMeta(); });
+  $('opt-length').addEventListener('change', (e) => { P.length = e.target.value; save(K.length, P.length); persist(); renderIdea(); if (P.pkg) updateScriptMeta(); });
+  $('opt-template').addEventListener('change', (e) => { P.template = e.target.value; if (P.template !== 'classic' && !P.humour) P.humour = 2; persist(); renderIdea(); });
+  $('opt-humour').addEventListener('input', (e) => { P.humour = Number(e.target.value) || 0; persist(); renderIdea(); });
+  document.querySelectorAll('#platform-seg button').forEach((b) => b.addEventListener('click', () => {
+    P.platform = b.dataset.v; save('vts.platform', P.platform);
+    // Platform presets: vertical 9:16, ~60 s Short (both apps favour vertical under a minute).
+    if (!P.video) { P.look.aspect = '9:16'; if (!S.lengthOf(P.length).sec || S.lengthOf(P.length).sec > 60) { P.length = '60'; } }
+    persist(); renderIdea(); if (P.pkg) renderScript();
+  }));
+  // Idea bank
+  let ibCat = '';
+  function useIdea(it) {
+    if (ideaEl.value.trim() && ideaEl.value.trim() !== it.text && !confirm('Replace your idea with this one?')) return;
+    P.idea = it.text; ideaEl.value = it.text; if (it.format && S.FORMATS[it.format]) P.template = it.format;
+    if (it.length) P.length = it.length; if (!P.humour) P.humour = 2;
+    if (!S.TONES[P.tone] || !S.TONES[P.tone].funny) P.tone = load(K.tone, 'sarcastic') in S.TONES && S.TONES[load(K.tone, 'sarcastic')].funny ? load(K.tone, 'sarcastic') : 'sarcastic';
+    updateIdeaCount(); persist(); renderIdea(); $('project-name').textContent = projectTitle(P);
+    toast('Idea set · ' + (S.FORMATS[P.template] || {}).label + ' · ' + S.lengthOf(P.length).label);
+  }
+  function paintIdeaBank() {
+    if (!VTS.ideas) return;
+    const tc = $('ib-trends'); if (!tc.childElementCount) VTS.ideas.TRENDS.forEach((t) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'trend-card';
+      b.innerHTML = '<strong></strong><span></span><em></em>'; b.querySelector('strong').textContent = t.name; b.querySelector('span').textContent = t.why; b.querySelector('em').textContent = t.ex;
+      b.addEventListener('click', () => { P.template = t.id; if (!P.humour && t.id !== 'classic') P.humour = 2; persist(); renderIdea(); toast('Format: ' + t.name); });
+      tc.appendChild(b);
+    });
+    const cats = Object.keys(VTS.ideas.BANK); if (!ibCat) ibCat = cats[0];
+    const cc = $('ib-cats'); cc.innerHTML = '';
+    cats.forEach((c) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip' + (c === ibCat ? ' on' : ''); b.textContent = c + ' · ' + VTS.ideas.BANK[c].length; b.addEventListener('click', () => { ibCat = c; paintIdeaBank(); }); cc.appendChild(b); });
+    const ul = $('ib-list'); ul.innerHTML = '';
+    VTS.ideas.IDEAS.filter((x) => x.cat === ibCat).forEach((it) => {
+      const li = document.createElement('li'); const b = document.createElement('button'); b.type = 'button';
+      b.innerHTML = '<span></span><small></small>'; b.querySelector('span').textContent = it.text;
+      b.querySelector('small').textContent = ((S.FORMATS[it.format] || {}).label || it.format) + ' · ' + (it.length === '30' ? '30 s' : '60 s');
+      b.addEventListener('click', () => useIdea(it)); li.appendChild(b); ul.appendChild(li);
+    });
+  }
+  $('ib-open').addEventListener('click', () => { const box = $('ideabank'); const open = box.classList.toggle('hidden') === false; $('ib-open').setAttribute('aria-expanded', open); if (open) { paintIdeaBank(); box.scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
+  $('ib-close').addEventListener('click', () => { $('ideabank').classList.add('hidden'); $('ib-open').setAttribute('aria-expanded', 'false'); });
+  $('ib-surprise').addEventListener('click', () => { if (!VTS.ideas) return; const it = VTS.ideas.surprise(); ibCat = it.cat; useIdea(it); if (!$('ideabank').classList.contains('hidden')) paintIdeaBank(); });
   function paintIdeaAudio() {
     const wrap = $('idea-audio-wrap');
     if (P.ideaAudio && P.ideaAudio.size) { wrap.classList.remove('hidden'); setMedia($('idea-audio'), P.ideaAudio); } else wrap.classList.add('hidden');
@@ -368,11 +433,11 @@
     P.step = 'script'; STEPS.forEach((k) => $('pane-' + k).classList.toggle('active', k === 'script')); paintStepper();
     $('script-loading').classList.remove('hidden'); $('script-body').classList.add('hidden'); $('script-empty').classList.add('hidden');
     const L = S.lengthOf(lengthId()); const long = S.isLong(L.id);
-    const lt = $('script-loading-text'); lt.textContent = long ? 'Planning a ' + L.label + ' video…' : L.sec > 60 ? 'Writing your ' + L.label + ' script…' : 'Writing your hook, 3 steps and captions…';
+    const lt = $('script-loading-text'); lt.textContent = long ? 'Planning a ' + L.label + ' video…' : L.sec > 60 ? 'Writing your ' + L.label + ' script…' : S.isComedy({ tone: P.tone, format: P.template, humour: P.humour, length: L.id }) ? 'Writing the jokes, the hook and the plot twist… 🧠' : 'Writing your hook, 3 steps and captions…';
     $('script-bar').classList.toggle('hidden', !long); $('script-bar-fill').style.width = '0';
     genAbort = new AbortController(); $('btn-gen-cancel').classList.toggle('hidden', !long);
     try {
-      const pkg = await S.generatePackage(P.idea, { tone: P.tone, language: load(K.language, 'English'), handle: handle(), length: L.id, signal: genAbort.signal,
+      const pkg = await S.generatePackage(P.idea, { tone: P.tone, format: P.template || 'classic', humour: P.humour, platform: P.platform || 'both', language: load(K.language, 'English'), handle: handle(), length: L.id, signal: genAbort.signal,
         partial: P.genPartial || null,
         onPartial: (part) => { P.genPartial = part; persist(true); },
         onProgress: (q) => {
@@ -439,7 +504,18 @@
     renderBeats();
     $('f-title').value = pkg.title; $('f-description').value = pkg.description; $('f-hashtags').value = pkg.hashtags.join(' ');
     $('f-pinned').value = pkg.pinnedComment; $('f-thumb').value = pkg.thumbnailText;
+    $('f-texthook').value = pkg.textHook || ''; $('f-cta').value = pkg.cta || '';
+    $('texthook-count').textContent = pkg.textHook ? S.wordCount(pkg.textHook) + ' words · shown for the first ~2 s' : 'optional';
+    $('f-tt-caption').value = pkg.tiktokCaption || ''; $('f-tt-hashtags').value = (pkg.tiktokHashtags || []).join(' ');
+    const plat = P.platform || 'both';
+    $('kit-tiktok').classList.toggle('hidden', plat === 'youtube'); $('kit-yt-h').classList.toggle('hidden', plat === 'tiktok');
+    const cc = $('cta-chips'); cc.innerHTML = '';
+    CTAS.forEach((t) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip' + ((pkg.cta || '') === t ? ' on' : ''); b.textContent = t; b.addEventListener('click', () => { pkg.cta = t; $('f-cta').value = t; markVideoStale(); persist(); renderScript(); }); cc.appendChild(b); });
   }
+  $('f-texthook').addEventListener('input', (e) => { P.pkg.textHook = e.target.value; markVideoStale(); persist(); });
+  $('f-cta').addEventListener('input', (e) => { P.pkg.cta = e.target.value; markVideoStale(); persist(); });
+  $('f-tt-caption').addEventListener('input', (e) => { P.pkg.tiktokCaption = e.target.value; persist(); });
+  $('f-tt-hashtags').addEventListener('change', (e) => { P.pkg.tiktokHashtags = Array.from(new Set(e.target.value.split(/[\s,]+/).map(S.normHashtag).filter(Boolean))).slice(0, 8); e.target.value = P.pkg.tiktokHashtags.join(' '); persist(); });
   function updateScriptMeta() {
     const n = S.wordCount($('script').value); const L = S.lengthOf(lengthId()); const [lo, hi] = L.words;
     const b = $('word-badge'); b.textContent = n + ' words'; b.className = 'badge ' + (n >= lo * 0.9 && n <= hi * 1.1 ? 'ok' : 'warn');
@@ -615,12 +691,23 @@
       const li = document.createElement('li'); li.className = 'beat s' + b.step;
       li.innerHTML = '<select aria-label="Section"></select><input class="b-text" type="text" aria-label="Caption text"><button type="button" class="b-del" aria-label="Delete beat">×</button>'
         + '<div class="b-row"><label>Weight <input class="b-weight" type="number" min="0.5" max="12" step="0.5" inputmode="decimal"></label><label style="flex:1">Emphasis <input class="b-emph" type="text" placeholder="key word"></label></div>'
+        + (!secs ? '<div class="b-row b-comedy"><label>🗣 <select class="b-speaker" aria-label="Speaker"></select></label><label>✨ <select class="b-fx" aria-label="Overlay"></select></label><label>🔊 <select class="b-sfx" aria-label="Sound effect"></select></label><input class="b-sticker" type="text" maxlength="16" placeholder="sticker e.g. BRUH" aria-label="Sticker"></div>' : '')
         + (scenes ? '<span class="b-match"></span><button type="button" class="b-scene-btn" aria-expanded="false"></button><div class="b-scene hidden"></div>'
           : '<input class="b-visual" type="text" aria-label="Visual idea" placeholder="🎞 b-roll / visual idea">');
       const sel = li.querySelector('select'); STEP_LABELS.forEach((l, k) => sel.add(new Option(l, k))); sel.value = b.step;
       const tx = li.querySelector('.b-text'); tx.value = b.text;
       const w = li.querySelector('.b-weight'); w.value = b.weight;
       const em = li.querySelector('.b-emph'); em.value = b.emphasis || '';
+      if (!secs) {
+        const sp = li.querySelector('.b-speaker'); sp.add(new Option('auto', '')); S.SPEAKERS.forEach((k) => sp.add(new Option(k, k))); sp.value = S.SPEAKERS.includes(b.speaker) ? b.speaker : '';
+        const fx = li.querySelector('.b-fx'); S.FX_IDS.forEach((k) => fx.add(new Option(k === 'none' ? 'no overlay' : k, k === 'none' ? '' : k))); fx.value = b.fx && S.FX_IDS.includes(b.fx) ? b.fx : '';
+        const sf = li.querySelector('.b-sfx'); S.SFX_IDS.forEach((k) => sf.add(new Option(k === 'none' ? 'auto sound' : k, k === 'none' ? '' : k))); sf.value = b.sfx && S.SFX_IDS.includes(b.sfx) ? b.sfx : '';
+        const stk = li.querySelector('.b-sticker'); stk.value = b.sticker || '';
+        sp.addEventListener('change', () => { b.speaker = sp.value; markVideoStale(); persist(); });
+        fx.addEventListener('change', () => { b.fx = fx.value; markVideoStale(); persist(); });
+        sf.addEventListener('change', () => { b.sfx = sf.value; markVideoStale(); persist(); });
+        stk.addEventListener('input', () => { b.sticker = stk.value.trim(); markVideoStale(); persist(); });
+      }
       sel.addEventListener('change', () => { b.step = Number(sel.value); li.className = 'beat s' + b.step; markVideoStale(); persist(); });
       tx.addEventListener('input', () => { b.text = tx.value; markVideoStale(); persist(); });
       tx.addEventListener('change', () => { if (scenes) { paintBeatBadge(li, b); paintMatchSummary(); } });
@@ -665,16 +752,21 @@
   function fieldText(f) {
     const p = P && P.pkg; if (!p) return '';
     if (f === 'hashtags') return p.hashtags.join(' ');
+    if (f === 'tiktok') return (p.tiktokCaption || p.title || '') + ((p.tiktokHashtags || []).length ? '\n\n' + p.tiktokHashtags.join(' ') : '');
     if (f === 'description') return p.description + (p.hashtags.length ? '\n\n' + p.hashtags.join(' ') : '');
     return p[f] || '';
   }
   function copyField(f) {
-    const labels = { title: 'Title', description: 'Description', hashtags: 'Hashtags', pinnedComment: 'Pinned comment', thumbnailText: 'Thumbnail text' };
+    const labels = { tiktok: 'TikTok caption', title: 'Title', description: 'Description', hashtags: 'Hashtags', pinnedComment: 'Pinned comment', thumbnailText: 'Thumbnail text' };
     copyText(fieldText(f), labels[f]);
   }
   $('copy-all').addEventListener('click', () => {
     const p = P.pkg;
-    copyText(['TITLE', p.title, '', 'DESCRIPTION', p.description, '', p.hashtags.join(' '), '', 'PINNED COMMENT', p.pinnedComment, '', 'THUMBNAIL TEXT', p.thumbnailText, '', 'SCRIPT', p.script].join('\n'), 'Publish kit');
+    const plat = P.platform || 'both'; const out = [];
+    if (plat !== 'youtube') out.push('— TIKTOK —', 'CAPTION', p.tiktokCaption || p.title, '', (p.tiktokHashtags || []).join(' '), '');
+    if (plat !== 'tiktok') out.push('— YOUTUBE SHORTS —', 'TITLE', p.title, '', 'DESCRIPTION', p.description, '', p.hashtags.join(' '), '', 'PINNED COMMENT', p.pinnedComment, '');
+    out.push('TEXT HOOK (first frame)', p.textHook || '', '', 'CTA', p.cta || '', '', 'THUMBNAIL TEXT', p.thumbnailText, '', 'SCRIPT', p.script);
+    copyText(out.join('\n'), 'Publish kit');
   });
   function markVideoStale() { if (P.video) { P.video.stale = true; } }
 
@@ -785,7 +877,26 @@
   // ----- AI voice (Gemini TTS) -----
   const previewCache = new Map(); let previewAudio = null; let previewBusy = '';
   const PREVIEW_TEXT = 'Here is a small psychology trick that can change how you feel tonight.';
+  // Second voice for dialogue scripts (Brain vs Me etc.). 'auto' = a contrasting voice, 'off' = one voice for everything.
+  const voice2Pref = () => { const v = load('vts.ttsVoice2', 'auto'); return v === 'off' || v === 'auto' || G.TTS_VOICES.some(([n]) => n === v) ? v : 'auto'; };
+  function voice2For(a) { const v = voice2Pref(); if (v === 'off') return ''; if (v !== 'auto') return v === a ? (a === 'Puck' ? 'Kore' : 'Puck') : v; return a === 'Puck' ? 'Kore' : 'Puck'; }
+  const SPK_LABEL = { brain: 'Brain', friend: 'Friend', boss: 'Boss', crush: 'Crush', mom: 'Mom', therapist: 'Therapist', cat: 'Cat' };
+  // Build "Me:/Brain:" lines from the beats when the script is a two-character dialogue; null otherwise.
+  function dialogueLines(pkg) {
+    if (!pkg || !pkg.beats || !pkg.beats.length) return null;
+    const other = pkg.beats.map((b) => String(b.speaker || '').toLowerCase()).find((k) => SPK_LABEL[k]); if (!other) return null;
+    const lines = [];
+    pkg.beats.forEach((b) => { const k = String(b.speaker || '').toLowerCase(); const who = SPK_LABEL[k] ? SPK_LABEL[other] : 'Me'; const t = String(b.text || '').trim(); if (!t) return;
+      if (lines.length && lines[lines.length - 1].speaker === who) lines[lines.length - 1].text += ' ' + t; else lines.push({ speaker: who, text: t }); });
+    const n = { Me: 0 }; lines.forEach((l) => { n[l.speaker] = (n[l.speaker] || 0) + 1; });
+    if (Object.keys(n).length < 2 || !n.Me || lines.length < 3) return null;
+    const joined = S.wordCount(lines.map((l) => l.text).join(' ')); if (joined < S.wordCount(pkg.script) * 0.85) return null;
+    return { lines, other: SPK_LABEL[other] };
+  }
   function paintAiVoices() {
+    const v2 = $('ai-voice2');
+    if (v2.options.length !== G.TTS_VOICES.length + 2) { v2.innerHTML = ''; v2.add(new Option('Auto (a contrasting voice)', 'auto')); v2.add(new Option('Off — one voice reads everything', 'off')); G.TTS_VOICES.forEach(([n, d]) => v2.add(new Option(n + ' — ' + d, n))); }
+    v2.value = voice2Pref(); $('ai-voice2-row').classList.toggle('hidden', !dialogueLines(P && P.pkg));
     const list = $('ai-voices'); const cur = ttsVoice();
     if (list.childElementCount !== G.TTS_VOICES.length) {
       list.innerHTML = '';
@@ -805,6 +916,7 @@
     $('ai-style').options[0].textContent = 'Match my tone (' + ((S.TONES[P && P.tone] || S.TONES.calm).label) + ')';
     $('ai-style-custom').classList.toggle('hidden', mode !== 'custom'); $('ai-style-custom').value = load(K.ttsCustom, '');
   }
+  $('ai-voice2').addEventListener('change', (e) => save('vts.ttsVoice2', e.target.value));
   $('ai-style').addEventListener('change', (e) => { save(K.ttsStyle, e.target.value); paintAiVoices(); if (e.target.value === 'custom') $('ai-style-custom').focus(); });
   $('ai-style-custom').addEventListener('change', (e) => save(K.ttsCustom, e.target.value.trim()));
   function stopVoicePreview() { if (previewAudio) { previewAudio.pause(); previewAudio = null; } document.querySelectorAll('.v-play.playing').forEach((b) => { b.classList.remove('playing'); b.textContent = '▶'; }); }
@@ -857,9 +969,26 @@
         setStatus('voice-status', 'AI voice ready (' + voice + ', ' + r.model + ', ' + parts.length + ' parts, ' + fmt(P.voice.duration) + ').', 'ok');
         return;
       }
-      const r = await G.generateSpeech(P.pkg.script, { voice, style: st.style, prefix: st.prefix,
-        onProgress: (i, n) => { label.textContent = n > 1 ? 'Generating part ' + (i + 1) + ' / ' + n + '…' : 'Generating…'; } });
-      await setVoice(r.blob, 'gemini', 0, { ttsVoice: voice, ttsModel: r.model, ttsStyle: st.style });
+      const dlg = dialogueLines(P.pkg); const v2 = dlg ? voice2For(voice) : '';
+      const onProgress = (i, n) => { label.textContent = n > 1 ? 'Generating part ' + (i + 1) + ' / ' + n + '…' : 'Generating…'; };
+      let r = null; let note = '';
+      if (dlg && v2) {
+        try {
+          setStatus('voice-status', 'Creating a two-voice dialogue: ' + voice + ' (Me) + ' + v2 + ' (' + dlg.other + ')… (about 10–40 s)', 'live');
+          const dOpts = { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, onProgress, timeout: 60000 };
+          try { r = await G.generateDialogueSpeech(dlg.lines, dOpts); } catch (e1) {
+            if (e1 && (e1.quota || e1.status === 429 || e1.status === 400)) throw e1;
+            setStatus('voice-status', 'Two-voice request hiccup — trying once more…', 'live'); r = await G.generateDialogueSpeech(dlg.lines, dOpts);
+          }
+          note = ' · two voices: ' + voice + ' + ' + v2;
+        } catch (err) {
+          if (err && (err.quota || err.status === 429)) throw err;
+          r = null; note = ' · one voice (two-voice mode was not available: ' + G.friendlyError(err).slice(0, 80) + ')';
+        }
+      }
+      if (!r) r = await G.generateSpeech(P.pkg.script, { voice, style: st.style, prefix: st.prefix, onProgress });
+      await setVoice(r.blob, 'gemini', 0, { ttsVoice: r.dialogue ? voice + ' + ' + v2 : voice, ttsModel: r.model, ttsStyle: st.style });
+      if (note) { setStatus('voice-status', 'AI voice ready (' + r.model + note + ', ' + fmt(P.voice.duration) + '). Play it below, or regenerate for a different read.', 'ok'); return; }
       setStatus('voice-status', 'AI voice ready (' + voice + ', ' + r.model + (r.chunks > 1 ? ', ' + r.chunks + ' parts joined' : '') + '). Play it below, or regenerate for a different read.', 'ok');
     } catch (err) {
       setStatus('voice-status', aiError(err), 'err');
@@ -1031,7 +1160,17 @@
     else voiceBuffer = R.trimBuffer(await R.decodeBlob(v.blob), maxVoice());
     return voiceBuffer;
   }
-  const look = () => Object.assign({}, P.look, { aspect: aspectOf(), handle: handle() });
+  function look(forRender) {
+    const lk = Object.assign({}, P.look, { aspect: aspectOf(), handle: handle() });
+    const pkg = P.pkg || {}; const F = S.FORMATS[P.template] || null;
+    lk.textHook = lk.hook !== false ? (pkg.textHook || '') : '';
+    lk.ctaSticker = lk.cta !== false ? (pkg.cta || (lk.intensity && lk.intensity !== 'off' ? CTAS[0] : '')) : '';
+    lk.template = P.template || 'classic'; lk.humour = P.humour == null ? 2 : P.humour;
+    lk.stepLabel = F ? F.badge : 'STEP';
+    if (forRender) lk.safeZones = false; // guides are for the preview only
+    else lk.safeZones = lk.safeZones ? (P.platform || 'both') : false;
+    return lk;
+  }
   function sizePreview() {
     const a = aspectOf(); const [w, h] = R.frameSize(a, 0.5); const cv = $('preview');
     if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
@@ -1079,6 +1218,14 @@
     $('render-note').textContent = long ? 'Long video: rendered in real time in ~75 s parts that are saved to storage as they finish, then joined into one WebM file. Keep the app open with the screen on (it stays awake). If it stops, tap Render again to resume from the last finished part.'
       : 'Rendering happens in real time on your phone. Keep the app open and the screen on.';
     $('opt-watermark').checked = !!P.look.watermark; $('opt-progress').checked = !!P.look.progress; $('opt-format').value = P.look.format || 'auto';
+    const it = P.look.intensity || 'off'; document.querySelectorAll('#intensity-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === it));
+    $('intensity-note').textContent = { off: 'no extra cuts', chill: 'a cut every ~4 s', punchy: 'a cut every ~2.5 s', chaotic: 'a cut every ~1.7 s' }[it];
+    $('opt-hook').checked = P.look.hook !== false; $('hook-preview').textContent = P.pkg.textHook ? '“' + P.pkg.textHook + '”' : '(add one in step 2)';
+    $('opt-cta').checked = P.look.cta !== false; $('opt-emoji').checked = P.look.autoEmoji !== false; $('opt-loop').checked = !!P.look.loop; $('opt-safe').checked = !!P.look.safeZones;
+    $('opt-sfx').checked = P.look.sfx !== false;
+    const ms = $('opt-music'); if (!ms.options.length && VTS.audiofx) VTS.audiofx.MUSIC.forEach(([k, label]) => ms.add(new Option(label, k)));
+    ms.value = P.look.music || 'none';
+    [['vol-voice', 'voiceVol', 1], ['vol-music', 'musicVol', 0.5], ['vol-sfx', 'sfxVol', 0.7]].forEach(([id, key, d]) => { const v = P.look[key] == null ? d : P.look[key]; $(id).value = v; $(id + '-v').textContent = Math.round(v * 100) + '%'; });
     $('wm-handle').textContent = handle() ? handle() : '(set your handle in Settings)';
     $('render').disabled = rendering;
     const [fw, fh] = R.frameSize(a, renderScale());
@@ -1101,6 +1248,34 @@
   $('opt-watermark').addEventListener('change', (e) => { P.look.watermark = e.target.checked; if (e.target.checked && !handle()) toast('Set your channel handle in Settings.', true); markVideoStale(); persist(); renderRenderPane(); });
   $('opt-progress').addEventListener('change', (e) => { P.look.progress = e.target.checked; markVideoStale(); persist(); renderRenderPane(); });
   $('opt-format').addEventListener('change', (e) => { P.look.format = e.target.value; persist(); });
+  document.querySelectorAll('#intensity-seg button').forEach((b) => b.addEventListener('click', () => { P.look.intensity = b.dataset.v; markVideoStale(); persist(); renderRenderPane(); }));
+  [['opt-hook', 'hook'], ['opt-cta', 'cta'], ['opt-emoji', 'autoEmoji'], ['opt-loop', 'loop'], ['opt-sfx', 'sfx']].forEach(([id, key]) => $(id).addEventListener('change', (e) => { P.look[key] = e.target.checked; markVideoStale(); persist(); renderRenderPane(); }));
+  $('opt-safe').addEventListener('change', (e) => { P.look.safeZones = e.target.checked; persist(); renderRenderPane(); });
+  $('opt-music').addEventListener('change', (e) => { P.look.music = e.target.value; markVideoStale(); persist(); renderRenderPane(); });
+  [['vol-voice', 'voiceVol'], ['vol-music', 'musicVol'], ['vol-sfx', 'sfxVol']].forEach(([id, key]) => {
+    $(id).addEventListener('input', (e) => { P.look[key] = Number(e.target.value); $(id + '-v').textContent = Math.round(P.look[key] * 100) + '%'; });
+    $(id).addEventListener('change', () => { markVideoStale(); persist(); renderRenderPane(); });
+  });
+  let musicAudio = null;
+  $('music-play').addEventListener('click', async () => {
+    if (musicAudio) { musicAudio.stop(); musicAudio = null; $('music-play').textContent = '▶ Listen'; return; }
+    const style = P.look.music || 'none'; if (style === 'none' || !VTS.audiofx) { toast('Pick a music style first.'); return; }
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)(); const m = VTS.audiofx.music(style, ac.sampleRate);
+      const ab = ac.createBuffer(2, m.L.length, ac.sampleRate); ab.getChannelData(0).set(m.L); ab.getChannelData(1).set(m.R);
+      const src = ac.createBufferSource(); src.buffer = ab; src.loop = true; const g = ac.createGain(); g.gain.value = (P.look.musicVol == null ? 0.5 : P.look.musicVol) * 0.6; src.connect(g).connect(ac.destination); src.start();
+      musicAudio = { stop: () => { try { src.stop(); ac.close(); } catch (_) { /* ignore */ } } }; $('music-play').textContent = '■ Stop';
+      setTimeout(() => { if (musicAudio) { musicAudio.stop(); musicAudio = null; $('music-play').textContent = '▶ Listen'; } }, 12000);
+    } catch (err) { toast('Could not play music: ' + (err && err.message || err), true); }
+  });
+  $('cover-png').addEventListener('click', async () => {
+    if (!P.pkg || !VTS.comedy || !VTS.comedy.cover) return;
+    try {
+      const blob = await VTS.comedy.cover(document.createElement('canvas'), { beats: P.pkg.beats, look: look(true), text: P.pkg.thumbnailText || P.pkg.textHook || P.pkg.title, handle: handle() });
+      const name = (P.pkg.title || 'short').replace(/[^a-z0-9]+/gi, '-').slice(0, 40).replace(/^-|-$/g, '') + '-cover.png';
+      const r = await N.saveFile(blob, name); toast('Cover saved to ' + r.where);
+    } catch (err) { toast('Could not make the cover: ' + (err && err.message || err), true); }
+  });
   $('opt-ai-images').addEventListener('change', (e) => {
     P.look.aiImages = e.target.checked; markVideoStale(); persist();
     if (e.target.checked) toast(getKey() ? 'AI illustrations: uses Gemini image quota (no free tier). If your key can’t make images, the built-in scenes are used.' : 'Add your Gemini API key in Settings to use AI illustrations.', !getKey());
@@ -1196,7 +1371,7 @@
     const t0 = Date.now();
     const long = voiceIsLong() || (!isShortLen() && P.voice.duration > LONG_RENDER_SEC);
     try {
-      const lk = look(); let aiNote = '';
+      const lk = look(true); let aiNote = '';
       if (lk.visual !== 'classic') { ensureScenes(); if (long && SC.diversify && !P.pkg.diversified) { SC.diversify(P.pkg.beats.map((b2) => b2.scene)); P.pkg.diversified = true; } }
       if (lk.visual !== 'classic' && lk.aiImages) {
         if (!getKey()) aiNote = ' AI illustrations need a Gemini key, so the built-in scenes were used.';
@@ -1246,7 +1421,7 @@
         if (!res.blob.size) throw new Error('The recorder produced an empty file.');
         const P2 = R.plan(buf, isShortLen() ? undefined : R.MAX_LONG);
         P.thumb = thumbFrame(lk, P2.total, null, P2);
-        P.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, frames: res.frames, fps: res.fps, avgDrawMs: res.avgDrawMs, illustrated: res.illustrated || 0, visual: res.scenes ? 'scenes' : 'classic' };
+        P.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, frames: res.frames, fps: res.fps, avgDrawMs: res.avgDrawMs, illustrated: res.illustrated || 0, visual: res.scenes ? 'scenes' : 'classic', audioMix: res.audioMix || null, cues: res.cues || 0, cuts: res.cuts || 0 };
         setStatus('render-status', 'Done! Share it straight to YouTube or save it to your phone.' + aiNote, 'ok');
       }
       persist(true);
@@ -1383,7 +1558,7 @@
     modelSel.add(new Option('Custom…', '__custom')); modelSel.value = getModel();
     $('custom-model-wrap').classList.add('hidden');
     $('s-handle').value = load(K.handle, '');
-    fillSelect($('s-tone'), Object.entries(S.TONES).map(([k, t]) => [k, t.label]), load(K.tone, 'calm'));
+    fillSelect($('s-tone'), Object.entries(S.TONES).map(([k, t]) => [k, t.label]), load(K.tone, 'sarcastic'));
     fillSelect($('s-language'), S.LANGUAGES.map((l) => [l, l]), load(K.language, 'English'));
     fillSelect($('s-grade'), Object.entries(R.PRESETS).map(([k, p]) => [k, p.name]), load(K.grade, 'teal'));
     fillSelect($('s-aspect'), R.ASPECTS ? Object.keys(R.ASPECTS).map((k) => [k, (R.ASPECT_LABELS && R.ASPECT_LABELS[k]) || k]) : [['9:16', '9:16']], defAspect());
@@ -1507,7 +1682,7 @@
     showStep(P.step || 'idea');
     if (!getKey() && !P.pkg) setStatus('gen-status', 'Tip: add your free Gemini API key in Settings to write scripts.');
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { persist(true); if (rendering) toast('Keep Voice to Short open while rendering.', true); } });
-    window.VTS.app = { get project() { return P; }, showStep, showView, startRender, openProject, newProject, setVoice };
+    window.VTS.app = { get project() { return P; }, renderAll: () => renderAll(), showStep, showView, startRender, openProject, newProject, setVoice };
   })();
 
   if (!N.isNative && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
