@@ -10,7 +10,7 @@ global.fetch = async (u, init) => {
     try { const d = await r.clone().json(); const c = d.candidates && d.candidates[0];
       const txt = c && c.content && (c.content.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
       const body = JSON.parse(init.body);
-      calls.push({ model: String(u).split('/models/')[1].split(':')[0], status: r.status, finish: c && c.finishReason, usage: d.usageMetadata, chars: txt ? txt.length : 0, gen: body.generationConfig && Object.assign({}, body.generationConfig, { responseSchema: body.generationConfig.responseSchema ? '[schema]' : undefined }), err: d.error && red(d.error.message).slice(0, 200) });
+      calls.push({ model: String(u).split('/models/')[1].split(':')[0], status: r.status, finish: c && c.finishReason, usage: d.usageMetadata, chars: txt ? txt.length : 0, gen: body.generationConfig && Object.assign({}, body.generationConfig, { responseSchema: body.generationConfig.responseSchema ? '[schema]' : undefined }), err: d.error && red(d.error.message).slice(0, 200), block: d.promptFeedback, nCand: (d.candidates || []).length, safety: c && c.safetyRatings && c.safetyRatings.filter((x) => x.probability && x.probability !== 'NEGLIGIBLE'), finishMsg: c && c.finishMessage, partsInfo: c && c.content ? (c.content.parts || []).map((p) => (p.thought ? 'T' : 'X') + (p.text || '').length) : null });
     } catch (_) {}
   }
   return r;

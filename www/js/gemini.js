@@ -37,6 +37,9 @@
     if (lower.includes('api key not valid') || lower.includes('api_key_invalid') || lower.includes('permission denied') || (lower.includes('api key') && (lower.includes('invalid') || lower.includes('expired')))) {
       return 'Gemini rejected the API key. Check the key in Settings.';
     }
+    if (err && err.timeout) return 'Gemini took too long to answer' + (err.allTried ? ' on every model tried' : '') + '. Google’s free models are slow or busy right now — wait a minute and try again (keep the app open while it writes).';
+    if (err && err.interrupted) return 'Gemini’s reply was interrupted before it fully arrived (weak signal or the app went to the background). Try again with the app open.';
+    if (err && (err.status === 429 || err.apiStatus === 'RESOURCE_EXHAUSTED')) return 'Google’s free limit for this API key is used up for the moment' + (err.allTried ? ' on every model tried' : '') + '. Wait a minute (or until tomorrow if it keeps happening) and try again.';
     if (err && (err.status === 503 || err.apiStatus === 'UNAVAILABLE') || lower.includes('high demand') || lower.includes('overloaded')) {
       return 'Gemini is overloaded right now (Google returned “high demand”' + (err && err.allTried ? ' for every model tried' : '') + '). Wait a minute and try again.';
     }
@@ -59,16 +62,29 @@
     if (!key) throw fail('Add your Gemini API key in Settings first.');
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 90000) : 0;
-    let res;
+    let res; let data = null; let bodyErr = null;
     try {
-      res = await fetch(API_BASE + path, Object.assign({}, init, {
-        headers: Object.assign({ 'x-goog-api-key': key }, init && init.headers),
-        signal: ctrl ? ctrl.signal : undefined,
-        referrerPolicy: 'no-referrer',
-      }));
+      try {
+        res = await fetch(API_BASE + path, Object.assign({}, init, {
+          headers: Object.assign({ 'x-goog-api-key': key }, init && init.headers),
+          signal: ctrl ? ctrl.signal : undefined,
+          referrerPolicy: 'no-referrer',
+        }));
+        // Read the body inside the timer too: on phones a reply can stall or drop half-way (screen off, weak signal).
+        try { data = await res.json(); } catch (e) { data = null; bodyErr = e; }
+      } catch (err) {
+        if (err && err.name === 'AbortError') {
+          const e = new Error('Gemini took too long to answer (no reply after ' + Math.round((timeoutMs || 90000) / 1000) + ' s).');
+          e.status = 504; e.timeout = true; e.details = 'timeout after ' + Math.round((timeoutMs || 90000) / 1000) + ' s'; throw e;
+        }
+        throw err;
+      }
     } finally { clearTimeout(timer); }
-    let data = null;
-    try { data = await res.json(); } catch (_) { data = null; }
+    if (res.ok && !data && bodyErr) {
+      const e = new Error('Gemini’s reply was interrupted before it fully arrived.');
+      e.status = 502; e.interrupted = true; e.details = 'HTTP 200 but the body could not be read' + (bodyErr && bodyErr.name === 'AbortError' ? ' (timeout while downloading)' : '');
+      throw e;
+    }
     if (!res.ok) {
       const ge = (data && data.error) || {};
       const reasons = (Array.isArray(ge.details) ? ge.details : []).map((d) => d && d.reason).filter(Boolean);
@@ -101,30 +117,51 @@
   function isOverloaded(err) {
     if (!err || err.friendly) return false;
     const m = String(err.message || '').toLowerCase();
-    return err.status === 503 || err.status === 500 || err.status === 429 || err.apiStatus === 'RESOURCE_EXHAUSTED' || err.apiStatus === 'UNAVAILABLE' || err.apiStatus === 'INTERNAL' || m.includes('high demand') || m.includes('overloaded');
+    return err.status === 503 || err.status === 500 || err.status === 502 || err.status === 504 || err.status === 429 || err.apiStatus === 'RESOURCE_EXHAUSTED' || err.apiStatus === 'UNAVAILABLE' || err.apiStatus === 'INTERNAL' || m.includes('high demand') || m.includes('overloaded');
   }
   // Models that just answered 429/503 are skipped for a short while (in memory only), so the next request of a long
   // job goes straight to a model that works instead of waiting on the busy one again.
   const cooling = new Map();
   function coolDown(model, err) { cooling.set(model, Date.now() + (err && err.retryAfter ? Math.min(120, err.retryAfter) * 1000 : err && err.status === 429 ? 60000 : 30000)); }
   function isCooling(model) { const t = cooling.get(model); if (!t) return false; if (Date.now() > t) { cooling.delete(model); return false; } return true; }
+  // Empty replies (HTTP 200, but no text). kind: safety | blocked (prompt) | recitation | empty (OTHER/STOP-without-text/no candidates).
+  const SAFETY_FINISH = ['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'IMAGE_SAFETY'];
+  function isEmptyReply(err) { return !!(err && err.emptyReply && err.emptyReply !== 'blocked'); }
+  // When several models fail differently, report the most telling reason: a safety block beats an empty reply,
+  // which beats "busy" (so the user learns that humour level, not Google's load, is the problem).
+  function pickWorse(a, b) {
+    const rank = (e) => !e ? -1 : e.emptyReply === 'safety' || e.emptyReply === 'blocked' ? 4 : e.emptyReply === 'recitation' ? 3 : e.emptyReply ? 2 : 1;
+    return rank(b) >= rank(a) ? b : a;
+  }
+  function emptyReplyError(data, cand, model) {
+    const fin = cand && cand.finishReason; const block = data && data.promptFeedback && data.promptFeedback.blockReason;
+    let kind = 'empty'; let msg;
+    if (block) { kind = 'blocked'; msg = 'Gemini blocked this request for safety (' + block + '). Try a lower humour level or reword the idea.'; }
+    else if (SAFETY_FINISH.includes(fin)) { kind = 'safety'; msg = 'Gemini blocked this script for safety (' + fin + '). Try a lower humour level (e.g. “Funny” instead of “Unhinged”) or reword the idea.'; }
+    else if (fin === 'RECITATION') { kind = 'recitation'; msg = 'Gemini stopped because the reply looked too close to existing text (RECITATION). Tap “Write my Short” again or reword the idea.'; }
+    else msg = 'Gemini sent back an empty reply' + (fin && fin !== 'STOP' ? ' (' + fin + ')' : '') + '. This usually clears up — tap “Write my Short” again in a minute.';
+    const e = new Error(msg); e.friendly = msg; e.emptyReply = kind; e.model = model;
+    e.details = 'empty reply: ' + (block ? 'promptFeedback.blockReason ' + block : 'finishReason ' + (fin || 'none') + (data && data.candidates ? '' : ', no candidates')) + ' [model: ' + model + ']';
+    return e;
+  }
   // Generate with the saved model; if it is unavailable, retry with each fallback model once and save the one that works.
   async function generate(contents, opts) {
     opts = opts || {};
-    const first = opts.model || host.getModel();
+    const first = opts.model || host.getModel(); const t0 = Date.now();
     try {
       if (!opts.model && isCooling(first) && FALLBACK_MODELS.some((q) => q !== first && !isCooling(q))) { const e = new Error('model cooling down'); e.status = 503; e.cooling = true; throw e; }
       return await generateWith(first, contents, opts);
     } catch (err) {
-      if (!err.cooling && isOverloaded(err)) coolDown(first, err);
+      if (!err.cooling && isOverloaded(err) && !err.timeout) coolDown(first, err);
       // 400 INVALID_ARGUMENT etc. is a problem with the request itself: surface it, never hide it behind other models.
-      const busy = isOverloaded(err);
+      // An empty reply (no text, finishReason OTHER/SAFETY/RECITATION/...) is worth one try on each other model.
+      const busy = isOverloaded(err) || isEmptyReply(err);
       if (!busy && !isModelUnavailable(err)) throw err;
       let lastErr = err; let onlyBusy = busy;
       const tried = new Set([first]);
       const hint = /\b(?:use|try|migrate to)\s+(?:models\/)?(gemini-[a-z0-9.-]+[a-z0-9])/i.exec(String(err.message || ''));
       const queue = (hint ? [hint[1]] : []).concat(FALLBACK_MODELS);
-      let discovered = false;
+      let discovered = false; let safetyHops = 0;
       for (let i = 0; i <= queue.length; i++) {
         if (i === queue.length) {
           if (discovered) break;
@@ -134,6 +171,7 @@
         }
         const fb = queue[i];
         if (tried.has(fb)) continue;
+        if (opts.budgetMs && Date.now() - t0 > opts.budgetMs) break; // don't keep a phone waiting for many minutes
         tried.add(fb);
         if (isCooling(fb) && queue.slice(i + 1).some((q) => !tried.has(q) && !isCooling(q))) continue;
         try {
@@ -142,14 +180,17 @@
           else if (host.onBusyFallback) host.onBusyFallback(first, fb);
           return text;
         } catch (e2) {
-          lastErr = e2;
-          if (isOverloaded(e2)) { coolDown(fb, e2); continue; }
+          lastErr = pickWorse(lastErr, e2);
+          // Safety blocks follow the content, not the model: after two models said SAFETY, let the caller soften the request.
+          if (isEmptyReply(e2) && e2.emptyReply === 'safety' && (err.emptyReply === 'safety' || ++safetyHops >= 2)) break;
+          if (isEmptyReply(e2)) continue;
+          if (isOverloaded(e2)) { if (!e2.timeout) coolDown(fb, e2); continue; }
           if (!isModelUnavailable(e2)) throw e2;
           onlyBusy = false;
         }
       }
-      if (lastErr && !lastErr.friendly) {
-        lastErr.allTried = true;
+      if (lastErr && (!lastErr.friendly || isEmptyReply(lastErr))) {
+        lastErr.allTried = true; lastErr.tried = Array.from(tried);
         lastErr.details = (lastErr.details || lastErr.message) + ' [tried: ' + Array.from(tried).join(', ') + ']';
       }
       throw lastErr;
@@ -176,6 +217,7 @@
     if (opts.json) gen.responseMimeType = 'application/json';
     if (opts.schema) gen.responseSchema = opts.schema;
     const body = { contents, generationConfig: gen };
+    if (opts.safety) body.safetySettings = SAFETY_CATS.map((category) => ({ category, threshold: opts.safety }));
     if (opts.system) body.systemInstruction = { parts: [{ text: opts.system }] };
     const send = (b) => geminiRequest('/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b),
@@ -205,6 +247,8 @@
           delete body.systemInstruction;
           body.contents = [{ role: 'user', parts: [{ text: opts.system + '\n\n' + contents.map((c) => c.parts.map((p) => p.text).join('')).join('\n\n') }] }];
           data = await send(body);
+        } else if (err && err.status === 400 && body.safetySettings && /safety|harm/.test(m)) {
+          delete body.safetySettings; data = await send(body);
         } else if (err && err.status === 400 && gen.responseSchema && (err.apiStatus === 'INVALID_ARGUMENT' || m.includes('schema') || m.includes('invalid argument'))) {
           // Google rejects schemas it finds too large/complex with a bare "Request contains an invalid argument".
           // The prompt already describes the JSON shape, so retry once with JSON mode only (parsed + validated locally).
@@ -219,17 +263,29 @@
       if (err && !err.friendly) { err.model = model; if (err.details) err.details += ' [model: ' + model + ']'; }
       throw err;
     }
-    const cand = data && data.candidates && data.candidates[0];
-    const text = cand && cand.content && Array.isArray(cand.content.parts)
-      ? cand.content.parts.filter((p) => !p.thought).map((p) => p.text || '').join('').trim() : '';
+    const read = (d) => { const c = d && d.candidates && d.candidates[0]; return { cand: c, text: c && c.content && Array.isArray(c.content.parts) ? c.content.parts.filter((p) => !p.thought).map((p) => p.text || '').join('').trim() : '' }; };
+    let { cand, text } = read(data);
+    if (!text && !(cand && cand.finishReason === 'MAX_TOKENS') && !(data && data.promptFeedback && data.promptFeedback.blockReason) && opts.emptyRetry !== false) {
+      // Empty reply: wait a moment, then ask once more on this model with thinking turned down and safety relaxed
+      // (only the four adjustable categories; PROHIBITED_CONTENT cannot be relaxed). Any 400 -> keep the original config.
+      if (host.onEmptyRetry) { try { host.onEmptyRetry(model, cand && cand.finishReason); } catch (_) { /* ignore */ } }
+      await sleep(opts.emptyBackoff ?? (host.emptyBackoffMs ?? 1500));
+      const first = data; const g2 = Object.assign({}, gen, { temperature: Math.min(1.2, (gen.temperature || 0.8) + 0.15) });
+      if (/flash/.test(model) && !/lite/.test(model)) g2.thinkingConfig = { thinkingBudget: 0 }; else if (gen.thinkingConfig) g2.thinkingConfig = gen.thinkingConfig;
+      const b2 = Object.assign({}, body, { generationConfig: g2, safetySettings: SAFETY_CATS.map((category) => ({ category, threshold: 'BLOCK_NONE' })) });
+      try { data = await send(b2); } catch (err) {
+        if (err && err.status === 400) { try { data = await send(Object.assign({}, body, { generationConfig: gen })); } catch (e3) { data = first; } }
+        else if (isOverloaded(err)) { err.model = model; throw err; } else data = first;
+      }
+      ({ cand, text } = read(data));
+      if (!text && !(cand && cand.finishReason === 'MAX_TOKENS')) { const firstErr = emptyReplyError(first, read(first).cand, model); const e2 = emptyReplyError(data, cand, model); throw pickWorse(firstErr, e2); }
+    }
     if (opts.onMeta) { try { opts.onMeta({ model, finishReason: cand && cand.finishReason, usage: data && data.usageMetadata, chars: text.length }); } catch (_) { /* ignore */ } }
     if (text) return text;
     if (cand && cand.finishReason === 'MAX_TOKENS') { const e = fail('Gemini ran out of room before writing the reply.'); e.truncated = true; e.details = 'finishReason MAX_TOKENS, model ' + model; throw e; }
-    const blocked = data && data.promptFeedback && data.promptFeedback.blockReason;
-    if (blocked) throw fail('Gemini blocked that request (' + blocked + ').');
-    if (cand && cand.finishReason === 'SAFETY') throw fail('Gemini blocked that reply because of its safety filters.');
-    throw fail('Gemini returned an empty response.');
+    throw emptyReplyError(data, cand, model);
   }
+  const SAFETY_CATS = ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'];
 
   // ================= Text-to-speech (Gemini native TTS) =================
   // Current docs (Sep 2026): gemini-3.8-flash-tts and gemini-3.8-flash-lite-tts (GenerateContent + Interactions APIs),

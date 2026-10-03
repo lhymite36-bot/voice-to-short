@@ -389,9 +389,10 @@
   function ideaKey(idea, opts) { const g = VTS.gemini; return (g && g.hashText ? g.hashText : (x) => String(x.length))([String(idea || '').trim(), opts.length, opts.tone, opts.language].join('|')); }
   async function callJSON(prompt, schema, system, opts, what) {
     const g = VTS.gemini;
-    return g.withRetry(async () => {
-      const r = await askJSON([{ role: 'user', parts: [{ text: prompt }] }], { system, schema, temperature: 0.8 });
+    return g.withRetry(async (attempt) => {
+      const r = await askJSON([{ role: 'user', parts: [{ text: prompt }] }], Object.assign({ system, schema, temperature: 0.8 }, attempt ? { safety: 'BLOCK_NONE' } : {}));
       if (r.obj) return r.obj;
+      if (r.emptyErr) { if (attempt === 0 && r.emptyErr.emptyReply !== 'blocked') { const e = new Error('empty reply'); e.status = 503; e.details = r.emptyErr.details; throw e; } throw r.emptyErr; } // one backed-off retry
       const e = new Error('bad json'); e.status = 503; e.details = 'finishReason ' + (r.meta.finishReason || '?') + ', model ' + (r.meta.model || '?') + ': ' + String(r.text).slice(0, 120); throw e; // retried once more as transient
     }, { tries: 4, base: 5000, signal: opts.signal, onWait: (ms, n, err) => opts.onProgress && opts.onProgress({ phase: 'wait', what, ms, attempt: n, quota: err && (err.status === 429) }) });
   }
@@ -448,6 +449,7 @@
   // budget and the 2-min script JSON was cut off (finishReason MAX_TOKENS) -> "unexpected format".
   // Now: low thinking + 32k budget; on a cut-off reply ask the model to continue, then repair; callers add a compact retry
   // and a split (text first, beats second) as last resorts.
+  const PG_NOTE = 'Safety: keep every joke kind and PG — tease the situation and the brain, never a person or group; no self-harm, violence, sexual, drug or alcohol jokes; no slurs or swearing.';
   const CONTINUE_MSG = 'Your JSON reply was cut off. Continue EXACTLY from the last character you wrote: output only the remaining characters to complete the JSON, with no repetition, no explanation and no code fences.';
   function tryParse(text) { try { return text ? parseJSONLoose(text) : null; } catch (_) { return null; } }
   function joinContinuation(text, more) {
@@ -458,9 +460,13 @@
   }
   async function askJSON(contents, o) {
     const g = VTS.gemini; let meta = {};
-    const base = Object.assign({ json: true, temperature: 0.85, maxTokens: 32768, timeout: 180000, think: 'low' }, o, { onMeta: (m) => { meta = m || {}; } });
+    const base = Object.assign({ json: true, temperature: 0.85, maxTokens: 32768, timeout: 180000, think: 'low', budgetMs: 240000 }, o, { onMeta: (m) => { meta = m || {}; } });
     let text = ''; const fixes = [];
-    try { text = await g.generate(contents, base); } catch (err) { if (!err.truncated) throw err; meta = Object.assign({ finishReason: 'MAX_TOKENS' }, meta); }
+    try { text = await g.generate(contents, base); } catch (err) {
+      // Empty reply on every model tried (safety / OTHER / RECITATION / no text): let the caller try a different request.
+      if (err && err.emptyReply) return { obj: null, text: '', meta: { finishReason: String(err.emptyReply).toUpperCase(), model: err.model }, fixes: [], emptyErr: err };
+      if (!err.truncated) throw err; meta = Object.assign({ finishReason: 'MAX_TOKENS' }, meta);
+    }
     let obj = tryParse(text);
     for (let k = 0; !obj && text && meta.finishReason === 'MAX_TOKENS' && k < 2; k++) {
       let more = '';
@@ -499,30 +505,48 @@
     // 1) one call, full schema (scenes included)
     let r = await askJSON(user, { system, schema: sch }); note(r, 'full');
     let pkg = usable(r.obj, r); let lastText = r.text;
+    let emptyErr = r.emptyErr || null; let hardErr = null;
+    // After an empty / blocked reply: back off a little, relax safety, and (for safety blocks) tone the jokes down one notch.
+    const safetyHit = () => emptyErr && (emptyErr.emptyReply === 'safety' || emptyErr.emptyReply === 'blocked');
+    const softPrompt = () => (safetyHit() ? buildPrompt(idea, Object.assign({}, opts, { humour: Math.min(2, humourOf(opts)) })) + '\n\n' + PG_NOTE : prompt);
+    const extra = () => (emptyErr ? { safety: 'BLOCK_NONE' } : {});
+    const pause = (ms) => (emptyErr ? new Promise((res) => setTimeout(res, opts.backoffMs ?? ms)) : Promise.resolve());
+    const step = async (fn) => { try { await fn(); } catch (err) { if (err && err.emptyReply) emptyErr = err; else hardErr = err; } };
     // 2) compact retry: no scene objects (scenes are inferred locally from the words), about half the size
     if (!pkg) {
-      tell('compact');
-      r = await askJSON([{ role: 'user', parts: [{ text: prompt + '\n\nKeep the JSON compact: leave optional fields empty unless they matter.' }] }], { system, schema: compactSchema() }); note(r, 'compact');
-      pkg = usable(r.obj, r); lastText = r.text || lastText;
+      tell(emptyErr ? 'empty' : 'compact'); await pause(3000);
+      await step(async () => {
+        r = await askJSON([{ role: 'user', parts: [{ text: softPrompt() + '\n\nKeep the JSON compact: leave optional fields empty unless they matter.' }] }], Object.assign({ system, schema: compactSchema() }, extra())); note(r, 'compact');
+        if (r.emptyErr) emptyErr = r.emptyErr;
+        pkg = usable(r.obj, r); lastText = r.text || lastText;
+      });
     }
     // 3) split: script + publishing text first, then the beats for that exact script (or local beats)
-    if (!pkg) {
-      tell('split');
-      r = await askJSON([{ role: 'user', parts: [{ text: prompt + '\n\nFor this request return everything EXCEPT "beats" (beats are requested separately).' }] }], { system, schema: metaSchema() }); note(r, 'text');
-      const meta = r.obj && typeof r.obj === 'object' ? r.obj : null;
-      if (meta && meta.script) {
-        let beats = [];
-        try {
-          const rb = await askJSON([{ role: 'user', parts: [{ text: 'Split this voiceover VERBATIM into ' + (L.beats ? L.beats[0] + '-' + L.beats[1] : 'short') + ' consecutive caption beats of 3-8 words covering all of it, with the beat fields described in the schema. ' + (isComedy(opts) ? 'Format: ' + ((FORMATS[opts.format] || FORMATS.classic).label) + '. Mark speakers, punchlines, fx and sfx as in a funny Short.' : '') + '\n\nVoiceover:\n' + meta.script }] }], { system, schema: beatsOnlySchema() });
-          note(rb, 'beats'); if (rb.obj && Array.isArray(rb.obj.beats)) beats = rb.obj.beats;
-        } catch (err) { if (err && (err.status === 429 || err.quota)) throw err; }
-        pkg = usable(Object.assign({}, meta, { beats }));
-      }
-      lastText = r.text || lastText;
+    if (!pkg && !(hardErr && (hardErr.status === 429 || hardErr.quota))) {
+      tell('split'); await pause(5000);
+      await step(async () => {
+        r = await askJSON([{ role: 'user', parts: [{ text: softPrompt() + '\n\nFor this request return everything EXCEPT "beats" (beats are requested separately).' }] }], Object.assign({ system, schema: metaSchema() }, extra())); note(r, 'text');
+        if (r.emptyErr) emptyErr = r.emptyErr;
+        const meta = r.obj && typeof r.obj === 'object' ? r.obj : null;
+        if (meta && meta.script) {
+          let beats = [];
+          try {
+            const rb = await askJSON([{ role: 'user', parts: [{ text: 'Split this voiceover VERBATIM into ' + (L.beats ? L.beats[0] + '-' + L.beats[1] : 'short') + ' consecutive caption beats of 3-8 words covering all of it, with the beat fields described in the schema. ' + (isComedy(opts) ? 'Format: ' + ((FORMATS[opts.format] || FORMATS.classic).label) + '. Mark speakers, punchlines, fx and sfx as in a funny Short.' : '') + '\n\nVoiceover:\n' + meta.script }] }], Object.assign({ system, schema: beatsOnlySchema() }, extra()));
+            note(rb, 'beats'); if (rb.obj && Array.isArray(rb.obj.beats)) beats = rb.obj.beats;
+          } catch (err) { if (err && (err.status === 429 || err.quota)) throw err; }
+          pkg = usable(Object.assign({}, meta, { beats })); // empty beats -> rebuilt locally from the script
+        }
+        lastText = r.text || lastText;
+      });
     }
     if (!pkg) {
-      const e = g.fail('Gemini returned a script in an unexpected format. Tap “Write my Short” again.');
-      e.details = trail.join(' | ') + ' — ' + String(lastText || '').slice(0, 120);
+      // Say the real reason: safety block > busy/quota/timeout > empty reply > unreadable JSON.
+      let e;
+      if (safetyHit()) e = emptyErr;
+      else if (hardErr) e = hardErr;
+      else if (emptyErr) e = emptyErr;
+      else e = g.fail('Gemini returned a script in an unexpected format. Tap “Write my Short” again.');
+      e.details = (e.details ? e.details + ' | ' : '') + trail.join(' | ') + (lastText ? ' — ' + String(lastText).slice(0, 120) : '');
       throw e;
     }
     // Smaller fallback models sometimes write a 30 s script for a 60 s request: one retry that asks for the full length.

@@ -4,7 +4,7 @@ Talk an idea into your phone and get a finished YouTube video: a hook, clear ste
 
 It's built for faceless psychology and self-help channels like Quiet Brain Club, with voiceover over animated scenes. Since 1.4 it makes funny, meme-style Shorts for TikTok and YouTube too.
 
-- **Android app:** download `VoiceToShort-1.4.1.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
+- **Android app:** download `VoiceToShort-1.4.2.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
 - **Web version:** https://lhymite36-bot.github.io/voice-to-short/ (works best in Chrome)
 
 ## How it works
@@ -36,6 +36,16 @@ It's built for faceless psychology and self-help channels like Quiet Brain Club,
    - Channel handle, default tone, script language and default grade.
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
+
+## Fixed in 1.4.2
+
+- "Write my Short" no longer stops at *"Gemini returned an empty response."* That message came from any reply that had no text: Gemini returned no candidates, stopped with OTHER / RECITATION / PROHIBITED_CONTENT, or the reply could not be read on the phone. 1.4.1 treated one such reply as final, with no retry and no other model. Now the app:
+  - waits a moment and asks the same model again with thinking turned down and safety relaxed to `BLOCK_NONE` (the categories Google lets you change);
+  - then tries the next model, then a compact request, then writes the script and the beats separately;
+  - after a safety block, tones the humour down one notch and adds a "keep it kind and PG" note;
+  - treats a timeout (504) or an unreadable 200 reply (502) as temporary and moves on to the next model, capped at about 4 minutes in total.
+- If everything fails, the error now gives the real reason in plain words: blocked for safety (try a lower humour level), Google's free limit used up (wait a minute), Gemini busy, too slow, reply interrupted, or an empty reply. The finishReason, the models tried and each attempt are listed under "Details".
+- Tests: `node tests/empty142.js` (offline). Live UI check: `RUNS=3 node tests/live/ui-live.js brain-like 3 120` (uses `GEMINI_API_KEY`).
 
 ## Fixed in 1.4.1
 
@@ -139,12 +149,12 @@ The recommended voice option. It uses Gemini's native text-to-speech with the sa
 
 ## Install on Android (6.0+)
 
-1. Download `VoiceToShort-1.4.1.apk` from the latest release.
+1. Download `VoiceToShort-1.4.2.apk` from the latest release.
 2. Open it. If Android asks, allow “Install unknown apps” for your browser or Files app.
 3. Open **Voice to Short**, go to **Settings**, paste your free Gemini key and tap **Save key**.
 4. Allow the microphone when asked. It's used for dictation and voice recording.
 
-To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.4.1.apk`.
+To check the download against `SHA256SUMS.txt`, run `sha256sum VoiceToShort-1.4.2.apk`.
 
 ## Development
 
