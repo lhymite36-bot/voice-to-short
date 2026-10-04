@@ -30,25 +30,37 @@ function serve() {
   await app((tone) => { const b = document.querySelector('#tone-seg [data-v="' + tone + '"]'); if (b) b.click(); }, process.env.TONE || 'sarcastic');
   await page.select('#opt-template', process.env.FORMAT || 'classic');
   await app((h) => { const el = document.querySelector('#opt-humour'); el.value = h; el.dispatchEvent(new Event('input', { bubbles: true })); }, process.env.HUMOUR || '2');
+  // Resume: a saved script (<out>.pkg.json from an interrupted run, or PKG_FILE) is reused instead of calling Gemini again.
+  const PKGF = process.env.PKG_FILE || (fs.existsSync(OUTF + '.pkg.json') ? OUTF + '.pkg.json' : '');
+  if (PKGF) { const pk0 = JSON.parse(fs.readFileSync(PKGF, 'utf8')); const pk = pk0.pkg || pk0; await app((x) => { const P = window.VTS.app.project; P.pkg = x; window.VTS.app.renderAll(); }, pk); await sleep(500); console.log(t(), 'PKG resumed from', PKGF, pk.beats.length, 'beats'); }
+  else {
   await click('#generate');
   await page.waitForFunction(() => (window.VTS.app.project.pkg && !document.querySelector('#script-body').classList.contains('hidden')) || /err/.test(document.querySelector('#gen-status').className), { timeout: 900000, polling: 1000 });
+  }
   const pkg = await app(() => { const p = window.VTS.app.project.pkg; return p && { textHook: p.textHook, cta: p.cta, tiktokCaption: p.tiktokCaption, tiktokHashtags: p.tiktokHashtags, ytHashtags: p.hashtags, speakers: p.beats.map((b) => b.speaker || '-').join(','), fx: p.beats.map((b) => b.fx || '-').join(','), stickers: p.beats.map((b) => b.sticker).filter(Boolean), words: window.VTS.shortgen.wordCount(p.script), beats: p.beats.length, title: p.title, hook: p.hooks[0], model: localStorage.getItem('vts.model'), low: p.beats.filter((b) => b.scene && window.VTS.scenes.matchScore(b.text, b.scene) < 0.5).length, poses: new Set(p.beats.map((b) => b.scene && b.scene.pose)).size, settings: new Set(p.beats.map((b) => b.scene && b.scene.setting)).size }; });
   console.log(t(), 'SCRIPT', JSON.stringify(pkg), '| gen-status:', red(await page.$eval('#gen-status', (e) => e.textContent)));
   if (!pkg) throw new Error('script failed');
   fs.writeFileSync(OUTF + '.pkg.json', JSON.stringify(await app(() => window.VTS.app.project.pkg), null, 1));
-  await click('.step[data-step=voice]'); await click('#ai-generate');
+  // Resume: <out>.voice.wav from an interrupted run is reused (no TTS call); a fresh AI voice is saved there right away.
+  const VOICEF = OUTF + '.voice.wav'; let voice;
+  const exportVoice = async () => { const vb64 = await app(async () => { const b = window.VTS.app.project.voice && window.VTS.app.project.voice.blob; if (!b) return ''; return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); }); }); if (vb64) fs.writeFileSync(VOICEF, Buffer.from(vb64, 'base64')); return !!vb64; };
+  if (fs.existsSync(VOICEF) && fs.statSync(VOICEF).size > 10000) {
+    voice = { src: 'cached', file: VOICEF }; console.log(t(), 'VOICE resumed from', VOICEF);
+  } else {
+    await click('.step[data-step=voice]'); await click('#ai-generate');
   await page.waitForFunction(() => (window.VTS.app.project.voice && window.VTS.app.project.voice.source === 'gemini') || /fail|error|quota/i.test(document.querySelector('#voice-status').textContent), { timeout: 900000, polling: 1000 });
-  const voice = await app(() => { const v = window.VTS.app.project.voice; return { src: v && v.source, d: v && v.duration, model: v && v.ttsModel, tv: v && v.ttsVoice, status: document.querySelector('#voice-status').textContent.slice(0, 200) }; });
+  voice = await app(() => { const v = window.VTS.app.project.voice; return { src: v && v.source, d: v && v.duration, model: v && v.ttsModel, tv: v && v.ttsVoice, status: document.querySelector('#voice-status').textContent.slice(0, 200) }; });
   console.log(t(), 'VOICE', red(JSON.stringify(voice)));
   if (voice.src !== 'gemini') throw new Error('voice failed');
-  await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="9:16"]'); await sleep(300); await click('#anim-seg button[data-v="' + (process.env.ANIM || '2d') + '"]'); await sleep(200); if ((process.env.ANIM || '2d') === '2d') { await click('#motion-seg button[data-v="' + (process.env.MOTION || 'smooth') + '"]'); await sleep(200); } console.log('ANIM', process.env.ANIM || '2d', 'MOTION', process.env.MOTION || 'smooth');
+    console.log(t(), 'VOICE_SAVED', await exportVoice());
+  }
+  if (voice.src !== 'cached') {await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="9:16"]'); await sleep(300); await click('#anim-seg button[data-v="' + (process.env.ANIM || '2d') + '"]'); await sleep(200); if ((process.env.ANIM || '2d') === '2d') { await click('#motion-seg button[data-v="' + (process.env.MOTION || 'smooth') + '"]'); await sleep(200); } console.log('ANIM', process.env.ANIM || '2d', 'MOTION', process.env.MOTION || 'smooth'); }
   // v1.5: ANIM=3d on the box renders frame-exact through tests/live/preview-offline.js (same app renderer + mixer),
   // because software WebGL here is far below real time; RENDER_MODE=app forces the in-app real-time recorder.
-  const OFFLINE = (process.env.RENDER_MODE || ((process.env.ANIM || '2d') === '3d' ? 'offline' : 'app')) === 'offline';
+  const OFFLINE = (process.env.RENDER_MODE || 'offline') === 'offline';
   let v; let look; let file; let size;
   if (OFFLINE) {
-    const vb64 = await app(async () => { const b = window.VTS.app.project.voice.blob; return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); }); });
-    const voiceFile = OUTF + '.voice.wav'; fs.writeFileSync(voiceFile, Buffer.from(vb64, 'base64'));
+    const voiceFile = VOICEF; if (!fs.existsSync(voiceFile)) await exportVoice();
     const fullLook = await app(() => Object.assign({}, window.VTS.app.project.look, { textHook: window.VTS.app.project.pkg.textHook || '', ctaSticker: window.VTS.app.project.pkg.cta || '' }));
     look = { cap: fullLook.captionStyle, intensity: fullLook.intensity, music: fullLook.music, sfx: fullLook.sfx, loop: fullLook.loop, progress: fullLook.progress };
     file = OUTF + '.mp4'; const t0 = Date.now();

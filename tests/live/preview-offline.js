@@ -20,14 +20,14 @@ function serve() {
     args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-background-timer-throttling'] });
   const page = await browser.newPage(); const errors = []; page.on('pageerror', (e) => errors.push(String(e))); page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   await page.goto(ORIGIN + '/'); await page.waitForFunction(() => window.VTS && window.VTS.render && window.VTS.motion && window.VTS.three3d);
-  const LOOKX = process.env.LOOK_JSON ? JSON.parse(process.env.LOOK_JSON) : {};
+  const LOOKX = process.env.LOOK_JSON ? JSON.parse(process.env.LOOK_JSON) : {}; if (LOOKX.handle === undefined) LOOKX.handle = process.env.HANDLE || 'Quiet Brain';
   const info = await page.evaluate(async (pkg, aspect, anim, motion, maxs, lookx) => {
     const R = window.VTS.render; const buf0 = await R.decodeBlob(await (await fetch('/__audio.wav')).blob());
     let buf = buf0; if (maxs && buf0.duration > maxs) { const ac = R.audioCtx(); const n = Math.floor(maxs * buf0.sampleRate); buf = ac.createBuffer(1, n, buf0.sampleRate); buf.copyToChannel(buf0.getChannelData(0).subarray(0, n), 0); }
     const P = R.plan(buf, Math.max(60, buf.duration + 2));
     const [cw, ch] = R.frameSize(aspect, 1); const c = document.createElement('canvas'); c.width = cw; c.height = ch; document.body.appendChild(c);
     const look = { preset: 'teal', aspect, visual: 'scenes', captionStyle: 'tiktok', captionCase: 'upper', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, progress: true, sfx: false, music: 'none',
-      textHook: pkg.textHook || '', ctaSticker: pkg.cta || 'Follow if your brain does this too 🧠', template: 'classic', humour: 2, stepLabel: 'STEP', anim, motion, handle: '@QuietBrain' };
+      textHook: pkg.textHook || '', ctaSticker: pkg.cta || 'Follow if your brain does this too 🧠', template: 'classic', humour: 2, stepLabel: 'STEP', anim, motion, handle: '' };
     Object.assign(look, lookx, { aspect, anim, motion, visual: lookx.visual || 'scenes' });
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
     const r = new R.Renderer(c); r.setup(Object.assign({}, look, { beats: pkg.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: null }));
@@ -42,7 +42,7 @@ function serve() {
     }
     return { total: P.total, w: cw, h: ch, used3d: !!r.used3d, fail3d: window.VTS.three3d.failed, fx: r.cx ? r.cx.fx.map((f) => f.type + (f.auto ? '*' : '') + '@' + f.start.toFixed(1)) : [], shots: (r.shots || []).map((s) => s.transition), pops: (r.pops || []).length, mixWav };
   }, pkg, ASPECT, ANIM, MOTION, MAXS ? Number(MAXS) : 0, LOOKX);
-  let AIN = AUDIO; let DELAY = true; if (info.mixWav) { AIN = OUT + '.mix.wav'; fs.writeFileSync(AIN, Buffer.from(info.mixWav, 'base64')); DELAY = false; } delete info.mixWav;
+  let AIN = AUDIO; let DELAY = !process.env.NO_DELAY; if (info.mixWav) { AIN = OUT + '.mix.wav'; fs.writeFileSync(AIN, Buffer.from(info.mixWav, 'base64')); DELAY = false; } delete info.mixWav;
   console.log('INFO', JSON.stringify(info));
   const N = Math.ceil(info.total * 30);
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', '-', '-i', AIN, '-af', DELAY ? 'adelay=300|300,apad' : 'apad', '-t', info.total.toFixed(3), '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-maxrate', '10M', '-bufsize', '20M', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', OUT], { stdio: ['pipe', 'inherit', 'inherit'] });

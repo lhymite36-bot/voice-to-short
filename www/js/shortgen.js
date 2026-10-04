@@ -316,6 +316,19 @@
 
   // A cut-off reply can have the whole script but beats for only part of it: keep the planned beats (speakers,
   // fx, jokes) and add plain beats for the uncovered rest of the script so captions + timing stay complete.
+  // Long caption beats are split at clause/word boundaries (<= 90 chars each); the first piece keeps fx/sticker/sfx.
+  function splitLongBeats(beats) {
+    const out = [];
+    beats.forEach((b) => {
+      const t = b.text; if (t.length <= 90) { out.push(b); return; }
+      const pieces = []; let cur = '';
+      const tokens = t.match(/\S+\s*/g) || [t];
+      tokens.forEach((w) => { const c = cur.trim(); if (c && ((c + ' ' + w.trim()).length > 90 || (c.length > 45 && /[,;:—–]$/.test(c)))) { pieces.push(c); cur = w; } else cur += w; });
+      if (cur.trim()) pieces.push(cur.trim());
+      pieces.forEach((pt, k) => { const nb = Object.assign({}, b, { text: pt, weight: Math.max(0.5, wordCount(pt)) }); if (k > 0) { delete nb.fx; delete nb.fxText; delete nb.sticker; delete nb.sfx; delete nb.punch; } out.push(nb); });
+    });
+    return out;
+  }
   function completeBeats(script, beats) {
     const all = words(script); const covered = wordCount(beats.map((b) => b.text).join(' '));
     if (all.length - covered < 4 || covered >= all.length * 0.97) return beats;
@@ -334,7 +347,7 @@
     while (hooks.length < 3) hooks.push(hooks[0]);
     hooks = hooks.slice(0, 3);
     let beats = (Array.isArray(obj.beats) ? obj.beats : []).map((b) => ({
-      text: toStr(b && b.text, 80),
+      text: toStr(b && b.text, 600), // v1.5.1: never cut a beat mid-word (80-char cut + completeBeats used to add a duplicate tail)
       weight: Math.max(0.5, Math.min(12, Number(b && b.weight) || wordCount(b && b.text) || 1)),
       step: Math.max(0, Math.min(4, Math.round(Number(b && b.step) || 0))),
       emphasis: toStr(b && b.emphasis, 30),
@@ -347,6 +360,7 @@
       sticker: toStr(b && b.sticker, 18),
       punch: !!(b && (b.punch === true || b.punch === 'true')),
     })).filter((b) => b.text);
+    beats = splitLongBeats(beats);
     beats.forEach((b) => { ['speaker', 'fx', 'fxText', 'sfx', 'sticker'].forEach((k) => { if (!b[k]) delete b[k]; }); if (!b.punch) delete b.punch; if (b.fx === 'none') delete b.fx; if (b.sfx === 'none') delete b.sfx; });
     if (beats.length < 3) beats = beatsFromScript(script, hooks[0], beats);
     else beats = completeBeats(script, beats);

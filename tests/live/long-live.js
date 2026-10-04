@@ -64,17 +64,69 @@ function serve() {
   const nb = await app(() => { let n = 0; window.VTS.app.project.pkg.beats.forEach((b) => { if (/\b(your|my|the|our) brain\b|\bbrain\b/i.test(b.text)) { b.speaker = 'brain'; n++; } }); return n + '/' + window.VTS.app.project.pkg.beats.length; });
   console.log(t(), 'brain beats', nb);
   await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="' + (process.env.ASPECT || '16:9') + '"]'); await sleep(300); await page.select('#opt-quality', process.env.QUALITY || '1080'); await sleep(300); if (process.env.ANIM === '3d' && !process.env.FORCE3D) { console.log('ANIM=3d: the box only has software WebGL (~3 fps real time), so long videos stay 2D here; set FORCE3D=1 to try anyway'); process.env.ANIM = '2d'; } await click('#anim-seg button[data-v="' + (process.env.ANIM || '2d') + '"]'); await sleep(200); if ((process.env.ANIM || '2d') === '2d') { await click('#motion-seg button[data-v="' + (process.env.MOTION || 'smooth') + '"]'); await sleep(200); } console.log('ANIM', process.env.ANIM || '2d', 'MOTION', process.env.MOTION || 'smooth');
+  // Box default: offline frame-exact render (avoids MediaRecorder WebM join bugs on long videos). Set RENDER_MODE=app for in-app recorder.
+  const OFFLINE = (process.env.RENDER_MODE || 'offline') === 'offline';
+  let v; let look; let file; let size;
+  if (OFFLINE) {
+    // Export voice WAV (PCM parts joined) then render via preview-offline.js -> MP4+AAC
+    const vb64 = await app(async () => {
+      const V = window.VTS.app; const voice = V.project.voice;
+      let blob = null;
+      if (voice && voice.blob) blob = voice.blob;
+      else if (voice && voice.parts && voice.parts.length) {
+        const pcm = voice.parts.every((x) => x.pcm && x.rate === voice.parts[0].rate);
+        if (pcm) {
+          const rate = voice.parts[0].rate; const ch = voice.parts[0].channels || 1;
+          const pieces = []; let total = 0;
+          for (const x of voice.parts) { const ab = await x.pcm.arrayBuffer(); pieces.push(new Uint8Array(ab)); total += ab.byteLength; }
+          const pcmBytes = new Uint8Array(total); let o = 0; for (const p of pieces) { pcmBytes.set(p, o); o += p.length; }
+          const dv = new DataView(new ArrayBuffer(44 + pcmBytes.length));
+          const ws = (off, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(off + i, t.charCodeAt(i)); };
+          ws(0, 'RIFF'); dv.setUint32(4, 36 + pcmBytes.length, true); ws(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, ch, true); dv.setUint32(24, rate, true); dv.setUint32(28, rate * ch * 2, true); dv.setUint16(32, ch * 2, true); dv.setUint16(34, 16, true); ws(36, 'data'); dv.setUint32(40, pcmBytes.length, true);
+          new Uint8Array(dv.buffer, 44).set(pcmBytes);
+          blob = new Blob([dv.buffer], { type: 'audio/wav' });
+        } else if (voice.parts.length === 1) blob = voice.parts[0].blob;
+        else blob = new Blob(voice.parts.map((x) => x.blob).filter(Boolean));
+      }
+      if (!blob) throw new Error('no voice blob to export');
+      return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+    });
+    const voiceFile = OUTF + '.voice.wav'; fs.writeFileSync(voiceFile, Buffer.from(vb64, 'base64'));
+    console.log(t(), 'VOICE_WAV', voiceFile, fs.statSync(voiceFile).size);
+    const fullLook = await app((aspect, anim, motion) => Object.assign({}, window.VTS.app.project.look, { textHook: window.VTS.app.project.pkg.textHook || '', ctaSticker: window.VTS.app.project.pkg.cta || '', aspect, anim, motion }), process.env.ASPECT || '16:9', process.env.ANIM || '2d', process.env.MOTION || 'smooth');
+    look = { cap: fullLook.captionStyle, intensity: fullLook.intensity, music: fullLook.music, sfx: fullLook.sfx, loop: fullLook.loop, progress: fullLook.progress };
+    file = OUTF + '.mp4'; const t0r = Date.now();
+    const aspect = process.env.ASPECT || '16:9';
+    const outp = execFileSync('node', [path.join(__dirname, 'preview-offline.js'), OUTF + '.pkg.json', voiceFile, file, aspect, process.env.ANIM || '2d', process.env.MOTION || 'smooth'], { env: Object.assign({}, process.env, { LOOK_JSON: JSON.stringify(fullLook) }), maxBuffer: 64 * 1024 * 1024 }).toString();
+    console.log(outp.trim().split('\n').map((l) => l.slice(0, 400)).join('\n'));
+    if (!/DONE/.test(outp)) throw new Error('offline render failed');
+    size = fs.statSync(file).size;
+    const [fw, fh] = aspect === '16:9' ? [1920, 1080] : aspect === '1:1' ? [1080, 1080] : [1080, 1920];
+    v = { w: fw, h: fh, type: 'video/mp4', ms: Date.now() - t0r, mode: 'offline-frame-exact', d: voice.d, anim: process.env.ANIM || '2d' };
+    console.log(t(), 'RENDER', JSON.stringify(v)); console.log('LOOK', JSON.stringify(look));
+  } else {
   const rhb = setInterval(async () => { try { console.log(t(), 'render', await page.$eval('#render-label', (e) => e.textContent.slice(0, 120))); } catch (_) {} }, 60000);
   await click('#render'); await page.waitForSelector('#render-progress:not(.hidden)');
   await page.waitForFunction(() => document.querySelector('#render-progress').classList.contains('hidden'), { timeout: 5400000, polling: 2000 }); clearInterval(rhb);
-  const v = await app(() => { const v = window.VTS.app.project.video; return v && { w: v.width, h: v.height, d: v.duration, type: v.type, ms: v.renderMs, fps: v.fps, drawMs: v.avgDrawMs, mix: v.audioMix, cues: v.cues, cuts: v.cuts, status: document.querySelector('#render-status').textContent.slice(0, 160) }; });
+  v = await app(() => { const v = window.VTS.app.project.video; return v && { w: v.width, h: v.height, d: v.duration, type: v.type, ms: v.renderMs, fps: v.fps, drawMs: v.avgDrawMs, mix: v.audioMix, cues: v.cues, cuts: v.cuts, status: document.querySelector('#render-status').textContent.slice(0, 160) }; });
   console.log(t(), 'RENDER', JSON.stringify(v));
-  const look = await app(() => { const l = window.VTS.app.project.look; return { cap: l.captionStyle, intensity: l.intensity, music: l.music, sfx: l.sfx, loop: l.loop, progress: l.progress }; }); console.log('LOOK', JSON.stringify(look));
-  const parts = await app(() => { const v = window.VTS.app.project.video; return v && v.parts ? v.parts.map((x) => x.name) : null; });
+  look = await app(() => { const l = window.VTS.app.project.look; return { cap: l.captionStyle, intensity: l.intensity, music: l.music, sfx: l.sfx, loop: l.loop, progress: l.progress }; }); console.log('LOOK', JSON.stringify(look));
+  const parts = await app(() => { const v = window.VTS.app.project.video; return v && v.parts ? v.parts.map((x) => (typeof x === 'string' ? x : x.name)) : null; });
   if (parts) {
     console.log(t(), 'PARTS', parts.length, 'exporting for ffmpeg join');
+    const listed = await app(async () => {
+      const kind = (window.VTS.app.project.video.stored && window.VTS.app.project.video.stored.store) || 'opfs';
+      const st = await window.VTS.segments.openStore(kind);
+      const out = {};
+      for (const nm of arguments[0]) {
+        try { const rd = await st.reader(nm); out[nm] = rd.size; window['__vf_' + nm] = rd.file; } catch (e) { out[nm] = 'ERR:' + (e && e.message); }
+      }
+      return out;
+    }, parts);
+    console.log(t(), 'PART_SIZES', JSON.stringify(listed));
     for (let k = 0; k < parts.length; k++) {
-      const psize = await app(async (nm) => { const v = window.VTS.app.project.video; window.__vf = await window.VTS.segments.openStore(v.stored.store).then((st) => st.reader(nm)).then((rd) => rd.file); return window.__vf.size; }, parts[k]);
+      const nm = parts[k];
+      const psize = await app(async (nm) => { const f = window['__vf_' + nm]; if (!f) return 0; window.__vf = f; return f.size; }, nm);
       const pf = OUTF + '.part' + String(k + 1).padStart(2, '0') + '.webm'; const fdp = fs.openSync(pf, 'w');
       for (let off = 0; off < psize; off += 8388608) { const b64 = await app(async (o, n) => { const b = window.__vf.slice(o, o + n); return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); }); }, off, Math.min(8388608, psize - off)); fs.writeSync(fdp, Buffer.from(b64, 'base64')); }
       fs.closeSync(fdp); console.log(t(), 'part', pf, psize);
@@ -82,11 +134,12 @@ function serve() {
     fs.writeFileSync(OUTF + '.json', JSON.stringify({ pkg, voice, video: v, parts, api, errors }, null, 1));
     await browser.close(); srv.close(); process.exit(0);
   }
-  const ext = /mp4/.test(v.type) ? '.mp4' : '.webm'; const file = OUTF + ext;
-  const size = await app(async () => { const v = window.VTS.app.project.video; window.__vf = v.blob || await window.VTS.segments.openStore(v.stored.store).then((st) => st.reader(v.stored.name)).then((rd) => rd.file); return window.__vf.size; });
+  const ext = /mp4/.test(v.type) ? '.mp4' : '.webm'; file = OUTF + ext;
+  size = await app(async () => { const v = window.VTS.app.project.video; window.__vf = v.blob || await window.VTS.segments.openStore(v.stored.store).then((st) => st.reader(v.stored.name)).then((rd) => rd.file); return window.__vf.size; });
   const fd = fs.openSync(file, 'w'); const CH = 8 * 1024 * 1024;
   for (let off = 0; off < size; off += CH) { const b64 = await app(async (o, n) => { const b = window.__vf.slice(o, o + n); return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); }); }, off, Math.min(CH, size - off)); fs.writeSync(fd, Buffer.from(b64, 'base64')); }
   fs.closeSync(fd);
+  }
   const pr = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,duration:format=duration', '-of', 'json', file]).toString());
   console.log(t(), 'FILE', file, size, JSON.stringify(pr));
   console.log('API', JSON.stringify(api)); console.log('ERRORS', JSON.stringify(errors));
