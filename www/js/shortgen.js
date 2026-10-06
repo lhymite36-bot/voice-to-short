@@ -66,7 +66,7 @@
       description: 'The animated 2D cartoon scene shown while this caption is spoken, chosen ONLY from the allowed values.',
       properties: {
         setting: { type: T.STRING, enum: s.SET_IDS },
-        pose: { type: T.STRING, enum: s.POSE_IDS, description: 'Action that literally shows the main keyword.' },
+        pose: { type: T.STRING, description: 'Action id from the allowed list in the prompt that literally shows the main keyword.' },
         emotion: { type: T.STRING, enum: s.EMO_IDS, description: 'Exaggerated cartoon expression of the speaker.' },
         props: { type: T.ARRAY, description: '0-3 prop ids from the list in the prompt.', items: { type: T.STRING } },
         camera: { type: T.STRING, enum: s.CAM_IDS },
@@ -74,7 +74,8 @@
         keywords: { type: T.ARRAY, description: '1-3 literal drawable keywords said in this beat.', items: { type: T.STRING } },
         objects: { type: T.ARRAY, description: '0-3 visible objects (nouns).', items: { type: T.STRING } },
         icon: { type: T.STRING, description: 'One emoji for the main keyword.' },
-        characters: { type: T.INTEGER, description: '1, or 2 for a conversation.' },
+        characters: { type: T.INTEGER, description: '1; 2 for a conversation or two people (waving, walking-toward, high-five); 3 = also someone standing behind the main character.' },
+        weather: { type: T.STRING, enum: (s.WEATHER_IDS || ['none']).slice(), description: 'Outdoor weather overlay; omit to auto-match the mood.' },
       },
       required: ['setting', 'pose', 'emotion', 'props', 'camera'],
     };
@@ -85,10 +86,12 @@
     'Keep the SAME setting for consecutive beats of one idea (change setting every 2-4 beats, never every beat). Vary pose/emotion/props within a setting to follow the words.',
     'KEYWORDS FIRST: for every beat list the literal keywords actually spoken, then choose the action (pose), props and setting so the MAIN keyword is clearly visible on screen. Prefer literal over metaphorical (a line about sketching shows the character drawing in a sketchbook with a pencil, not a lightbulb). If no action or prop can show it, use setting "keyword-card" with an icon emoji of the keyword.',
     'The problem/hook uses tense emotions; the steps move toward calm/happy; the CTA is talking or celebrating with heart or speech-bubbles. Use camera "zoom-in" for dramatic lines, "shake" for stress, "pan" for walking, otherwise "static". Max 3 props.',
+    SC() ? 'Allowed pose ids (use only these exact ids in "pose"): ' + SC().POSE_IDS.join(', ') + '.' : '',
+    'Multi-character poses: waving (one arm; characters 2 = both wave; characters 3 adds a person standing behind the main character, e.g. "you waved back at someone who was waving at the person behind you"), walking-toward (two people approach from far apart, e.g. hallway; add prop phone if the main character pretends to scroll), high-five. driving uses setting car-interior (add prop car-radio for turning the music down). Weather (optional): rain, storm, sun, snow, fog, wind, overcast, sunset, stars, or none; it is drawn over outdoor places and auto-matched to the mood when omitted.',
     SC() ? 'Allowed prop ids (use only these exact ids in "props"; anything else goes in "objects"/"keywords"): ' + SC().PROP_IDS.join(', ') + '.' : '',
   ].filter(Boolean).join('\n');
   const SPEAKERS = ['narrator', 'me', 'brain', 'friend', 'boss', 'crush', 'mom', 'therapist', 'cat'];
-  const FX_IDS = ['none', 'zoom-punch', 'freeze', 'spotlight', 'impact', 'split', 'before-after', 'chat', 'notification', 'loading', 'xp', 'checklist', 'rating', 'argument', 'myth-fact', 'countdown'];
+  const FX_IDS = ['none', 'zoom-punch', 'freeze', 'spotlight', 'impact', 'split', 'before-after', 'chat', 'notification', 'loading', 'xp', 'checklist', 'rating', 'argument', 'myth-fact', 'countdown', 'typing-delete'];
   const SFX_IDS = ['none', 'whoosh', 'pop', 'ding', 'boom', 'scratch', 'boing', 'bruh', 'trombone', 'laugh', 'typing', 'notif', 'heartbeat', 'tick', 'cash', 'levelup', 'wrong', 'tada', 'riser'];
   const SCHEMA = {
     type: T.OBJECT,
@@ -167,7 +170,7 @@
       HUMOUR_PROMPT[humourOf(opts)],
       'Length: the script is ' + L.words[0] + '-' + L.words[1] + ' words (about ' + L.sec + ' seconds spoken, never more). Beats: ' + bt[0] + '-' + bt[1] + ' beats; each beat is one sentence or clause of 3-12 words with ONE speaker, text copied verbatim from the script, in order, covering all of it; weight = spoken words.',
       'Per beat: speaker (narrator | me = the viewer as a cartoon | brain = their Brain as a cute pink character | friend | boss | crush | mom | therapist | cat). scene.emotion is an exaggerated cartoon expression of the speaker (eye-roll, side-eye, shocked, crying-laughing, smug, dead-inside, panicking, blushing, rage, facepalm, or the basic ones). punch = true on punchlines. sticker = optional 1-3 word reaction (BRUH, WAIT WHAT, NOT AGAIN, SIR??, IT ME, or one emoji like 💀 😭) on at most 3 beats. sfx: boom on dramatic reveals, scratch before a "wait", bruh on facepalms, ding on tips, typing/notif on phone moments, cash for money, heartbeat for anxiety, tick for time pressure, trombone for fails, else none.',
-      'fx overlays (at most 1 in 3 beats, never two in a row) with fxText: zoom-punch (optional short caption), freeze (caption like "Yep. That\'s me."), spotlight (short label), impact (1-2 word POW text), split ("Expectation|Reality"), before-after ("Before|After"), chat (2-4 texts "Name: message|me: message"), notification ("App: message"), loading ("Loading motivation…"), xp ("+50 XP · Self-respect"), checklist ("item|item|item"), rating ("Habit|score/10"), argument ("Me: line|Brain: line"), myth-fact ("MYTH" or "FACT"), countdown ("5 second rule").',
+      'fx overlays (at most 1 in 3 beats, never two in a row) with fxText: zoom-punch (optional short caption), freeze (caption like "Yep. That\'s me."), spotlight (short label), impact (1-2 word POW text), split ("Expectation|Reality"), before-after ("Before|After"), chat (2-4 texts "Name: message|me: message"), notification ("App: message"), loading ("Loading motivation…"), xp ("+50 XP · Self-respect"), checklist ("item|item|item"), rating ("Habit|score/10"), argument ("Me: line|Brain: line"), myth-fact ("MYTH" or "FACT"), countdown ("5 second rule"), typing-delete (a long text typed then deleted and replaced: "Bestie: you up?|me: long paragraph you never send|lol").',
       'textHook: 3-7 words of on-screen text for the very first frame that makes people stay (different wording from the spoken hook; e.g. "POV: it\'s 3 a.m. again" or "your brain at 3am:").',
       'Platform text: YouTube title + description + 3-6 hashtags including #Shorts; TikTok tiktokCaption (short, conversational, ends with a question) + 3-5 tiktokHashtags (one broad like #psychology plus niche ones); cta for the on-screen sticker (e.g. "Follow if your brain does this too 🧠"); pinnedComment; thumbnailText.',
       'Language for every field: ' + (opts.language || 'English') + '.',

@@ -565,16 +565,19 @@
         + '<label>Callout<input data-f="callout" type="text" maxlength="28" placeholder="e.g. 2:07 AM (optional)"></label>'
         + '<label>Keywords<input class="sc-kw" type="text" maxlength="80" placeholder="words the scene must show, comma separated"></label>'
         + '<p class="small sc-match"></p>'
-        + '<label class="sc-two"><input type="checkbox" data-f="count"> Two characters (conversation)</label>'
+        + '<label>Weather<select data-f="weather"></select></label>'
+        + '<label class="sc-two"><input type="checkbox" data-f="count"> Two characters (conversation / waving / walking toward)</label>'
+        + '<label class="sc-two"><input type="checkbox" data-f="behind"> Someone standing behind</label>'
         + '<div class="sc-actions"><button type="button" class="chip sc-regen">↻ Regenerate scene</button><button type="button" class="chip sc-same"' + (i ? '' : ' disabled') + '>Same as previous</button></div></div>';
       const fill = (sel, list, none) => { if (none) sel.add(new Option('— none —', '')); list.forEach(([id, l]) => sel.add(new Option(l, id))); };
       fill(box.querySelector('[data-f=setting]'), SC.SETTINGS); fill(box.querySelector('[data-f=pose]'), SC.POSES);
       fill(box.querySelector('[data-f=emotion]'), SC.EMOTIONS); fill(box.querySelector('[data-f=camera]'), SC.CAMERAS);
+      fill(box.querySelector('[data-f=weather]'), SC.WEATHER || [['', 'Auto']]);
       box.querySelectorAll('[data-p]').forEach((sel) => fill(sel, SC.PROPS, true));
       const cv = box.querySelector('.sc-prev');
       const paint = () => {
         const sc = b.scene;
-        box.querySelectorAll('[data-f]').forEach((el) => { const f = el.dataset.f; if (f === 'count') el.checked = sc.count === 2; else el.value = sc[f] || ''; });
+        box.querySelectorAll('[data-f]').forEach((el) => { const f = el.dataset.f; if (f === 'count') el.checked = sc.count === 2; else if (f === 'behind') el.checked = !!sc.behind; else if (f === 'weather') el.value = sc.weatherAuto === false ? (sc.weather || '') : ''; else el.value = sc[f] || ''; });
         box.querySelectorAll('[data-p]').forEach((el) => { el.value = sc.props[Number(el.dataset.p)] || ''; });
         box.querySelector('.sc-kw').value = (sc.keywords || []).join(', ');
         const m = SC.matchScore ? SC.matchScore(b.text, sc) : null; const mEl = box.querySelector('.sc-match');
@@ -586,7 +589,7 @@
       };
       const changed = (ev) => {
         const raw = Object.assign({}, b.scene); const f = ev && ev.target && ev.target.dataset.f;
-        box.querySelectorAll('[data-f]').forEach((el) => { const f = el.dataset.f; if (f === 'count') raw.count = el.checked ? 2 : 1; else raw[f] = el.value; });
+        box.querySelectorAll('[data-f]').forEach((el) => { const f = el.dataset.f; if (f === 'count') raw.count = el.checked ? 2 : 1; else if (f === 'behind') raw.behind = el.checked; else if (f === 'weather') { raw.weather = el.value; raw.weatherAuto = !el.value; } else raw[f] = el.value; });
         raw.props = Array.from(box.querySelectorAll('[data-p]')).map((el) => el.value).filter(Boolean);
         b.scene = SC.normalizeScene(raw, b.text, b.step, i > 0 ? P.pkg.beats[i - 1].scene : null, f === 'setting' ? 'setting' : 'pose');
         b.scene.edited = true;

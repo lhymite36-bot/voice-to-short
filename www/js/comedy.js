@@ -22,11 +22,11 @@
   // ======================= vocabulary (kept small for the Gemini schema) =======================
   const SPEAKERS = ['narrator', 'me', 'brain', 'friend', 'boss', 'crush', 'mom', 'therapist', 'cat'];
   const SPEAKER_LABELS = { narrator: 'Narrator', me: 'You', brain: 'Your Brain', friend: 'Friend', boss: 'Boss', crush: 'Crush', mom: 'Mom', therapist: 'Therapist', cat: 'Cat' };
-  const FX = ['none', 'zoom-punch', 'freeze', 'spotlight', 'impact', 'split', 'before-after', 'chat', 'notification', 'loading', 'xp', 'checklist', 'rating', 'argument', 'myth-fact', 'countdown'];
+  const FX = ['none', 'zoom-punch', 'freeze', 'spotlight', 'impact', 'split', 'before-after', 'chat', 'notification', 'loading', 'xp', 'checklist', 'rating', 'argument', 'myth-fact', 'countdown', 'typing-delete'];
   const FX_LABELS = { none: 'None', 'zoom-punch': 'Zoom punch on face', freeze: 'Record-scratch freeze "yep, that\'s me"', spotlight: 'Dramatic spotlight', impact: 'Impact frame', split: 'Split screen: expectation vs reality',
     'before-after': 'Before / after', chat: 'Text-message chat', notification: 'Notification pop-up', loading: '"Loading…" brain bar', xp: 'XP / level-up bar', checklist: 'Checklist ticks', rating: 'Star rating',
-    argument: 'Thought-bubble argument', 'myth-fact': 'Myth / fact stamp', countdown: 'Countdown timer' };
-  const SFX_FOR_FX = { 'zoom-punch': 'boom', freeze: 'scratch', spotlight: 'riser', impact: 'boom', split: 'whoosh', 'before-after': 'whoosh', chat: 'typing', notification: 'notif', loading: 'tick', xp: 'levelup', checklist: 'ding', rating: 'pop', argument: 'pop', 'myth-fact': 'wrong', countdown: 'tick' };
+    argument: 'Thought-bubble argument', 'myth-fact': 'Myth / fact stamp', countdown: 'Countdown timer', 'typing-delete': 'Type a paragraph, delete it, send "lol"' };
+  const SFX_FOR_FX = { 'zoom-punch': 'boom', freeze: 'scratch', spotlight: 'riser', impact: 'boom', split: 'whoosh', 'before-after': 'whoosh', chat: 'typing', notification: 'notif', loading: 'tick', xp: 'levelup', checklist: 'ding', rating: 'pop', argument: 'pop', 'myth-fact': 'wrong', countdown: 'tick', 'typing-delete': 'typing' };
   const STICKERS = ['BRUH', 'WAIT WHAT', 'NOT AGAIN', '💀', 'SIR??', 'NAH', 'HELLO??', 'BE SO FR', '😭', 'IT ME', 'RED FLAG', 'OOF', 'UNWELL', 'DELULU', 'LMAO', 'THE AUDACITY', '🤡', '😳', '🫠', '✨ HEALING ✨'];
   const INTENSITY = { chill: { gap: 4.2, label: 'Chill' }, punchy: { gap: 2.6, label: 'Punchy' }, chaotic: { gap: 1.7, label: 'Chaotic' } };
   const CAPTION_STYLES = [['tiktok', 'TikTok bold'], ['beast', 'Big & loud'], ['clean', 'Clean'], ['pop', 'Pop (classic)'], ['karaoke', 'Karaoke']];
@@ -187,7 +187,8 @@
     if (!sc || (!sc.cast1 && !sc.cast2) || o.castDone) { const A0 = baseCharacter.call(this, ctx, x, groundY, scale, pose, emotion, t, o); this._heads.push(A0.head); return A0; }
     const second = o.variant === 1; const who = second ? (sc.cast2 || 'friend') : (sc.cast1 || 'me');
     let em = emotion; let ps = pose;
-    if (sc.count === 2 && sc.speaker && sc.speaker !== 'narrator' && pose !== 'hugging') {
+    const free2 = sc.pose === 'hugging' || (S.ACTIONS && S.ACTIONS[sc.pose] && S.ACTIONS[sc.pose].free2); // v1.6: waving / walking toward / high-five keep their own poses
+    if (sc.count === 2 && sc.speaker && sc.speaker !== 'narrator' && pose !== 'hugging' && !free2) {
       const speaking = who === sc.speaker; if (pose !== 'arguing') ps = speaking ? 'talking' : 'idle';
       if (!speaking) em = sc.emotion2 || REACT[emotion] || 'side-eye';
     }
@@ -266,7 +267,7 @@
   const AUTO_STICKER = { panicking: 'NOT AGAIN', shocked: 'WAIT WHAT', 'dead-inside': '💀', smug: '😏', 'eye-roll': 'BRUH', 'side-eye': '🤨', 'crying-laughing': '😭', facepalm: 'BRUH', rage: 'THE AUDACITY', blushing: '😳', anxious: 'HELLO??', surprised: 'WAIT WHAT', tired: '🫠', sad: '😭', angry: 'SIR??' };
   const STICKER_SFX = (txt) => { const s = String(txt || '').toUpperCase(); if (/BRUH|NAH|OOF/.test(s)) return 'bruh'; if (/💀|AUDACITY|UNWELL/.test(s)) return 'boom'; if (/WAIT|HELLO|SIR/.test(s)) return 'scratch'; if (/🤡|DELULU|LMAO|😭/.test(s)) return 'boing'; return 'pop'; };
   function normSpeaker(v) { const k = String(v || '').toLowerCase().replace(/[^a-z]/g, ''); if (!k) return ''; if (SPEAKERS.includes(k)) return k; if (/^(you|i|myself|self|user)$/.test(k)) return 'me'; if (/brain|mind/.test(k)) return 'brain'; if (/mum|mother|parent|dad/.test(k)) return 'mom'; if (/bestie|bff|friend/.test(k)) return 'friend'; if (/manager|boss|teacher/.test(k)) return 'boss'; if (/crush|date|partner|ex/.test(k)) return 'crush'; if (/therap|doctor|counsel/.test(k)) return 'therapist'; if (/cat|kitty|pet/.test(k)) return 'cat'; return 'narrator'; }
-  function normFx(v) { const k = String(v || '').toLowerCase().replace(/[^a-z-]/g, ''); if (FX.includes(k)) return k; const syn = { zoom: 'zoom-punch', punch: 'zoom-punch', 'freeze-frame': 'freeze', scratch: 'freeze', text: 'chat', texts: 'chat', phone: 'chat', message: 'chat', notif: 'notification', expectation: 'split', 'expectation-reality': 'split', splitscreen: 'split', xpbar: 'xp', levelup: 'xp', 'level-up': 'xp', list: 'checklist', stars: 'rating', myth: 'myth-fact', fact: 'myth-fact', timer: 'countdown', beforeafter: 'before-after', thought: 'argument' }; return syn[k] || 'none'; }
+  function normFx(v) { const k = String(v || '').toLowerCase().replace(/[^a-z-]/g, ''); if (FX.includes(k)) return k; const syn = { zoom: 'zoom-punch', punch: 'zoom-punch', 'freeze-frame': 'freeze', scratch: 'freeze', text: 'chat', texts: 'chat', phone: 'chat', message: 'chat', notif: 'notification', expectation: 'split', 'expectation-reality': 'split', splitscreen: 'split', xpbar: 'xp', levelup: 'xp', 'level-up': 'xp', list: 'checklist', stars: 'rating', myth: 'myth-fact', fact: 'myth-fact', timer: 'countdown', beforeafter: 'before-after', thought: 'argument', typing: 'typing-delete', backspace: 'typing-delete', delete: 'typing-delete', 'typed-deleted': 'typing-delete', lol: 'typing-delete' }; return syn[k] || 'none'; }
   function setupCast(r, tl) {
     const fmt = r.o.template || ''; const anyBrain = tl.some((b) => normSpeaker(b.speaker) === 'brain');
     tl.forEach((b, i) => {
@@ -277,7 +278,9 @@
         else { sc.cast1 = 'brain'; }
       } else if (['friend', 'boss', 'crush', 'mom', 'therapist', 'cat'].includes(sp)) { sc.count = 2; sc.cast1 = 'me'; sc.cast2 = sp; }
       if ((sc.cast1 === 'brain' || sc.cast2 === 'brain') && Array.isArray(sc.props)) sc.props = sc.props.filter((p) => p !== 'brain'); // the Brain is already on stage
-      if (sc.count === 2 && !['hugging', 'arguing', 'talking'].includes(sc.pose)) sc.pose = 'talking';
+      if (sc.setting === 'car-interior') { sc.count = 1; sc.cast2 = ''; } // v1.6: the driver is alone in the car shot
+      const free2 = S.ACTIONS && S.ACTIONS[sc.pose] && S.ACTIONS[sc.pose].multi;
+      if (sc.count === 2 && !['hugging', 'arguing', 'talking'].includes(sc.pose) && !free2) sc.pose = 'talking';
       if (sc.count === 2) { // two characters need a setting with floor space
         if (['bedroom-night', 'phone-screen', 'keyword-card'].includes(sc.setting)) sc.setting = sc.setting === 'bedroom-night' ? 'bedroom-day' : 'living-room';
       }
@@ -313,7 +316,9 @@
       const shotStart = r.shots && i > 0 && tl[i - 1].shot !== b.shot;
       if (shotStart) last = b.start;
       // the AI's effect for this beat
-      if (b.fxType !== 'none') { cx.fx.push({ type: b.fxType, start: b.start, end: Math.max(b.end, b.start + (b.fxType === 'freeze' ? 1.4 : 1.2)), beat: i, text: b.fxText || '' }); last = b.start; if (!b.sfx || b.sfx === 'none') cue(b.start + 0.02, b.fxType === 'myth-fact' && /fact|true/i.test(b.fxText || '') ? 'ding' : SFX_FOR_FX[b.fxType], 1, 0, 3); }
+      if (b.fxType === 'none' && humour > 0 && /\btyp(ed|ing|e)\b[\s\S]*\b(delet|backspac|eras)\w*/i.test(b.text || '') && !cx.fx.some((f) => f.type === 'typing-delete')) b.fxType = 'typing-delete'; // v1.6
+      if (b.fxType === 'typing-delete') { const st0 = b.start; const en = Math.max(b.end + 0.6, st0 + 3.6); cx.fx.push({ type: 'typing-delete', start: st0, end: en, beat: i, text: b.fxText || '' }); last = st0; const d = en - st0; cue(st0 + 0.1, 'typing', 1, 0, 3); cue(st0 + d * 0.45, 'whoosh', 0.5, 0, 3); cue(st0 + d * 0.6, 'typing', 0.8, 0, 3); cue(st0 + d * 0.78, 'pop', 0.9, 0, 3); }
+      else if (b.fxType !== 'none') { cx.fx.push({ type: b.fxType, start: b.start, end: Math.max(b.end, b.start + (b.fxType === 'freeze' ? 1.4 : 1.2)), beat: i, text: b.fxText || '' }); last = b.start; if (!b.sfx || b.sfx === 'none') cue(b.start + 0.02, b.fxType === 'myth-fact' && /fact|true/i.test(b.fxText || '') ? 'ding' : SFX_FOR_FX[b.fxType], 1, 0, 3); }
       if (b.sfx && b.sfx !== 'none') cue(b.start + 0.04, b.sfx, 1, 0, 4);
       // pattern interrupts every ~gap seconds
       if (inten && i > 0 && !shotStart && b.start - last >= gap * 0.8) { const k = b.punch ? 'punch' : kinds[zi++ % kinds.length]; cx.cuts.push({ t: b.start, type: k }); last = b.start; if (k === 'whip') cue(b.start - 0.1, 'whoosh', 0.6, 0, 1); if (k === 'punch') cue(b.start, 'boom', 0.7, 0, 2); }
@@ -452,6 +457,33 @@
           rows.forEach(([[who, msg], at]) => { const me = /^(me|you|i)$/i.test(who || ''); const ls = wrap(ctx, msg, 440); const bh = 26 + ls.length * 44; const bw = Math.min(480, Math.max.apply(null, ls.map((s) => ctx.measureText(s).width)) + 44); const k = easeOutBack((p - at) / 0.22); const bx = me ? x0 + w - 40 - bw : x0 + 40;
             ctx.save(); ctx.translate(bx + (me ? bw : 0), y); ctx.scale(k, k); ctx.translate(-(me ? bw : 0), 0); rr(ctx, 0, 0, bw, bh, 28); ctx.fillStyle = me ? '#2f7cf6' : '#e3e5ec'; ctx.fill(); ctx.fillStyle = me ? '#ffffff' : '#1d1b2a'; ctx.textAlign = 'left'; ls.forEach((s, j) => ctx.fillText(s, 22, 36 + j * 44)); ctx.restore(); y += bh + 18; });
           if (typingNext) { rr(ctx, x0 + 40, y, 120, 64, 30); ctx.fillStyle = '#e3e5ec'; ctx.fill(); for (let q = 0; q < 3; q++) { ctx.beginPath(); ctx.arc(x0 + 70 + q * 30, y + 32 + Math.sin(t * 12 + q) * 5, 8, 0, TAU); ctx.fillStyle = '#8a8f9e'; ctx.fill(); } }
+          ctx.restore(); break; }
+        case 'typing-delete': { // v1.6: a long message types out, gets backspaced away, then "lol" is sent
+          const parts = parseLines(txt); let them = ''; let long = ''; let short = 'lol';
+          parts.forEach((ln) => { const [w, m] = speakerOf(ln); if (w && !/^(me|you|i)$/i.test(w) && !them) them = w + ': ' + m; });
+          const mine = parts.map((ln) => speakerOf(ln)).filter(([w]) => !w || /^(me|you|i)$/i.test(w)).map(([, m]) => m);
+          if (mine.length >= 2) { long = mine[0]; short = mine[mine.length - 1]; } else if (mine.length === 1 && mine[0].length > 12) long = mine[0];
+          if (!long) long = 'Okay so honestly I have been thinking about what you said and I just want to explain how I really feel about it because';
+          const [tw, tm] = them ? speakerOf(them) : ['Bestie', 'did you see my message??'];
+          const ph = p / dur; const T1 = 0.45; const T2 = 0.6; const T3 = 0.76;
+          let typed = ''; let deleting = false;
+          if (ph < T1) typed = long.slice(0, Math.floor(long.length * clamp01(ph / (T1 - 0.03))));
+          else if (ph < T2) { deleting = true; typed = long.slice(0, Math.floor(long.length * (1 - clamp01((ph - T1) / (T2 - T1 - 0.02))))); }
+          else if (ph < T3) typed = short.slice(0, Math.ceil(short.length * clamp01((ph - T2) / (T3 - T2 - 0.04))));
+          const sent = ph >= T3 + 0.02;
+          const slide = easeOut(p / 0.35) * out; const y0 = 640 + (1 - slide) * 900; const x0 = 150; const w = 780; const h = 760;
+          ctx.save(); ctx.globalAlpha = Math.min(1, slide * 1.5); card(ctx, x0, y0, w, h, '#101218'); rr(ctx, x0 + 16, y0 + 16, w - 32, h - 32, 26); ctx.fillStyle = '#f4f5fa'; ctx.fill();
+          ctx.fillStyle = '#e6e8f0'; ctx.fillRect(x0 + 16, y0 + 16, w - 32, 96); ctx.beginPath(); ctx.arc(x0 + 80, y0 + 64, 30, 0, TAU); ctx.fillStyle = '#ffb020'; ctx.fill(); ctx.font = '800 38px ' + FONT; ctx.textAlign = 'left'; ctx.fillStyle = '#1d1b2a'; ctx.fillText(String(tw || 'Bestie').replace(/^./, (m) => m.toUpperCase()), x0 + 128, y0 + 66, 480);
+          ctx.font = '600 40px ' + FONT; let y = y0 + 140; const b1 = wrap(ctx, tm || '', 460); const bh1 = 26 + b1.length * 44; const bw1 = Math.min(500, Math.max.apply(null, b1.map((q) => ctx.measureText(q).width)) + 44);
+          rr(ctx, x0 + 40, y, bw1, bh1, 28); ctx.fillStyle = '#e3e5ec'; ctx.fill(); ctx.fillStyle = '#1d1b2a'; b1.forEach((q, j) => ctx.fillText(q, x0 + 62, y + 36 + j * 44)); y += bh1 + 18;
+          if (sent) { const k = easeOutBack((ph - T3 - 0.02) / 0.08); ctx.save(); const bw = Math.max(120, ctx.measureText(short).width + 50); ctx.translate(x0 + w - 40, y); ctx.scale(k, k); rr(ctx, -bw, 0, bw, 70, 30); ctx.fillStyle = '#2f7cf6'; ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.fillText(short, -bw + 24, 36); ctx.restore();
+            if (ph > T3 + 0.1) { ctx.font = '600 26px ' + FONT; ctx.textAlign = 'right'; ctx.fillStyle = '#8a8f9e'; ctx.fillText('Delivered', x0 + w - 44, y + 100); ctx.textAlign = 'left'; } }
+          // compose box
+          const by = y0 + h - 250; rr(ctx, x0 + 34, by, w - 68, 210, 30); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = deleting ? '#ff5c6c' : '#c9cdd8'; ctx.stroke();
+          ctx.font = '600 36px ' + FONT; ctx.fillStyle = '#1d1b2a'; const ls = wrap(ctx, typed || ' ', w - 200); const show = ls.slice(-4); show.forEach((q, j) => ctx.fillText(q, x0 + 60, by + 46 + j * 42, w - 180));
+          if (Math.floor(t * 2.4) % 2 === 0 && !sent) { const lastL = show[show.length - 1] || ''; const cxp = x0 + 60 + Math.min(w - 180, ctx.measureText(lastL.trim() ? lastL : '').width) + 4; ctx.fillStyle = '#2f7cf6'; ctx.fillRect(cxp, by + 22 + (show.length - 1) * 42, 4, 38); }
+          ctx.beginPath(); ctx.arc(x0 + w - 80, by + 160, 30, 0, TAU); ctx.fillStyle = typed && !deleting ? '#2f7cf6' : '#c9cdd8'; ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(x0 + w - 92, by + 146); ctx.lineTo(x0 + w - 64, by + 160); ctx.lineTo(x0 + w - 92, by + 174); ctx.closePath(); ctx.fill();
+          if (deleting) { const k = 0.9 + 0.1 * Math.sin(t * 30); ctx.save(); ctx.translate(x0 + w - 190, by - 60); ctx.scale(k, k); rr(ctx, -80, -34, 160, 68, 16); ctx.fillStyle = '#ff5c6c'; ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.font = '900 30px ' + FONT; ctx.textAlign = 'center'; ctx.fillText('⌫ DELETE', 0, 2); ctx.restore(); ctx.textAlign = 'left'; }
           ctx.restore(); break; }
         case 'notification': {
           const [app, body] = speakerOf(txt || 'Screen Time: Your daily average was 9h 42m 📈'); const k = p < 0.4 ? easeOutBack(p / 0.4) : 1; const y = 240 - (1 - k) * 260 - (1 - out) * 300;

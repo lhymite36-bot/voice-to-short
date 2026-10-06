@@ -234,7 +234,8 @@
 wave,waving,waved,wave back,waved back|a=waving|p=wave-hand|w=3.2
 steps away,walking toward,walk toward,coming toward,someone you know,bump into,run into|a=walking-toward|s=hallway|w=3.3
 hallway,corridor,hall,locker,lockers|s=hallway|w=2.8
-drive,driving,drove,driver,steering,steering wheel,windshield,dashboard,car music,car radio|a=driving|s=car-interior|w=3.1
+car music,car radio,music down,turn the music down,turned the music down|a=driving|p=car-radio|s=car-interior|w=3.3
+drive,driving,drove,driver,steering,steering wheel,windshield,dashboard|a=driving|s=car-interior|w=3.1
 radio,volume,turn down,turned down,turn the music down|p=car-radio|s=car-interior|w=2.9
 car|a=driving|p=car|s=car-interior|w=2.6
 typed,deleted,backspace,delete,paragraph|a=texting|p=speech-bubbles|w=2.7
@@ -523,6 +524,7 @@ alarm|p=alarm|w=3
         } else if (prev && !hasRaw) { sc = Object.assign({}, prev, { callout: sc.callout, keywords: [], camera: sc.camera, cont: true }); }
       }
     }
+    { const sHit = an.hits.find((h) => h.e.s && !h.e.a && h !== main); if (sHit && !hasRaw && A[sc.pose] && A[sc.pose].ok.includes(sHit.e.s)) sc.setting = sHit.e.s; } // v1.6: "tripped in the hallway" keeps the hallway
     if (!r.emotion && A[sc.pose] && A[sc.pose].emo) sc.emotion = A[sc.pose].emo;
     fixup(sc); weather16(sc, text, prev);
     return sc;
@@ -533,6 +535,8 @@ alarm|p=alarm|w=3
     if (a && a.base === 'two') sc.count = 2; else if (sc.count === 2 && sc.pose !== 'talking' && !(a && a.multi)) sc.count = 1;
     sc.behind = !!sc.behind && sc.setting !== 'phone-screen' && sc.setting !== 'keyword-card' && sc.setting !== 'car-interior' && !(a && a.base === 'sit');
     if (sc.setting === 'car-interior' && sc.count === 2) sc.count = 1;
+    if (sc.pose === 'driving' && sc.setting !== 'car-interior') sc.setting = 'car-interior';
+    if (sc.setting === 'car-interior' && sc.pose !== 'driving') sc.pose = 'driving';
     if (a && a.base === 'legacy' && sc.setting === 'keyword-card') sc.pose = 'standing-thinking';
     if (sc.setting === 'keyword-card' && a && a.base !== 'legacy') sc.setting = a.ok[0];
     // work item / default props for the action come first so the action always reads
@@ -840,6 +844,7 @@ alarm|p=alarm|w=3
       case 'calculator': rr(ctx, -60, -85, 120, 170, 14); st.fs(ctx, c('#3b3f52')); rr(ctx, -46, -70, 92, 40, 6); st.fs(ctx, c('#b6e3a8'), 4); for (let k = 0; k < 9; k++) { rr(ctx, -46 + (k % 3) * 32, -18 + Math.floor(k / 3) * 32, 26, 24, 5); st.fs(ctx, c((Math.floor(t * 4) % 9) === k ? st.art.accent : '#e5e7eb'), 3); } break;
       case 'watering-can': rr(ctx, -60, -40, 110, 90, 16); st.fs(ctx, c('#4cb7a0')); ctx.beginPath(); ctx.moveTo(45, 10); ctx.lineTo(120, -40); ctx.lineWidth = 16; ctx.strokeStyle = st.OL; ctx.stroke(); ctx.lineWidth = 8; ctx.strokeStyle = c('#4cb7a0'); ctx.stroke(); break;
       case 'trash': ctx.beginPath(); ctx.moveTo(-56, -50); ctx.lineTo(56, -50); ctx.lineTo(44, 70); ctx.lineTo(-44, 70); ctx.closePath(); st.fs(ctx, c('#9aa0ad')); rr(ctx, -66, -70, 132, 22, 8); st.fs(ctx, c('#6d6f7e')); break;
+      case 'car-radio': ctx.restore(); drawRadio16(st, ctx, 0, 0, 0.75 * u, t, clamp01(((age || 0) - 1.2) / 0.6)); return;
       case 'soda': rr(ctx, -40, -70, 80, 140, 16); st.fs(ctx, c('#ef6f6c')); ctx.fillStyle = c('#ffffff'); ctx.fillRect(-40, -12, 80, 18); break;
       default: if (VTS.comedy && VTS.comedy.drawProp) VTS.comedy.drawProp(st, ctx, name, t, age); break;
     }
@@ -1069,9 +1074,390 @@ alarm|p=alarm|w=3
     const Ach = st.character(ctx, L.charX, L.groundY, L.scale, pose, scene.emotion, t, { seed: 0, targetL: pose === 'talking' ? [L.charX - 230, L.groundY - 520 + Math.sin(t * 3) * 14] : null });
     return Ach;
   }
-  VTS.sceneExt = { pose: extPose, afterCharacter, pre, post, card };
+
+  // ======================= v1.6 scene pack: new places, multi-character staging, vehicles, car interior, weather =======================
+  const OUT16 = new Set(['street', 'park', 'beach', 'rooftop-night', 'bus-stop', 'mountain-trail', 'rainy-street', 'school-yard', 'train-platform']);
+  const V16SET = new Set(['hallway', 'car-interior', 'beach', 'rooftop-night', 'bus-stop', 'supermarket', 'mountain-trail', 'rainy-street', 'school-yard', 'train-platform']);
+  const VEH16 = new Set(['car', 'taxi', 'bus', 'bicycle', 'scooter', 'motorbike', 'train']);
+  const WEATHER = [['', 'Auto (matches the mood)'], ['none', 'None'], ['rain', 'Rain'], ['storm', 'Storm + lightning'], ['sun', 'Bright sun'], ['snow', 'Snow'], ['fog', 'Fog'], ['wind', 'Wind + leaves'], ['overcast', 'Overcast clouds'], ['sunset', 'Sunset · golden hour'], ['stars', 'Night stars']];
+  const WEATHER_IDS = WEATHER.map((x) => x[0]).filter(Boolean);
+  const WSYN = { rainy: 'rain', raining: 'rain', drizzle: 'rain', thunder: 'storm', thunderstorm: 'storm', lightning: 'storm', stormy: 'storm', sunny: 'sun', sunshine: 'sun', clear: 'sun', snowy: 'snow', snowing: 'snow', foggy: 'fog', mist: 'fog', misty: 'fog', windy: 'wind', leaves: 'wind', cloudy: 'overcast', clouds: 'overcast', grey: 'overcast', gray: 'overcast', 'golden-hour': 'sunset', dusk: 'sunset', night: 'stars', starry: 'stars', off: 'none', 'no-weather': 'none' };
+  function pickW16(v) { const k = String(v || '').trim().toLowerCase().replace(/[\s_]+/g, '-'); if (!k || k === 'auto') return ''; if (WEATHER_IDS.includes(k)) return k; return WSYN[k] || ''; }
+  const W_KEYS = [[/\b(storm|thunder|lightning)\w*/i, 'storm'], [/\b(rain|raining|rainy|umbrella|drizzl|downpour)\w*/i, 'rain'], [/\b(snow|winter|freezing|blizzard)\w*/i, 'snow'], [/\b(fog|foggy|mist|haze|hazy)\b/i, 'fog'], [/\b(wind|windy|autumn)\b/i, 'wind'], [/\b(sunset|golden hour|dusk)\b/i, 'sunset'], [/\b(stars?|starry|midnight|at night|tonight)\b/i, 'stars'], [/\b(sunny|sunshine|summer|heatwave)\b/i, 'sun'], [/\b(cloudy|overcast|gloomy)\b/i, 'overcast']];
+  const W_EMO = { sad: 'rain', crying: 'rain', 'dead-inside': 'rain', anxious: 'overcast', panicking: 'storm', nervous: 'overcast', rage: 'storm', angry: 'storm', tired: 'fog', bored: 'fog', confused: 'fog', happy: 'sun', calm: 'sun', proud: 'sun', 'love-struck': 'sunset', blushing: 'sunset', determined: 'sun', 'crying-laughing': 'sun', jealous: 'overcast' };
+  const weatherOK16 = (setting) => OUT16.has(setting) || setting === 'car-interior';
+  // scene.weather: explicit id (or 'none'), or auto-matched from the line's words, the previous beat in the same place, then the mood
+  function weatherFix(sc, text, prev) {
+    const explicit = sc.weatherAuto === false || (sc.weather && sc.weatherAuto !== true) ? pickW16(sc.weather) : '';
+    if (explicit) { sc.weather = explicit; sc.weatherAuto = false; return; }
+    sc.weatherAuto = true; sc.weather = '';
+    if (!weatherOK16(sc.setting)) return;
+    const tx = String(text || ''); let w = '';
+    for (const [re, id] of W_KEYS) if (re.test(tx)) { w = id; break; }
+    if (!w && prev && prev.setting === sc.setting && prev.weather && prev.weather !== 'none') w = prev.weather;
+    if (!w && sc.setting === 'rooftop-night') w = 'stars';
+    if (!w) w = W_EMO[sc.emotion] || '';
+    if (sc.setting === 'rainy-street' && w !== 'storm') w = 'rain';
+    if (sc.setting === 'rooftop-night' && (w === 'sun' || w === 'sunset')) w = 'stars';
+    if (sc.setting !== 'rooftop-night' && w === 'stars' && !/night|star|midnight/i.test(tx)) w = '';
+    sc.weather = w;
+  }
+  VTS.scenesV16 = { weatherFix, WEATHER, WEATHER_IDS, OUTDOOR: OUT16, VEHICLES: VEH16 };
+
+  // perspective helper for corridors/aisles: world X (walls ±1), Y (floor +1, ceiling -1), depth z
+  const PJ = (X, Y, z) => [540 + X * 1020 / z, 900 + Y * 1020 / z];
+  const quad16 = (ctx, pts) => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); };
+  const CAR_SIDE = [40, 360, 760, 800]; const CAR_WS = [[870, 360], [1080, 330], [1080, 1160], [1020, 1160]];
+  function carWheel16(t) { return { cx: 650, cy: 1150, rx: 46, ry: 165, rot: -0.32 + Math.sin(t * 1.3) * 0.04 }; }
+  const onWheel16 = (g, a) => [g.cx + Math.cos(g.rot) * g.rx * Math.cos(a) - Math.sin(g.rot) * g.ry * Math.sin(a), g.cy + Math.sin(g.rot) * g.rx * Math.cos(a) + Math.cos(g.rot) * g.ry * Math.sin(a)];
+  // turn-down timeline for the car radio: 0 = loud, 1 = turned down
+  const radioK16 = (lt) => ease((lt - 1.1) / 0.6);
+  function drawRadio16(st, ctx, x, y, s, t, k) {
+    const c = (h) => st.c(h); ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    rr(ctx, -120, -60, 240, 120, 18); st.fs(ctx, c('#2a2e3f'));
+    rr(ctx, -104, -44, 132, 64, 10); st.fs(ctx, st.e('#7ef0c8'), 4);
+    for (let i = 0; i < 6; i++) { const h = (12 + 40 * Math.abs(Math.sin(t * (6 + i) + i * 1.7))) * (1 - k * 0.85); ctx.fillStyle = st.e('#1d5c4a'); ctx.fillRect(-96 + i * 20, 14 - h, 14, h); }
+    ctx.font = '800 20px Montserrat, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = st.e('#1d5c4a'); ctx.fillText('VOL ' + Math.round(30 - k * 26), -96, -28);
+    const ang = 2.2 - k * 2.9; ctx.beginPath(); ctx.arc(72, -2, 34, 0, TAU); st.fs(ctx, c('#9aa0ad')); ctx.beginPath(); ctx.arc(72, -2, 22, 0, TAU); st.fs(ctx, c('#c7ccd6'), 4);
+    ctx.beginPath(); ctx.moveTo(72, -2); ctx.lineTo(72 + Math.cos(ang) * 26, -2 + Math.sin(ang) * 26); ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.strokeStyle = st.e('#ff5c6c'); ctx.stroke();
+    [-1, 1].forEach((q) => { ctx.beginPath(); ctx.arc(q * 60 - 12, 44, 8, 0, TAU); ctx.fillStyle = c('#4a4f63'); ctx.fill(); });
+    ctx.restore();
+    // music notes float out, shrink and vanish as the volume goes down
+    const n = Math.round(5 * (1 - k)); for (let q = 0; q < 5; q++) { if (q >= n && k > 0.05) continue; const p = (t * 0.55 + q / 5) % 1; const a = (1 - k) * Math.sin(p * Math.PI);
+      if (a <= 0.02) continue; const nx = x - 40 * s - p * 260 * s + Math.sin(p * 9 + q) * 24 * s; const ny = y - 70 * s - p * 300 * s;
+      ctx.save(); ctx.globalAlpha *= a; ctx.translate(nx, ny); ctx.rotate(Math.sin(t * 3 + q) * 0.25); ctx.scale(s * (0.8 + (1 - k) * 0.6), s * (0.8 + (1 - k) * 0.6));
+      ctx.fillStyle = st.e(['#ff5c8a', '#7c5cff', '#ffb020', '#2fb8ff', '#29c46a'][q]); ctx.strokeStyle = st.OL; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(0, 0, 16, 12, -0.4, 0, TAU); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(13, -4); ctx.lineTo(13, -52); ctx.lineTo(34, -40); ctx.lineWidth = 6; ctx.stroke(); ctx.restore(); }
+  }
+  // ---------- vehicles (flat vector, wheels turn) ----------
+  function wheel16(st, ctx, x, y, r, rot) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); st.fs(ctx, st.c('#23263a')); ctx.beginPath(); ctx.arc(x, y, r * 0.55, 0, TAU); st.fs(ctx, st.c('#c7ccd6'), 4); ctx.strokeStyle = st.c('#6b7080'); ctx.lineWidth = 4; for (let k = 0; k < 4; k++) { const a = rot + k * Math.PI / 4; ctx.beginPath(); ctx.moveTo(x - Math.cos(a) * r * 0.5, y - Math.sin(a) * r * 0.5); ctx.lineTo(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5); ctx.stroke(); } }
+  function vehicle16(st, ctx, kind, x, y, s, dir, t, moving) {
+    const c = (h) => st.c(h); const rot = moving ? t * 9 * dir : 0; ctx.save(); ctx.translate(x, y); ctx.scale(s * dir, s);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.ellipse(0, 4, kind === 'bus' ? 320 : kind === 'train' ? 1100 : 190, 16, 0, 0, TAU); ctx.fill();
+    if (kind === 'car' || kind === 'taxi') {
+      const body = kind === 'taxi' ? '#ffcc33' : st.art.accent2 || '#ef6f6c';
+      ctx.beginPath(); ctx.moveTo(-110, -96); ctx.quadraticCurveTo(-80, -170, -10, -172); ctx.lineTo(60, -172); ctx.quadraticCurveTo(110, -168, 130, -100); ctx.closePath(); st.fs(ctx, c(body));
+      [[-86, -104, 76], [4, -104, 104]].forEach(([wx, wy, ww]) => { ctx.beginPath(); ctx.moveTo(wx + 8, wy); ctx.lineTo(wx + 18, wy - 52); ctx.lineTo(wx + ww - 10, wy - 52); ctx.lineTo(wx + ww, wy); ctx.closePath(); st.fs(ctx, st.e('#bfe6ff'), 4); });
+      rr(ctx, -180, -110, 360, 82, 30); st.fs(ctx, c(body)); ctx.fillStyle = st.e('#fff6c2'); ctx.beginPath(); ctx.ellipse(166, -80, 12, 9, 0, 0, TAU); ctx.fill(); ctx.fillStyle = st.c('#ff5c6c'); ctx.fillRect(-182, -88, 10, 18);
+      if (kind === 'taxi') { rr(ctx, -30, -196, 60, 24, 6); st.fs(ctx, c('#2a2e3f'), 4); }
+      wheel16(st, ctx, -110, -30, 34, rot); wheel16(st, ctx, 110, -30, 34, rot);
+    } else if (kind === 'bus') {
+      rr(ctx, -310, -250, 620, 230, 30); st.fs(ctx, c('#2fa38f')); ctx.fillStyle = c('#f6bd60'); ctx.fillRect(-310, -110, 620, 22);
+      for (let k = 0; k < 5; k++) { rr(ctx, -280 + k * 104, -222, 84, 84, 10); st.fs(ctx, st.e('#bfe6ff'), 4); } rr(ctx, 236, -222, 56, 170, 8); st.fs(ctx, st.e('#bfe6ff'), 4);
+      rr(ctx, 230, -246, 70, 22, 6); st.fs(ctx, st.e('#ffd166'), 3); wheel16(st, ctx, -190, -20, 40, rot); wheel16(st, ctx, 190, -20, 40, rot);
+    } else if (kind === 'bicycle') {
+      wheel16(st, ctx, -85, -60, 58, rot); wheel16(st, ctx, 85, -60, 58, rot);
+      ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.strokeStyle = c(st.art.accent || '#ff8a3d'); ctx.beginPath(); ctx.moveTo(-85, -60); ctx.lineTo(-10, -60); ctx.lineTo(-30, -150); ctx.lineTo(60, -150); ctx.lineTo(85, -60); ctx.moveTo(-10, -60); ctx.lineTo(60, -150); ctx.moveTo(60, -150); ctx.lineTo(70, -186); ctx.stroke();
+      ctx.lineWidth = 8; ctx.strokeStyle = c('#23263a'); ctx.beginPath(); ctx.moveTo(-50, -160); ctx.lineTo(-12, -160); ctx.moveTo(56, -190); ctx.lineTo(92, -184); ctx.stroke();
+    } else if (kind === 'scooter' || kind === 'motorbike') {
+      const big = kind === 'motorbike'; wheel16(st, ctx, -90, -40, big ? 42 : 32, rot); wheel16(st, ctx, 90, -40, big ? 42 : 32, rot);
+      ctx.beginPath(); ctx.moveTo(-120, -60); ctx.quadraticCurveTo(-110, -130, -30, -130); ctx.lineTo(40, -120); ctx.lineTo(80, -60); ctx.closePath(); st.fs(ctx, c(big ? '#3b3f52' : '#ff7aa2'));
+      ctx.lineWidth = 10; ctx.strokeStyle = c('#23263a'); ctx.beginPath(); ctx.moveTo(80, -60); ctx.lineTo(60, -190); ctx.lineTo(90, -196); ctx.stroke();
+      rr(ctx, -70, -250, 80, 120, 30); st.fs(ctx, c('#5b7fbf')); ctx.beginPath(); ctx.arc(-24, -290, 46, 0, TAU); st.fs(ctx, c(big ? '#ef6f6c' : '#ffd166')); ctx.beginPath(); ctx.arc(-10, -284, 26, -0.9, 1.2); ctx.lineTo(-10, -284); ctx.closePath(); ctx.fillStyle = st.ea('#23263a', 0.8); ctx.fill();
+      ctx.lineWidth = 18; ctx.strokeStyle = c('#5b7fbf'); ctx.beginPath(); ctx.moveTo(-10, -210); ctx.lineTo(62, -190); ctx.stroke();
+    } else if (kind === 'train') {
+      for (let k = 0; k < 3; k++) { const x0 = -1050 + k * 720; rr(ctx, x0, -300, 700, 280, k === 2 ? 90 : 24); st.fs(ctx, c(k % 2 ? '#e5e7eb' : '#d9dee8')); ctx.fillStyle = c('#ef6f6c'); ctx.fillRect(x0, -110, 700, 20); for (let w = 0; w < 5; w++) { rr(ctx, x0 + 40 + w * 130, -260, 100, 100, 14); st.fs(ctx, st.e('#bfe6ff'), 4); } wheel16(st, ctx, x0 + 140, -14, 26, rot); wheel16(st, ctx, x0 + 560, -14, 26, rot); }
+    }
+    ctx.restore();
+  }
+  function vehicles16(st, ctx, scene, L, t, lt) {
+    const list = (scene.props || []).filter((p) => VEH16.has(p)); if (!list.length) return;
+    const lane = L.groundY - 120 * (L.scale || 1);
+    list.forEach((v, i) => {
+      if (v === 'bicycle') { if (scene.pose !== 'cycling') vehicle16(st, ctx, 'bicycle', L.charX > 540 ? L.charX - 300 : L.charX + 300, L.groundY - 30, 1.1, 1, t, false); return; }
+      if (v === 'train') { if (scene.setting === 'train-platform') { const x = 2400 - ((lt * 1500 + i * 900) % 5200); vehicle16(st, ctx, 'train', x, 1420, 1.15, -1, t, true); } else { const x = ((lt * 360) % 3600) - 1200; vehicle16(st, ctx, 'train', x, lane - 330, 0.42, 1, t, true); } return; }
+      if (v === 'bus' && scene.setting === 'bus-stop') { const k = ease(lt / 2.2); vehicle16(st, ctx, 'bus', 1600 - k * 1000, lane + 40, 1.25, -1, t, k < 1); return; }
+      const dir = i % 2 ? -1 : 1; const sp = v === 'bus' ? 300 : (v === 'scooter' || v === 'motorbike') ? 520 : 440; const span = W + 900;
+      const p = ((lt * sp + i * 600 + 200) % span); const x = dir > 0 ? p - 450 : W + 450 - p;
+      vehicle16(st, ctx, v, x, lane, v === 'bus' ? 1.2 : 1.5, dir, t, true);
+    });
+  }
+  function bike16(st, ctx, x, L, t, lt) { // the bicycle under a riding character (rig units relative to the hip)
+    const s = L.scale; const hy = L.groundY - 196 * s; const P = (lx, ly) => [x + lx * s, hy + ly * s]; const rot = t * 9;
+    const rw = P(-150, 108); const fw = P(150, 108); wheel16(st, ctx, rw[0], rw[1], 88 * s, rot); wheel16(st, ctx, fw[0], fw[1], 88 * s, rot);
+    const cr = P(10, 114); const seat = P(-14, 6); const head = P(118, -14); const bar = P(146, -92);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; const frame = [[rw, cr], [cr, seat], [seat, head], [cr, head], [head, fw], [rw, seat], [head, bar]];
+    [[18, st.OL], [11, st.c(st.art.accent || '#ff8a3d')]].forEach(([w, col]) => { ctx.lineWidth = w * s; ctx.strokeStyle = col; frame.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }); });
+    rr(ctx, seat[0] - 40 * s, seat[1] - 14 * s, 74 * s, 22 * s, 10 * s); st.fs(ctx, st.c('#23263a'), 4);
+    const a = t * 7.5; [0, Math.PI].forEach((o) => { const p = [cr[0] + Math.cos(a + o) * 40 * s, cr[1] + Math.sin(a + o) * 40 * s]; ctx.lineWidth = 8 * s; ctx.strokeStyle = st.c('#6b7080'); ctx.beginPath(); ctx.moveTo(cr[0], cr[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); });
+    ctx.strokeStyle = st.ea('#ffffff', 0.6); ctx.lineWidth = 7; for (let i = 0; i < 4; i++) { const yy = hy - 200 * s + i * 90 * s; const xx = x - 260 * s - ((lt * 600 + i * 70) % 160); ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - 90, yy); ctx.stroke(); }
+  }
+  // ---------- weather ----------
+  function weatherBack16(st, ctx, w, t, sky) {
+    if (!w || w === 'none') return; ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, sky); ctx.clip();
+    if (w === 'overcast' || w === 'storm' || w === 'rain') { ctx.fillStyle = st.ea(w === 'storm' ? '#3c4157' : '#8a93a6', w === 'storm' ? 0.55 : 0.35); ctx.fillRect(0, 0, W, sky);
+      for (let k = 0; k < 7; k++) { const x = ((k * 230 + t * (12 + k * 3)) % 1500) - 200; const y = 120 + (k % 3) * 120; ctx.fillStyle = st.ea(w === 'storm' ? '#4a4f66' : '#b7bfcc', 0.9); ctx.beginPath(); ctx.ellipse(x, y, 190, 70, 0, 0, TAU); ctx.ellipse(x + 110, y - 40, 120, 70, 0, 0, TAU); ctx.ellipse(x - 120, y + 10, 110, 55, 0, 0, TAU); ctx.fill(); } }
+    else if (w === 'stars') { ctx.fillStyle = st.ea('#141a3f', 0.55); ctx.fillRect(0, 0, W, sky); for (let k = 0; k < 46; k++) { const x = hashN(k) * W; const y = hashN(k + 50) * sky * 0.85; const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * (1 + hashN(k + 9) * 2) + k)); ctx.fillStyle = 'rgba(255,250,220,' + tw + ')'; ctx.beginPath(); ctx.arc(x, y, 2 + hashN(k + 3) * 3, 0, TAU); ctx.fill(); } }
+    else if (w === 'sunset') { const g = ctx.createLinearGradient(0, 0, 0, sky); g.addColorStop(0, st.ea('#7b4bb7', 0.5)); g.addColorStop(0.55, st.ea('#ff7a59', 0.5)); g.addColorStop(1, st.ea('#ffc46b', 0.55)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, sky); ctx.beginPath(); ctx.arc(780, sky - 60, 130, 0, TAU); ctx.fillStyle = st.ea('#ffe08a', 0.9); ctx.fill(); }
+    else if (w === 'sun') { const x = 880; const y = 300; ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.translate(x, y); ctx.rotate(t * 0.15); ctx.fillStyle = st.ea('#fff2b0', 0.18); for (let k = 0; k < 10; k++) { ctx.rotate(TAU / 10); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-60, 900); ctx.lineTo(60, 900); ctx.closePath(); ctx.fill(); } ctx.restore(); ctx.beginPath(); ctx.arc(x, y, 90, 0, TAU); st.fs(ctx, st.e('#ffd84d'), 6); }
+    else if (w === 'snow' || w === 'fog') { ctx.fillStyle = st.ea('#dfe6ef', 0.4); ctx.fillRect(0, 0, W, sky); }
+    ctx.restore();
+  }
+  function weatherFront16(st, ctx, w, t, lt, ground) {
+    if (!w || w === 'none') return; ctx.save();
+    if (w === 'rain' || w === 'storm') {
+      const n = w === 'storm' ? 110 : 70; const sl = w === 'storm' ? 0.35 : 0.2; ctx.strokeStyle = st.ea('#cfe6ff', 0.55); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let k = 0; k < n; k++) { const x = hashN(k) * (W + 300) - 150; const sp = 1700 + hashN(k + 7) * 700; const y = ((hashN(k + 3) * 2100 + lt * sp) % 2100) - 100; ctx.moveTo(x + y * sl, y); ctx.lineTo(x + (y + 70) * sl, y + 70); } ctx.stroke();
+      ctx.strokeStyle = st.ea('#cfe6ff', 0.45); ctx.lineWidth = 3; for (let k = 0; k < 10; k++) { const p = (lt * 2 + hashN(k + 20)) % 1; const x = hashN(k + 40) * W; ctx.beginPath(); ctx.ellipse(x, ground + 20 + hashN(k + 2) * 160, 10 + p * 34, 3 + p * 8, 0, 0, TAU); ctx.globalAlpha = 1 - p; ctx.stroke(); } ctx.globalAlpha = 1;
+      if (w === 'storm') { const c = lt % 3.4; if (c < 0.22) { ctx.fillStyle = 'rgba(255,255,255,' + (0.5 * (1 - c / 0.22)) + ')'; ctx.fillRect(0, 0, W, 1920); ctx.strokeStyle = st.e('#fff7c2'); ctx.lineWidth = 10; ctx.beginPath(); let x = 200 + hashN(Math.floor(lt / 3.4)) * 680; let y = 0; ctx.moveTo(x, y); for (let q = 0; q < 6; q++) { x += (hashN(q + Math.floor(lt)) - 0.5) * 140; y += 110; ctx.lineTo(x, y); } ctx.stroke(); } ctx.fillStyle = 'rgba(20,24,48,0.14)'; ctx.fillRect(0, 0, W, 1920); }
+    } else if (w === 'snow') {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'; for (let k = 0; k < 60; k++) { const x = (hashN(k) * W + Math.sin(lt * 0.8 + k) * 40 + W) % W; const y = ((hashN(k + 5) * 2000 + lt * (90 + hashN(k + 1) * 90)) % 2000) - 40; ctx.beginPath(); ctx.arc(x, y, 4 + hashN(k + 2) * 6, 0, TAU); ctx.fill(); }
+    } else if (w === 'fog') {
+      ctx.fillStyle = 'rgba(235,240,246,0.22)'; ctx.fillRect(0, 0, W, 1920); for (let k = 0; k < 4; k++) { const y = 700 + k * 280; const x = ((lt * (20 + k * 8) + k * 300) % 1600) - 400; const g = ctx.createRadialGradient(x + 500, y, 50, x + 500, y, 700); g.addColorStop(0, 'rgba(245,248,252,0.45)'); g.addColorStop(1, 'rgba(245,248,252,0)'); ctx.fillStyle = g; ctx.fillRect(x - 300, y - 300, 1600, 600); }
+    } else if (w === 'wind') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 5; ctx.lineCap = 'round'; for (let k = 0; k < 7; k++) { const y = 500 + hashN(k) * 1100; const x = ((lt * 900 + k * 300) % 1800) - 400; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 120, y - 30, x + 260, y); ctx.stroke(); }
+      for (let k = 0; k < 12; k++) { const x = ((lt * (380 + hashN(k) * 200) + k * 170) % 1500) - 200; const y = 500 + hashN(k + 4) * 1200 + Math.sin(lt * 3 + k) * 60; ctx.save(); ctx.translate(x, y); ctx.rotate(lt * 4 + k); ctx.beginPath(); ctx.ellipse(0, 0, 20, 10, 0, 0, TAU); ctx.fillStyle = st.e(['#e98a3c', '#d9b13b', '#c0533a', '#8ab34a'][k % 4]); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = st.OL; ctx.stroke(); ctx.restore(); }
+    } else if (w === 'sunset') { const g = ctx.createLinearGradient(0, 0, 0, 1920); g.addColorStop(0, 'rgba(255,140,90,0.10)'); g.addColorStop(1, 'rgba(255,190,90,0.16)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, 1920); }
+    else if (w === 'sun') { ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(880, 300, 40, 880, 300, 900); g.addColorStop(0, 'rgba(255,240,180,0.22)'); g.addColorStop(1, 'rgba(255,240,180,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, 1920); }
+    else if (w === 'stars') { ctx.fillStyle = 'rgba(30,40,110,0.10)'; ctx.fillRect(0, 0, W, 1920); }
+    else if (w === 'overcast') { ctx.fillStyle = 'rgba(120,128,145,0.08)'; ctx.fillRect(0, 0, W, 1920); }
+    ctx.restore();
+  }
+  const SKY16 = { street: 900, park: 1000, beach: 1050, 'rooftop-night': 900, 'bus-stop': 820, 'mountain-trail': 900, 'rainy-street': 820, 'school-yard': 640, 'train-platform': 0 };
+
+  // ---------- static backgrounds for the v1.6 places ----------
+  function static16(st, ctx, setting) {
+    const c = (h) => st.c(h); const e = (h) => st.e(h); const fs = (f, lw) => st.fs(ctx, f, lw); const OL = st.OL;
+    const sky = (y1, a, b) => { ctx.fillStyle = vg(ctx, 0, y1, [[0, e(a)], [1, e(b)]]); ctx.fillRect(0, 0, W, y1); };
+    const ground = (y, a, b) => { ctx.fillStyle = vg(ctx, y, 1920, [[0, c(a)], [1, c(b)]]); ctx.fillRect(0, y, W, 1920 - y); ctx.fillStyle = st.ca('#000000', 0.12); ctx.fillRect(0, y, W, 12); };
+    const buildings = (base, cols, lit, seed) => { for (let k = 0; k < 9; k++) { const w = 120 + hashN(k + seed) * 90; const x = k * 130 - 40; const h = 260 + hashN(k + seed + 9) * 380; ctx.beginPath(); ctx.rect(x, base - h, w, h); fs(c(cols[k % cols.length]), 5); ctx.fillStyle = lit ? st.ea('#ffe39a', 0.85) : st.ca('#ffffff', 0.45); for (let r = 0; r < Math.floor(h / 70) - 1; r++) for (let q = 0; q < 2; q++) if (!lit || hashN(k * 31 + r * 7 + q) > 0.35) ctx.fillRect(x + 18 + q * (w / 2 - 6), base - h + 30 + r * 70, w / 2 - 36, 36); } };
+    const pine = (x, y, s) => { ctx.beginPath(); ctx.rect(x - 10 * s, y - 40 * s, 20 * s, 40 * s); fs(c('#7a5236'), 4); for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(x, y - (230 - k * 50) * s); ctx.lineTo(x + (80 + k * 20) * s, y - (40 + k * 60) * s * 0.6 - 30 * s); ctx.lineTo(x - (80 + k * 20) * s, y - (40 + k * 60) * s * 0.6 - 30 * s); ctx.closePath(); fs(c(k % 2 ? '#3f8f5a' : '#4aa36a'), 4); } };
+    switch (setting) {
+      case 'hallway': {
+        const zf = 3.6; ctx.fillStyle = c('#d8d1c4'); ctx.fillRect(0, 0, W, 1920);
+        quad16(ctx, [PJ(-1, -1, 0.4), PJ(-1, -1, zf), PJ(-1, 1, zf), PJ(-1, 1, 0.4)]); fs(vg(ctx, 0, 1920, [[0, c('#f6e7c9')], [1, c('#ead2a8')]]), 0);
+        quad16(ctx, [PJ(1, -1, 0.4), PJ(1, -1, zf), PJ(1, 1, zf), PJ(1, 1, 0.4)]); fs(vg(ctx, 0, 1920, [[0, c('#f1ddb6')], [1, c('#e2c597')]]), 0);
+        quad16(ctx, [PJ(-1, 1, 0.4), PJ(-1, 1, zf), PJ(1, 1, zf), PJ(1, 1, 0.4)]); fs(vg(ctx, 1100, 1920, [[0, c('#b9a88e')], [1, c('#d6c4a6')]]), 0);
+        quad16(ctx, [PJ(-1, -1, 0.4), PJ(-1, -1, zf), PJ(1, -1, zf), PJ(1, -1, 0.4)]); fs(c('#ece7de'), 0);
+        const a = PJ(-1, -1, zf); const b = PJ(1, 1, zf); ctx.beginPath(); ctx.rect(a[0], a[1], b[0] - a[0], b[1] - a[1]); fs(c('#e3cfa9'), 5);
+        ctx.beginPath(); ctx.rect(470, a[1] + 60, 140, b[1] - a[1] - 60); fs(c('#8fb9a8'), 5); ctx.beginPath(); ctx.rect(490, a[1] + 80, 44, 60); ctx.rect(546, a[1] + 80, 44, 60); fs(e('#d6f0ff'), 3);
+        ctx.strokeStyle = st.ca('#000000', 0.1); ctx.lineWidth = 3; for (let X = -1; X <= 1.001; X += 0.25) { const p = PJ(X, 1, 0.4); const q = PJ(X, 1, zf); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+        [1, 1.2, 1.45, 1.75, 2.1, 2.55, 3.1].forEach((z) => { const p = PJ(-1, 1, z); const q = PJ(1, 1, z); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); });
+        [1.3, 1.9, 2.6, 3.3].forEach((z) => { quad16(ctx, [PJ(-0.3, -1, z), PJ(0.3, -1, z), PJ(0.3, -1, z + 0.18), PJ(-0.3, -1, z + 0.18)]); fs(e('#fffbe6'), 3); });
+        for (let z = 0.95, k = 0; z < 3.4; z += 0.2, k++) { quad16(ctx, [PJ(-1, -0.1, z), PJ(-1, -0.1, z + 0.19), PJ(-1, 1, z + 0.19), PJ(-1, 1, z)]); fs(c(k % 2 ? '#4f80c7' : '#5b8fd9'), 3);
+          const v1 = PJ(-1, 0.05, z + 0.05); const v2 = PJ(-1, 0.05, z + 0.14); ctx.strokeStyle = st.ca('#1d2034', 0.35); ctx.lineWidth = 3; for (let q = 0; q < 3; q++) { ctx.beginPath(); ctx.moveTo(v1[0], v1[1] + q * 1020 / z * 0.04); ctx.lineTo(v2[0], v2[1] + q * 1020 / (z + 0.1) * 0.04); ctx.stroke(); } const hd = PJ(-1, 0.45, z + 0.15); ctx.fillStyle = c('#c7ccd6'); ctx.fillRect(hd[0] - 3, hd[1], 6, 1020 / z * 0.08); }
+        [1.15, 2.05, 2.95].forEach((z) => { quad16(ctx, [PJ(1, -0.4, z), PJ(1, -0.4, z + 0.3), PJ(1, 1, z + 0.3), PJ(1, 1, z)]); fs(c('#a8754c'), 4); const w1 = PJ(1, -0.25, z + 0.08); const w2 = PJ(1, 0.15, z + 0.2); ctx.beginPath(); ctx.moveTo(w1[0], w1[1]); ctx.lineTo(w2[0], PJ(1, -0.25, z + 0.2)[1]); ctx.lineTo(w2[0], w2[1]); ctx.lineTo(w1[0], PJ(1, 0.15, z + 0.08)[1]); ctx.closePath(); fs(e('#cfeaff'), 3); });
+        const pb = [PJ(1, -0.75, 0.85), PJ(1, -0.75, 1.05), PJ(1, -0.3, 1.05), PJ(1, -0.3, 0.85)]; quad16(ctx, pb); fs(c('#c98d5a'), 4);
+        break;
+      }
+      case 'car-interior': {
+        ctx.fillStyle = c('#3a3f52'); ctx.fillRect(0, 0, W, 1920);
+        rr(ctx, CAR_SIDE[0], CAR_SIDE[1], CAR_SIDE[2], CAR_SIDE[3], 60); fs(e('#9fd4f5'), 0);
+        quad16(ctx, CAR_WS); fs(e('#9fd4f5'), 0);
+        ctx.fillStyle = c('#2d3142'); ctx.fillRect(0, 0, W, 330); ctx.beginPath(); ctx.moveTo(820, 360); ctx.lineTo(880, 340); ctx.lineTo(1030, 1160); ctx.lineTo(960, 1160); ctx.closePath(); fs(c('#2d3142'), 0);
+        rr(ctx, 930, 250, 140, 54, 20); fs(c('#23263a')); rr(ctx, 942, 260, 116, 34, 14); fs(e('#9fc6e0'), 3);
+        ctx.beginPath(); ctx.rect(0, 1160, W, 760); fs(c('#4a5068'), 0); rr(ctx, 60, 1250, 330, 46, 20); fs(c('#3b4057')); ctx.beginPath(); ctx.arc(170, 1620, 70, 0, TAU); fs(c('#2d3142')); for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.arc(170, 1620, 16 + k * 14, 0, TAU); ctx.lineWidth = 3; ctx.strokeStyle = st.ca('#000000', 0.25); ctx.stroke(); }
+        break;
+      }
+      case 'beach': {
+        sky(1050, '#6cc6f2', '#d4f1ff'); ctx.fillStyle = vg(ctx, 1000, 1260, [[0, e('#2e9fd6')], [1, e('#55c7e8')]]); ctx.fillRect(0, 1000, W, 260);
+        ground(1250, '#f6dfa6', '#eac784'); for (let k = 0; k < 30; k++) { ctx.fillStyle = st.ca('#b08850', 0.25); ctx.beginPath(); ctx.arc(hashN(k) * W, 1300 + hashN(k + 4) * 600, 4 + hashN(k + 8) * 5, 0, TAU); ctx.fill(); }
+        ctx.lineWidth = 26; ctx.lineCap = 'round'; ctx.strokeStyle = c('#a8754c'); ctx.beginPath(); ctx.moveTo(130, 1420); ctx.quadraticCurveTo(90, 1000, 200, 720); ctx.stroke(); for (let k = 0; k < 6; k++) { const a = -2.9 + k * 0.55; ctx.beginPath(); ctx.moveTo(200, 720); ctx.quadraticCurveTo(200 + Math.cos(a) * 140, 720 + Math.sin(a) * 120 - 40, 200 + Math.cos(a) * 260, 720 + Math.sin(a) * 200 + 60); ctx.lineWidth = 34; ctx.strokeStyle = c(k % 2 ? '#3f9a5a' : '#4fb36b'); ctx.stroke(); }
+        ctx.lineWidth = 10; ctx.strokeStyle = c('#ffffff'); ctx.beginPath(); ctx.moveTo(900, 1500); ctx.lineTo(930, 1140); ctx.stroke(); for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.moveTo(930, 1120); ctx.arc(930, 1150, 210, Math.PI + k * Math.PI / 6, Math.PI + (k + 1) * Math.PI / 6); ctx.closePath(); fs(c(k % 2 ? '#ffffff' : '#ef6f6c'), 4); }
+        break;
+      }
+      case 'rooftop-night': {
+        sky(1300, '#141a3f', '#4b3a7a'); ctx.beginPath(); ctx.arc(820, 300, 80, 0, TAU); fs(e('#fff3c4'), 5); ctx.beginPath(); ctx.arc(850, 285, 70, 0, TAU); ctx.fillStyle = e('#2a2f63'); ctx.globalAlpha = 0.0; ctx.fill(); ctx.globalAlpha = 1;
+        buildings(1320, ['#2b2f55', '#33386a', '#262a4d'], true, 3);
+        ctx.beginPath(); ctx.rect(0, 1330, W, 120); fs(c('#5a5f73'), 5); ctx.fillStyle = c('#6b7080'); ctx.fillRect(0, 1330, W, 26);
+        ground(1450, '#4a4f63', '#3a3e50'); ctx.beginPath(); ctx.rect(40, 1030, 200, 300); fs(c('#3b3f52')); ctx.beginPath(); ctx.ellipse(140, 1030, 100, 30, 0, 0, TAU); fs(c('#4a4f63')); [70, 210].forEach((x) => { ctx.beginPath(); ctx.rect(x, 1330, 16, 110); fs(c('#2d3142'), 3); });
+        break;
+      }
+      case 'bus-stop': {
+        sky(820, '#8fd0f5', '#e0f4ff'); buildings(1180, ['#c9b8a6', '#d7c4ae', '#bfa995'], false, 11); ground(1180, '#cfd2d8', '#b9bdc6');
+        ctx.fillStyle = c('#4a4f63'); ctx.fillRect(0, 1790, W, 130); ctx.fillStyle = c('#f6f2ea'); for (let x = 0; x < W; x += 180) ctx.fillRect(x, 1850, 90, 12); ctx.fillStyle = c('#9aa0ad'); ctx.fillRect(0, 1776, W, 16);
+        ctx.beginPath(); ctx.rect(600, 760, 440, 30); fs(c('#3b3f52')); ctx.beginPath(); ctx.rect(610, 790, 420, 840); ctx.fillStyle = st.ea('#bfe6ff', 0.35); ctx.fill(); ctx.lineWidth = 10; ctx.strokeStyle = c('#3b3f52'); ctx.stroke(); ctx.beginPath(); ctx.moveTo(820, 790); ctx.lineTo(820, 1630); ctx.stroke();
+        rr(ctx, 840, 880, 170, 260, 8); fs(c(st.art.accent2 || '#7c5cff')); ctx.font = '900 40px Montserrat, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('SALE', 925, 1010);
+        rr(ctx, 640, 1440, 360, 34, 10); fs(c('#a8754c')); [680, 960].forEach((x) => { ctx.beginPath(); ctx.rect(x, 1474, 14, 150); fs(c('#3b3f52'), 3); });
+        ctx.beginPath(); ctx.rect(150, 820, 16, 900); fs(c('#6b7080'), 4); ctx.beginPath(); ctx.arc(158, 800, 70, 0, TAU); fs(c('#2f7cf6'), 6); ctx.font = '900 64px Montserrat, sans-serif'; ctx.fillStyle = '#ffffff'; ctx.fillText('B', 158, 824);
+        break;
+      }
+      case 'supermarket': {
+        const zf = 3.4; ctx.fillStyle = c('#f4f6f8'); ctx.fillRect(0, 0, W, 1920);
+        quad16(ctx, [PJ(-1, -1, 0.4), PJ(-1, -1, zf), PJ(1, -1, zf), PJ(1, -1, 0.4)]); fs(c('#eef1f5'), 0);
+        [1.2, 1.9, 2.7].forEach((z) => { quad16(ctx, [PJ(-0.45, -1, z), PJ(0.45, -1, z), PJ(0.45, -1, z + 0.12), PJ(-0.45, -1, z + 0.12)]); fs(e('#ffffff'), 3); });
+        quad16(ctx, [PJ(-1, 1, 0.4), PJ(-1, 1, zf), PJ(1, 1, zf), PJ(1, 1, 0.4)]); fs(vg(ctx, 1100, 1920, [[0, c('#d5dae2')], [1, c('#eef1f5')]]), 0);
+        const a = PJ(-1, -1, zf); const b = PJ(1, 1, zf); ctx.beginPath(); ctx.rect(a[0], a[1], b[0] - a[0], b[1] - a[1]); fs(c('#dfe5ec'), 4);
+        const PRO = ['#ef6f6c', '#f6bd60', '#8ad16b', '#4cb7ff', '#b794f4', '#f9a8d4', '#ffffff'];
+        [-1, 1].forEach((sd) => { quad16(ctx, [PJ(sd, -0.55, 0.45), PJ(sd, -0.55, zf), PJ(sd, 1, zf), PJ(sd, 1, 0.45)]); fs(c('#c9ced8'), 4);
+          [-0.35, 0.05, 0.45, 0.85].forEach((Y, r) => { for (let z = 0.5, k = 0; z < zf - 0.1; z += 0.13, k++) { quad16(ctx, [PJ(sd, Y - 0.26, z), PJ(sd, Y - 0.26, z + 0.11), PJ(sd, Y, z + 0.11), PJ(sd, Y, z)]); ctx.fillStyle = c(PRO[(k * 3 + r * 2 + (sd > 0 ? 1 : 0)) % PRO.length]); ctx.fill(); }
+            const p = PJ(sd, Y, 0.45); const q = PJ(sd, Y, zf); ctx.lineWidth = 8; ctx.strokeStyle = c('#8a93a6'); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }); });
+        rr(ctx, 400, 300, 280, 90, 14); fs(c(st.art.accent || '#2fa38f')); ctx.font = '900 46px Montserrat, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('AISLE 5', 540, 362); ctx.strokeStyle = c('#6b7080'); ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(440, 300); ctx.lineTo(440, 200); ctx.moveTo(640, 300); ctx.lineTo(640, 200); ctx.stroke();
+        break;
+      }
+      case 'mountain-trail': {
+        sky(1000, '#7cc8f7', '#e6f6ff');
+        [[0, '#9bb0d6', 760], [1, '#7f97c4', 860]].forEach(([k, col, base]) => { ctx.beginPath(); ctx.moveTo(-100, base + 300); for (let x = -100; x <= W + 200; x += 260) { ctx.lineTo(x + 130, base - 260 - hashN(x + k) * 200); ctx.lineTo(x + 260, base); } ctx.lineTo(W + 200, base + 300); ctx.closePath(); fs(c(col), 5); });
+        for (let x = -100; x <= W + 200; x += 260) { const px = x + 130; const py = 760 - 260 - hashN(x) * 200; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + 50, py + 70); ctx.lineTo(px - 50, py + 70); ctx.closePath(); fs(c('#ffffff'), 4); }
+        ctx.beginPath(); ctx.moveTo(0, 1100); ctx.quadraticCurveTo(540, 980, W, 1120); ctx.lineTo(W, 1920); ctx.lineTo(0, 1920); ctx.closePath(); fs(vg(ctx, 1000, 1920, [[0, c('#7cc270')], [1, c('#5aa356')]]), 5);
+        ctx.beginPath(); ctx.moveTo(470, 1060); ctx.quadraticCurveTo(700, 1250, 380, 1450); ctx.quadraticCurveTo(140, 1650, 360, 1920); ctx.lineTo(900, 1920); ctx.quadraticCurveTo(620, 1650, 820, 1460); ctx.quadraticCurveTo(940, 1250, 560, 1060); ctx.closePath(); fs(c('#d8bf8f'), 5);
+        [[90, 1240, 1.1], [980, 1280, 1.0], [210, 1150, 0.7], [860, 1140, 0.65], [60, 1500, 1.3]].forEach(([x, y, s]) => pine(x, y, s));
+        [[760, 1620, 60], [250, 1780, 44]].forEach(([x, y, r]) => { ctx.beginPath(); ctx.ellipse(x, y, r * 1.4, r, 0, 0, TAU); fs(c('#9aa0ad'), 5); });
+        break;
+      }
+      case 'rainy-street': {
+        sky(820, '#3d4a6b', '#6b7a99'); buildings(1250, ['#3b4566', '#46507a', '#343d5c'], true, 21); ground(1250, '#3a4058', '#2b3044');
+        ctx.globalAlpha = 0.35; for (let k = 0; k < 9; k++) { ctx.fillStyle = e(k % 2 ? '#ffd27a' : '#7ec8ff'); ctx.fillRect(k * 130 + 20, 1260, 40, 300 + hashN(k) * 300); } ctx.globalAlpha = 1;
+        [[280, 1560, 160], [800, 1700, 200], [520, 1840, 140]].forEach(([x, y, r]) => { ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.22, 0, 0, TAU); ctx.fillStyle = st.ea('#8fb0e0', 0.35); ctx.fill(); });
+        ctx.beginPath(); ctx.rect(900, 700, 18, 560); fs(c('#2d3142'), 4); ctx.beginPath(); ctx.moveTo(909, 700); ctx.quadraticCurveTo(909, 640, 840, 640); ctx.lineWidth = 14; ctx.strokeStyle = c('#2d3142'); ctx.stroke(); rr(ctx, 790, 640, 90, 40, 12); fs(c('#2d3142'));
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(835, 700, 10, 835, 700, 320); g.addColorStop(0, 'rgba(255,214,140,0.45)'); g.addColorStop(1, 'rgba(255,214,140,0)'); ctx.fillStyle = g; ctx.fillRect(500, 380, 700, 700); ctx.restore();
+        break;
+      }
+      case 'school-yard': {
+        sky(700, '#8fd0f5', '#e0f4ff'); ctx.beginPath(); ctx.rect(80, 560, 920, 700); fs(c('#c0584f'), 6); ctx.strokeStyle = st.ca('#7a2f2a', 0.35); ctx.lineWidth = 3; for (let y = 600; y < 1260; y += 40) { ctx.beginPath(); ctx.moveTo(80, y); ctx.lineTo(1000, y); ctx.stroke(); }
+        ctx.beginPath(); ctx.moveTo(40, 570); ctx.lineTo(540, 380); ctx.lineTo(1040, 570); ctx.closePath(); fs(c('#7a3b36'), 6); ctx.beginPath(); ctx.arc(540, 480, 56, 0, TAU); fs(c('#ffffff'), 6); ctx.lineWidth = 6; ctx.strokeStyle = OL; ctx.beginPath(); ctx.moveTo(540, 480); ctx.lineTo(540, 446); ctx.moveTo(540, 480); ctx.lineTo(566, 492); ctx.stroke();
+        for (let r = 0; r < 2; r++) for (let k = 0; k < 4; k++) { if (r === 1 && (k === 1 || k === 2)) continue; ctx.beginPath(); ctx.rect(140 + k * 220, 640 + r * 260, 140, 160); fs(e('#cfeaff'), 6); }
+        ctx.beginPath(); ctx.rect(450, 960, 180, 300); fs(c('#5b3a2e'), 6);
+        ground(1260, '#9aa0ad', '#868c99'); ctx.strokeStyle = st.ca('#ffffff', 0.8); ctx.lineWidth = 6; for (let k = 0; k < 4; k++) { ctx.strokeRect(120, 1500 + k * 90, 90, 90); } ctx.beginPath(); ctx.arc(700, 1900, 260, Math.PI, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.rect(950, 1000, 16, 520); fs(c('#6b7080'), 4); rr(ctx, 860, 960, 190, 120, 8); fs(c('#ffffff'), 5); ctx.beginPath(); ctx.ellipse(930, 1090, 50, 14, 0, 0, TAU); ctx.lineWidth = 8; ctx.strokeStyle = c('#ff7a3d'); ctx.stroke();
+        break;
+      }
+      case 'train-platform': {
+        ctx.fillStyle = vg(ctx, 0, 1250, [[0, c('#dfe6ee')], [1, c('#c9d3de')]]); ctx.fillRect(0, 0, W, 1250); ctx.strokeStyle = st.ca('#8a93a6', 0.4); ctx.lineWidth = 3; for (let y = 300; y < 1250; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+        ctx.fillStyle = c('#2d3142'); ctx.fillRect(0, 0, W, 240); rr(ctx, 260, 620, 560, 120, 14); fs(c('#2f5d8a')); ctx.font = '900 64px Montserrat, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('CENTRAL', 540, 702);
+        rr(ctx, 680, 300, 340, 150, 12); fs(c('#1f2433')); ctx.font = '800 34px Montserrat, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = e('#ffb020'); ctx.fillText('08:42  DELAYED', 704, 360); ctx.fillText('08:55  ON TIME', 704, 414);
+        [120, 960].forEach((x) => { ctx.beginPath(); ctx.rect(x - 30, 240, 60, 1010); fs(c('#9aa0ad'), 5); });
+        ctx.fillStyle = c('#2b2e3b'); ctx.fillRect(0, 1250, W, 210); ctx.fillStyle = c('#6b5a4a'); for (let x = 0; x < W; x += 70) ctx.fillRect(x, 1380, 40, 60); ctx.fillStyle = c('#b7bdc8'); ctx.fillRect(0, 1360, W, 12); ctx.fillRect(0, 1420, W, 12);
+        ground(1460, '#cfd4dc', '#b8bec9'); ctx.fillStyle = e('#ffd23f'); ctx.fillRect(0, 1480, W, 26);
+        break;
+      }
+      default: break;
+    }
+  }
+  function dynamic16(st, ctx, setting, L, t, lt) {
+    if (setting === 'car-interior') { // scenery streams past the side window, the road unrolls through the windshield
+      ctx.save(); rr(ctx, CAR_SIDE[0], CAR_SIDE[1], CAR_SIDE[2], CAR_SIDE[3], 60); ctx.clip();
+      ctx.fillStyle = vg(ctx, 360, 1160, [[0, st.e('#7cc8f7')], [1, st.e('#dff3ff')]]); ctx.fillRect(0, 360, 840, 800);
+      for (let k = 0; k < 8; k++) { const x = ((k * 260 - lt * 90) % 2080 + 2080) % 2080 - 300; ctx.beginPath(); ctx.ellipse(x, 1000, 220, 120, 0, 0, TAU); ctx.fillStyle = st.c('#9cc98a'); ctx.fill(); }
+      for (let k = 0; k < 10; k++) { const x = ((k * 230 - lt * 380) % 2300 + 2300) % 2300 - 300; const h = 180 + hashN(k) * 260; ctx.beginPath(); ctx.rect(x, 1080 - h, 150, h); st.fs(ctx, st.c(['#e9c58f', '#c7d2fe', '#fecaca', '#bbf7d0'][k % 4]), 4); ctx.fillStyle = st.ca('#ffffff', 0.6); for (let r = 0; r < Math.floor(h / 70); r++) ctx.fillRect(x + 22, 1100 - h + r * 70, 106, 30); }
+      ctx.fillStyle = st.c('#5d6275'); ctx.fillRect(0, 1080, 840, 80); for (let k = 0; k < 4; k++) { const x = ((k * 420 - lt * 1400) % 1680 + 1680) % 1680 - 120; ctx.beginPath(); ctx.rect(x, 560, 22, 560); st.fs(ctx, st.c('#3b3f52'), 4); }
+      ctx.restore();
+      ctx.save(); quad16(ctx, CAR_WS); ctx.clip(); ctx.fillStyle = vg(ctx, 330, 760, [[0, st.e('#7cc8f7')], [1, st.e('#dff3ff')]]); ctx.fillRect(860, 330, 220, 430);
+      ctx.fillStyle = st.c('#9cc98a'); ctx.fillRect(860, 760, 220, 400); ctx.beginPath(); ctx.moveTo(1050, 760); ctx.lineTo(1060, 760); ctx.lineTo(1250, 1160); ctx.lineTo(850, 1160); ctx.closePath(); ctx.fillStyle = st.c('#5d6275'); ctx.fill();
+      ctx.fillStyle = st.c('#ffffff'); for (let k = 0; k < 5; k++) { const z = ((k / 5) + lt * 0.9) % 1; const y = 760 + z * z * 400; const w = 4 + z * 18; ctx.fillRect(1055 + (z * z) * -10 - w / 2, y, w, 10 + z * 50); }
+      ctx.restore();
+      return;
+    }
+    if (setting === 'beach') { ctx.strokeStyle = st.ea('#ffffff', 0.8); ctx.lineWidth = 8; ctx.lineCap = 'round'; for (let k = 0; k < 3; k++) { const y = 1080 + k * 60; const off = Math.sin(lt * 1.2 + k) * 40; ctx.beginPath(); for (let x = -60; x < W + 60; x += 120) { ctx.moveTo(x + off, y); ctx.quadraticCurveTo(x + 30 + off, y - 14, x + 60 + off, y); } ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(0, 1250 + Math.sin(lt * 1.3) * 10); for (let x = 0; x <= W; x += 60) ctx.lineTo(x, 1250 + Math.sin(lt * 1.3 + x * 0.01) * 12); ctx.lineTo(W, 1235); ctx.lineTo(0, 1235); ctx.closePath(); ctx.fillStyle = st.ea('#ffffff', 0.7); ctx.fill();
+      ctx.strokeStyle = st.OL; ctx.lineWidth = 6; for (let k = 0; k < 3; k++) { const x = ((lt * 60 + k * 330) % 1300) - 100; const y = 520 + k * 70 + Math.sin(lt * 2 + k) * 20; const f = Math.sin(lt * 8 + k) * 12; ctx.beginPath(); ctx.moveTo(x - 30, y - f); ctx.quadraticCurveTo(x - 14, y - 16, x, y); ctx.quadraticCurveTo(x + 14, y - 16, x + 30, y - f); ctx.stroke(); } }
+    else if (setting === 'rooftop-night') { for (let k = 0; k < 12; k++) { const x = 40 + k * 90; const y = 1180 + Math.sin(k * 0.6) * 30; ctx.beginPath(); ctx.arc(x, y, 12, 0, TAU); ctx.fillStyle = st.ea(['#ffd166', '#ff8fb3', '#7ef0c8'][k % 3], 0.5 + 0.5 * Math.abs(Math.sin(t * 2 + k))); ctx.fill(); } ctx.strokeStyle = st.ca('#1d2034', 0.6); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 1170); for (let k = 0; k < 12; k++) ctx.quadraticCurveTo(40 + k * 90 - 45, 1200, 40 + k * 90, 1180 + Math.sin(k * 0.6) * 30); ctx.stroke(); }
+    else if (setting === 'mountain-trail') { for (let k = 0; k < 3; k++) { const x = ((lt * 14 + k * 420) % 1500) - 200; const y = 220 + k * 110; ctx.fillStyle = st.ea('#ffffff', 0.92); ctx.beginPath(); ctx.ellipse(x, y, 120, 44, 0, 0, TAU); ctx.ellipse(x + 70, y - 26, 80, 44, 0, 0, TAU); ctx.fill(); } }
+    else if (setting === 'school-yard') { ctx.beginPath(); ctx.rect(70, 380, 10, 560); st.fs(ctx, st.c('#9aa0ad'), 3); ctx.beginPath(); ctx.moveTo(80, 390); for (let k = 0; k <= 6; k++) ctx.lineTo(80 + k * 24, 390 + Math.sin(t * 5 + k * 0.8) * 10); for (let k = 6; k >= 0; k--) ctx.lineTo(80 + k * 24, 480 + Math.sin(t * 5 + k * 0.8) * 10); ctx.closePath(); st.fs(ctx, st.c(st.art.accent || '#2fa38f'), 4); }
+  }
+  const prevKind16 = ST.kindFor; const prevLayout16 = ST.layout; const prevStatic16 = ST.staticBg; const prevDyn16 = ST.dynamicBg; const prevBack16 = ST.furnitureBack; const prevFront16 = ST.furnitureFront; const prevPlace16 = ST.placeProps;
+  ST.kindFor = function (setting, pose) { if (setting === 'car-interior') return 'drive'; return prevKind16.call(this, setting, pose); };
+  ST.layout = function (setting, kind, scene) {
+    const L = prevLayout16.call(this, setting, kind, scene);
+    const solo = !scene || scene.count !== 2;
+    if (V16SET.has(setting)) {
+      L.anchors = { wall: [], table: L.anchors.table || [], sky: OUT16.has(setting) && setting !== 'train-platform' ? [[830, 560], [250, 600]] : [], float: [[210, 930], [870, 930], [200, 1260], [880, 1260]] };
+      if (setting === 'car-interior') { Object.assign(L, { charX: 400, seatY: 1330, groundY: 1700, scale: 1.1, desk: null, pace: false }); L.anchors.float = [[230, 560], [620, 520], [200, 860]]; }
+      else if (kind !== 'desk') { L.groundY = setting === 'supermarket' ? 1730 : 1720; if (kind === 'move') L.pace = true; }
+      if (setting === 'hallway') L.anchors.wall = [[880, 960]];
+    }
+    if (scene && scene.pose === 'cycling') L.pace = false;
+    if (scene && scene.behind && solo && kind !== 'desk') L.charX = Math.max(600, L.charX);
+    return L;
+  };
+  ST.staticBg = function (ctx, setting, kind, L) { if (V16SET.has(setting)) return static16(this, ctx, setting); return prevStatic16.call(this, ctx, setting, kind, L); };
+  ST.dynamicBg = function (ctx, setting, kind, L, t, lt, scene) {
+    if (V16SET.has(setting)) dynamic16(this, ctx, setting, L, t, lt); else prevDyn16.call(this, ctx, setting, kind, L, t, lt, scene);
+    if (!scene) return;
+    const w = scene.weather;
+    if (setting === 'car-interior') { if (w && w !== 'none') { ctx.save(); ctx.beginPath(); rr(ctx, CAR_SIDE[0], CAR_SIDE[1], CAR_SIDE[2], CAR_SIDE[3], 60); quad16(ctx, CAR_WS); ctx.clip(); weatherBack16(this, ctx, w, t, 1160); weatherFront16(this, ctx, w, t, lt, 1100); ctx.restore(); } return; }
+    if (OUT16.has(setting)) { if (w) weatherBack16(this, ctx, w, t, SKY16[setting] == null ? 900 : SKY16[setting]); vehicles16(this, ctx, scene, L, t, lt); }
+  };
+  ST.furnitureBack = function (ctx, setting, kind, L, t) {
+    if (setting === 'car-interior') { const c = (h) => this.c(h); ctx.save(); ctx.translate(L.charX - 80, 1330); ctx.rotate(-0.12); rr(ctx, -120, -430, 190, 470, 50); this.fs(ctx, c('#5b4636')); rr(ctx, -96, -540, 140, 110, 40); this.fs(ctx, c('#6b5444')); ctx.restore(); return; }
+    return prevBack16.call(this, ctx, setting, kind, L, t);
+  };
+  ST.furnitureFront = function (ctx, setting, kind, L, pose, t) {
+    if (setting === 'car-interior') { const c = (h) => this.c(h);
+      rr(ctx, 230, 1310, 440, 150, 40); this.fs(ctx, c('#6b5444'));
+      ctx.beginPath(); ctx.moveTo(0, 1470); ctx.lineTo(W, 1420); ctx.lineTo(W, 1920); ctx.lineTo(0, 1920); ctx.closePath(); this.fs(ctx, c('#2a2e3d'));
+      ctx.beginPath(); ctx.moveTo(740, 1200); ctx.quadraticCurveTo(820, 1110, 1080, 1090); ctx.lineTo(1080, 1440); ctx.lineTo(760, 1440); ctx.closePath(); this.fs(ctx, c('#30354a'));
+      ctx.beginPath(); ctx.moveTo(740, 1200); ctx.quadraticCurveTo(820, 1110, 1080, 1090); ctx.lineTo(1080, 1130); ctx.quadraticCurveTo(830, 1150, 760, 1230); ctx.closePath(); this.fs(ctx, c('#3e4460'), 4);
+      [930, 1010].forEach((x) => { rr(ctx, x - 30, 1170, 60, 30, 8); this.fs(ctx, c('#23263a'), 3); });
+      return; }
+    return prevFront16.call(this, ctx, setting, kind, L, pose, t);
+  };
+  ST.placeProps = function (scene, L, A) {
+    const out = prevPlace16.call(this, scene, L, A);
+    return out.filter((p) => !(VEH16.has(p.name) && OUT16.has(scene.setting)) && !(p.name === 'car-radio' && scene.setting === 'car-interior') && !(p.name === 'umbrella' && scene.pose === 'holding-umbrella') && !(p.name === 'bicycle' && scene.pose === 'cycling') && !(p.name === 'car' && scene.setting === 'car-interior'));
+  };
+  // ---------- staging hooks ----------
+  function walkLegs16(sp, t, f) { const p = t * TAU * 1.5; sp.facing = f; sp.tilt = 0.03 * f; sp.hipY = -Math.abs(Math.sin(p)) * 9;
+    sp.legL = { x: Math.sin(p) * 58 * f, y: 190 - Math.max(0, Math.cos(p)) * 22, bend: -f }; sp.legR = { x: Math.sin(p + Math.PI) * 58 * f, y: 190 - Math.max(0, Math.cos(p + Math.PI)) * 22, bend: -f }; }
+  const baseExtPose16 = extPose;
+  function extPose16(pose, sp, t, o) {
+    if (pose === 'walking-phone') { walkLegs16(sp, t, o && o.facing ? o.facing : 1); const tap = Math.max(0, Math.sin(t * 4.4)) * 6; sp.headDy = 10; sp.armR = { x: 40, y: -150 - tap, bend: 1 }; sp.armL = { x: 10, y: -138, bend: -1 }; sp.look = { x: 0.3, y: 0.8 }; sp.holding = 'phone'; return; }
+    if (pose === 'high-five') { const s = (o && o.pair) || 1; const c = (t % 1.8) / 1.8; const k = c < 0.45 ? ease(c / 0.45) : c < 0.62 ? 1 : 1 - ease((c - 0.62) / 0.38);
+      const hand = { x: s * (110 + 110 * k), y: -250 - 90 * k, bend: s }; if (s > 0) sp.armR = hand; else sp.armL = hand; sp.mouth = 'grin'; sp.look = { x: s * 0.7, y: -0.2 }; sp.tilt = s * 0.05 * k; sp.hipY = -Math.max(0, Math.sin(c * TAU)) * 14; return; }
+    return baseExtPose16(pose, sp, t, o);
+  }
+  function behind16(st, ctx, scene, L, kind, t, lt, x) {
+    const s = L.scale * 0.8; const gy = L.groundY - 110 * L.scale; const bx = scene.count === 2 ? x - 150 : (x > 540 ? x - 260 : x + 260);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.beginPath(); ctx.ellipse(bx, gy + 4, 120 * s, 20 * s, 0, 0, TAU); ctx.fill();
+    const n = st._heads ? st._heads.length : -1; const wav = scene.pose === 'waving';
+    st.character(ctx, bx, gy, s, wav ? 'waving' : 'idle', wav ? 'happy' : 'neutral', t + 0.45, { variant: 6, seed: 5, castDone: true, mirror: x < bx });
+    if (n >= 0 && st._heads) st._heads.length = n;
+  }
+  const shadow16 = (ctx, x, y, s) => { ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(x, y + 4, 140 * s, 22 * s, 0, 0, TAU); ctx.fill(); };
+  function cast16(st, ctx, scene, L, kind, t, lt, x, opts, sh) {
+    if (scene.pose === 'walking-toward') {
+      const T = Math.max(2.2, Math.min(5, ((sh && sh.dur) || 4) * 0.8)); const p = clamp01(lt / T); const moving = p < 1; let a0; let a1; let b0; let b1;
+      if (scene.setting === 'hallway') { const S2 = (z) => 1.393 / z; const G = (z) => 900 + 1020 / z; a0 = [250, G(1.12), S2(1.12)]; a1 = [440, G(1.85), S2(1.85)]; b0 = [640, G(3.3), S2(3.3)]; b1 = [650, G(1.9), S2(1.9)]; }
+      else { const g = L.groundY; const s = L.scale; a0 = [230, g + 50, s * 1.05]; a1 = [440, g - 110, s * 0.78]; b0 = [800, g - 300, s * 0.42]; b1 = [660, g - 120, s * 0.76]; }
+      const lp = (u, v) => [u[0] + (v[0] - u[0]) * p, u[1] + (v[1] - u[1]) * p, u[2] + (v[2] - u[2]) * p]; const a = lp(a0, a1); const b = lp(b0, b1);
+      const phone = (scene.props || []).includes('phone') && p > 0.3;
+      shadow16(ctx, b[0], b[1], b[2]); st.character(ctx, b[0], b[1], b[2], moving ? 'walking' : 'waving', moving ? 'happy' : 'happy', t, Object.assign({}, opts, { variant: 1, seed: 3, facing: -1, mirror: true, poseT: null }));
+      shadow16(ctx, a[0], a[1], a[2]); const Am = st.character(ctx, a[0], a[1], a[2], moving ? (phone ? 'walking-phone' : 'walking') : (phone ? 'scrolling-phone' : 'idle'), scene.emotion, t, Object.assign({}, opts, { seed: 0, facing: 1, poseT: null }));
+      Am.holdsPhone = phone; return Am;
+    }
+    if (scene.count === 2 && scene.pose === 'waving') {
+      shadow16(ctx, L.charX2, L.groundY, L.scale); st.character(ctx, L.charX2, L.groundY, L.scale, 'waving', scene.emotion2 || 'happy', t + 0.3, Object.assign({}, opts, { variant: 1, seed: 3, mirror: true }));
+      return st.character(ctx, x, L.groundY, L.scale, 'waving', scene.emotion, t, opts);
+    }
+    if (scene.pose === 'high-five') {
+      shadow16(ctx, L.charX2, L.groundY, L.scale); st.character(ctx, L.charX2, L.groundY, L.scale, 'high-five', scene.emotion, t, Object.assign({}, opts, { variant: 1, seed: 0, pair: -1 }));
+      const Am = st.character(ctx, x, L.groundY, L.scale, 'high-five', scene.emotion, t, Object.assign({}, opts, { seed: 0, pair: 1 }));
+      const c = (t % 1.8) / 1.8; if (c > 0.42 && c < 0.68) { const k = (c - 0.42) / 0.26; const mx = (Am.handR[0] + (x + L.charX2) / 2) / 2; const my = Am.handR[1]; ctx.save(); ctx.translate(mx, my); ctx.scale(0.6 + k, 0.6 + k); ctx.globalAlpha = 1 - k; ctx.beginPath(); for (let q = 0; q < 16; q++) { const r = q % 2 ? 40 : 100; const an = q / 16 * TAU; ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r); } ctx.closePath(); st.fs(ctx, st.e('#ffe14d'), 6); ctx.restore(); }
+      return Am;
+    }
+    return null;
+  }
+  const basePre16 = pre; const basePost16 = post;
+  function pre16(st, ctx, scene, L, kind, t, lt, x) {
+    if (scene.pose === 'cycling') { bike16(st, ctx, x, L, t, lt); return null; }
+    if (scene.setting === 'car-interior') { const g = carWheel16(t); let tr = onWheel16(g, -1.75); const tl = onWheel16(g, 1.15);
+      if ((scene.props || []).includes('car-radio')) { const k = lt < 0.7 ? 0 : lt < 1.1 ? ease((lt - 0.7) / 0.4) : lt < 1.9 ? 1 : 1 - ease((lt - 1.9) / 0.4); const knob = [862, 1300]; tr = [tr[0] + (knob[0] - tr[0]) * k, tr[1] + (knob[1] - tr[1]) * k]; }
+      return { targetR: tr, targetL: tl, car: true }; }
+    return basePre16(st, ctx, scene, L, kind, t, lt, x);
+  }
+  function post16(st, ctx, scene, L, kind, Ach, X, t, lt, sh) {
+    basePost16(st, ctx, scene, L, kind, Ach, X, t, lt, sh);
+    if (scene.setting === 'car-interior') {
+      const hasR = (scene.props || []).includes('car-radio'); drawRadio16(st, ctx, 790, 1300, 0.62, t, hasR ? radioK16(lt) : 0);
+      const g = carWheel16(t); ctx.save(); ctx.translate(g.cx, g.cy); ctx.rotate(g.rot);
+      ctx.lineWidth = 10; ctx.strokeStyle = st.c('#3b3f52'); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(120, 90); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, g.rx, g.ry, 0, 0, TAU); ctx.lineWidth = 34; ctx.strokeStyle = st.OL; ctx.stroke(); ctx.lineWidth = 22; ctx.strokeStyle = st.c('#2a2e3f'); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, 18, 46, 0, 0, TAU); st.fs(ctx, st.c('#3b3f52')); ctx.restore();
+      if (Ach && Ach.handR && Ach.handL) [Ach.handR, Ach.handL].forEach((h) => { ctx.beginPath(); ctx.arc(h[0], h[1], 21 * (Ach.scale || 1), 0, TAU); st.fs(ctx, Ach.skin || '#f2c6a0', st.lw); });
+    }
+    const a = A[scene.pose];
+    if (a && a.umbrella && Ach && Ach.head && Ach.handR) { const s = Ach.scale || 1; const hx = Ach.handR[0]; const cx = Ach.head.x + 10 * s; const cy = Ach.head.y - 170 * s; const sway = Math.sin(t * 1.5) * 0.05;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(sway); ctx.lineWidth = 10 * s; ctx.strokeStyle = st.OL; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(hx - cx, Ach.handR[1] - cy + 40 * s); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-250 * s, 40 * s); ctx.quadraticCurveTo(-240 * s, -170 * s, 0, -180 * s); ctx.quadraticCurveTo(240 * s, -170 * s, 250 * s, 40 * s); for (let k = 4; k >= 0; k--) ctx.quadraticCurveTo((-250 + k * 100 + 50) * s, 0, (-250 + k * 100) * s, 40 * s); ctx.closePath(); st.fs(ctx, st.c(st.art.accent2 || '#7c5cff'));
+      ctx.lineWidth = 5; ctx.strokeStyle = st.ca('#1d2034', 0.35); [-100, 0, 100].forEach((q) => { ctx.beginPath(); ctx.moveTo(0, -176 * s); ctx.quadraticCurveTo(q * 0.6 * s, -60 * s, q * s, 30 * s); ctx.stroke(); }); ctx.restore();
+      ctx.beginPath(); ctx.arc(hx, Ach.handR[1], 21 * s, 0, TAU); st.fs(ctx, Ach.skin || '#f2c6a0', st.lw); }
+    if (scene.pose === 'checking-watch' && Ach && Ach.handL) { const s = Ach.scale || 1; const [wx, wy] = Ach.handL; ctx.beginPath(); ctx.arc(wx + 26 * s, wy + 18 * s, 20 * s, 0, TAU); st.fs(ctx, st.c('#ffffff'), 5); ctx.strokeStyle = st.OL; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(wx + 26 * s, wy + 18 * s); ctx.lineTo(wx + 26 * s + Math.cos(t * 6) * 14 * s, wy + 18 * s + Math.sin(t * 6) * 14 * s); ctx.stroke(); }
+  }
+  function overlay16(st, ctx, scene, L, kind, t, lt) { if (scene.weather && OUT16.has(scene.setting)) weatherFront16(st, ctx, scene.weather, t, lt, L.groundY); }
+
+  VTS.sceneExt = { pose: extPose16, afterCharacter, pre: pre16, post: post16, card, cast: cast16, behind: behind16, overlay: overlay16 };
 
   // ======================= exports =======================
   function preload(scenes) { const files = new Set(); (scenes || []).forEach((sc) => { if (sc) iconsFor(sc).forEach((f) => files.add(f)); }); Object.values(SET_E).forEach((a) => a.forEach((f) => files.add(f))); return EMO.load(Array.from(files)); }
-  Object.assign(S, { normalizeScene, fixupScene: fixup, matchScore, analyze, diversify, describe, iconsFor, ACTIONS: A, PROPS_META: P, EMO, emojiForWord, emojiFile, preload, lexLookup, EMOJI_COUNT: EFILES.size });
+  Object.assign(S, { WEATHER, WEATHER_IDS, normalizeScene, fixupScene: fixup, matchScore, analyze, diversify, describe, iconsFor, ACTIONS: A, PROPS_META: P, EMO, emojiForWord, emojiFile, preload, lexLookup, EMOJI_COUNT: EFILES.size });
 })();
