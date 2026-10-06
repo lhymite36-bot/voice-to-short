@@ -57,7 +57,7 @@
   // v1.4: sarcastic bestie becomes the default tone for new projects (once).
   if (!load('vts.v14', false)) { save(K.tone, 'sarcastic'); save('vts.v14', true); }
   const CTAS = ['Follow if your brain does this too 🧠', 'Comment “same” if this is you 👇', 'Send this to the friend who does this 💀', 'Save this for your 3 a.m. brain 📌', 'Follow for more brain stuff 🧠✨', 'Which one are you? Comment 👇'];
-  const defaultLook = () => ({ captionStyle: 'tiktok', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, safeZones: false,
+  const defaultLook = () => ({ captionStyle: 'tiktok', textStyle: 'none', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, safeZones: false,
     sfx: true, music: 'quirky', musicVol: 0.5, sfxVol: 0.7, voiceVol: 1, progress: true, anim: load('vts.anim', '2d') === '3d' ? '3d' : '2d', motion: load('vts.motion', 'smooth') === 'classic' ? 'classic' : 'smooth' });
   function ttsStyle() {
     const mode = load(K.ttsStyle, 'tone');
@@ -1215,6 +1215,7 @@
     });
     document.querySelectorAll('#cap-style button').forEach((b) => b.classList.toggle('on', b.dataset.v === P.look.captionStyle));
     document.querySelectorAll('#cap-case button').forEach((b) => b.classList.toggle('on', b.dataset.v === P.look.captionCase));
+    { const ts = document.getElementById('text-style'); if (ts) ts.value = P.look.textStyle || 'none'; }
     paintVisualSegs(); $('opt-ai-images').checked = !!P.look.aiImages;
     const a = aspectOf(); document.querySelectorAll('#aspect-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === a));
     const dur = P.voice ? P.voice.duration : 0;
@@ -1256,6 +1257,7 @@
   $('opt-quality').addEventListener('change', (e) => { P.look.quality = e.target.value; P.renderState = null; persist(); renderRenderPane(); });
   document.querySelectorAll('#cap-style button').forEach((b) => b.addEventListener('click', () => { P.look.captionStyle = b.dataset.v; markVideoStale(); persist(); renderRenderPane(); }));
   document.querySelectorAll('#cap-case button').forEach((b) => b.addEventListener('click', () => { P.look.captionCase = b.dataset.v; markVideoStale(); persist(); renderRenderPane(); }));
+  { const ts = document.getElementById('text-style'); if (ts) ts.addEventListener('change', () => { P.look.textStyle = ts.value; markVideoStale(); persist(); renderRenderPane(); }); }
   $('opt-watermark').addEventListener('change', (e) => { P.look.watermark = e.target.checked; if (e.target.checked && !handle()) toast('Set your channel handle in Settings.', true); markVideoStale(); persist(); renderRenderPane(); });
   $('opt-progress').addEventListener('change', (e) => { P.look.progress = e.target.checked; markVideoStale(); persist(); renderRenderPane(); });
   $('opt-format').addEventListener('change', (e) => { P.look.format = e.target.value; persist(); });

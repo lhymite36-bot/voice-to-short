@@ -215,8 +215,9 @@
                 <div class="seg" id="aspect-seg"><button type="button" data-v="9:16">9:16</button><button type="button" data-v="16:9">16:9</button><button type="button" data-v="1:1">1:1</button><button type="button" data-v="4:5">4:5</button></div></div>
               <div class="field"><span class="label-row"><span>Colour grade</span></span><div class="grades" id="grades"></div></div>
               <div class="field"><span class="label-row"><span>Captions</span></span>
-                <div class="seg" id="cap-style"><button type="button" data-v="tiktok">TikTok bold</button><button type="button" data-v="beast">Big &amp; loud</button><button type="button" data-v="clean">Clean</button><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button><button type="button" data-v="none">None</button></div>
+                <div class="seg" id="cap-style"><button type="button" data-v="tiktok">TikTok bold</button><button type="button" data-v="beast">Big &amp; loud</button><button type="button" data-v="clean">Clean</button><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button><button type="button" data-v="hl-yellow">Highlight 🟨</button><button type="button" data-v="hl-green">Highlight 🟩</button><button type="button" data-v="hl-pink">Highlight 🩷</button><button type="button" data-v="hl-blue">Highlight 🟦</button><button type="button" data-v="boxed">Boxed sticker</button><button type="button" data-v="hormozi">Hormozi</button><button type="button" data-v="typewriter">Typewriter</button><button type="button" data-v="bounce">Bounce-in</button><button type="button" data-v="emoji">Emoji-accented</button><button type="button" data-v="none">None</button></div>
                 <div class="seg" id="cap-case"><button type="button" data-v="upper">UPPERCASE</button><button type="button" data-v="sentence">Sentence case</button></div>
+                <label class="label-row" for="text-style"><span>On-screen text</span><span class="muted small">title cards, step badges, POV tag, arrows, meme text, lower-third</span></label><select id="text-style"><option value="none">None</option><option value="title-card">Title card</option><option value="step-badge">Numbered step badges</option><option value="pov">“POV:” tag</option><option value="arrow-label">Arrow + label</option><option value="meme">Meme top/bottom text</option><option value="lower-third">Lower-third name bar</option></select>
               </div>
               <div class="field"><span class="label-row"><span>Energy · pattern interrupts</span><span class="muted small" id="intensity-note"></span></span>
                 <div class="seg" id="intensity-seg"><button type="button" data-v="off">Off</button><button type="button" data-v="chill">Chill</button><button type="button" data-v="punchy">Punchy</button><button type="button" data-v="chaotic">Chaotic</button></div></div>
@@ -376,6 +377,7 @@
   <script src="js/comedy.js"></script>
   <script src="js/motion.js"></script>
   <script src="js/three3d.js"></script>
+  <script src="js/captions16.js"></script>
   <script src="js/ideas.js"></script>
   <script src="js/app.js"></script>
 </body>
