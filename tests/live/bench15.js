@@ -17,7 +17,7 @@ const [PKG, ASPECT, ANIM, MOTION, OUT, AUDIO] = process.argv.slice(2);
     const P = R.plan(buf, Math.max(60, buf.duration + 2)); const [cw, ch] = R.frameSize(aspect, 1);
     const c = document.createElement('canvas'); c.width = cw; c.height = ch; document.body.appendChild(c);
     const look = { preset: 'teal', aspect, visual: 'scenes', captionStyle: 'tiktok', captionCase: 'upper', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, progress: true, sfx: false, music: 'none', textHook: pkg.textHook || '', ctaSticker: 'Follow for more', template: 'classic', humour: 2, stepLabel: 'STEP', anim, motion, handle: '@QuietBrain' };
-    const r = new R.Renderer(c); r.setup(Object.assign({}, look, { beats: pkg.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: pkg.sections || null }));
+    const r = new R.Renderer(c); r.setup(Object.assign({}, look, { beats: pkg.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: pkg.sections || null, speech: P.speech }));
     r.env = window.VTS.motion.envelopeFromBuffer(buf); await r.prepare();
     const ctx = c.getContext('2d'); const ts = []; const T = P.total;
     for (let i = 0; i < 90; i++) ts.push(Math.min(T - 0.1, T * 0.3 + i / 30));

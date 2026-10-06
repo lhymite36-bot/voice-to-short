@@ -1194,7 +1194,7 @@
       pv = R.preview({ canvas: $('preview'), buffer: buf, beats: previewBeats(buf), look: look(), maxSeconds: isShortLen() ? undefined : R.MAX_LONG, onTime: (t, d) => { $('preview-time').textContent = fmt(t) + ' / ' + fmt(d) + (buf.previewOnly ? ' (part 1 preview)' : ''); } });
       try { await document.fonts.load('800 100px Montserrat'); } catch (_) { /* ignore */ }
       try { await pv.ready; } catch (_) { /* ignore */ }
-      const first = R.buildTimeline(previewBeats(buf), 0.3, 0.3 + buf.duration);
+      const first = pv.renderer.timeline; // voice-aligned, same as the preview/export
       const stepBeat = first.find((b) => b.step === 1);
       pv.drawAt(stepBeat ? stepBeat.start + 0.9 : 1.2);
       $('preview-time').textContent = buf.previewOnly ? 'Preview of part 1 · full video ' + fmt(P.voice.duration + R.LEAD + R.TAIL) : fmt(pv.duration);
@@ -1455,8 +1455,8 @@
     const c = document.createElement('canvas'); c.width = tw; c.height = th;
     const rr = new R.Renderer(c);
     const ss = P2 ? P2.speechStart : R.LEAD; const se = P2 ? P2.speechEnd : total - R.TAIL;
-    rr.setup(Object.assign({}, lk, { aiImages: false, beats: P.pkg.beats, speechStart: ss, speechEnd: se, duration: total, sections }));
-    const tl = R.buildTimeline(P.pkg.beats, ss, se, sections); const sb = tl.find((b2) => b2.step === 1);
+    rr.setup(Object.assign({}, lk, { aiImages: false, beats: P.pkg.beats, speechStart: ss, speechEnd: se, duration: total, sections, speech: P2 ? P2.speech : null }));
+    const tl = rr.timeline; const sb = tl.find((b2) => b2.step === 1);
     try { rr.draw(sb ? sb.start + 0.9 : 1.2); } catch (_) { /* ignore */ }
     return c.toDataURL('image/jpeg', 0.8);
   }

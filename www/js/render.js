@@ -59,15 +59,144 @@
     const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
   }
 
-  // ---------- timeline ----------
-  function buildTimeline(beats, speechStart, speechEnd, sections) {
+  // ---------- timeline: caption timing locked to the voice ----------
+  // Captions used to be spread over the speech span by word count (beat.weight). TTS reads with dramatic pauses, speaker
+  // changes and its own pace, so that estimate ran up to ~5 s ahead of / behind the voice. Now the decoded voice itself
+  // drives the timing: a 10 ms loudness profile of the actual audio -> pauses -> every word mapped onto real speech.
+  const PROF_RATE = 100;
+  // Tuned on 10 posted Shorts against forced alignment: pause ≥ 90 ms below 5% of the voice's loud level; gap costs for
+  // mid-phrase / comma / sentence end / beat end / speaker change; cost to treat a pause as mid-word; duration-fit weight.
+  const ALIGN = { minPause: 0.09, thrK: 0.05, gap: [3.0, 0.9, 0.25, 0.08, 0], ignBase: 0.6, ignK: 3, ignSpan: 0.35, segA: 6, segB: 4, lead: 0 };
+  // Loudness profile of the voice (audio time 0 = voice start; `lead` = where the voice starts in the video).
+  function speechProfile(buf, lead) {
+    if (!buf || !buf.getChannelData) return null;
+    const ch = buf.getChannelData(0); const sr = buf.sampleRate; const hop = Math.max(1, Math.round(sr / PROF_RATE));
+    const n = Math.ceil(ch.length / hop); const v = new Float32Array(n);
+    for (let k = 0; k < n; k++) { const a = k * hop; const b = Math.min(ch.length, a + hop); let s = 0; for (let j = a; j < b; j++) s += ch[j] * ch[j]; v[k] = Math.sqrt(s / Math.max(1, b - a)); }
+    return finishProfile(v, lead);
+  }
+  function finishProfile(v, lead) {
+    const n = v.length; if (!n) return null;
+    const sample = []; for (let k = 0; k < n; k += Math.max(1, Math.floor(n / 4000))) sample.push(v[k]); sample.sort((a, b) => a - b);
+    const p95 = sample[Math.floor(sample.length * 0.95)] || 0; if (p95 < 0.003) return null; // silent / no voice
+    return { rate: PROF_RATE, v, thr: Math.max(0.0035, p95 * ALIGN.thrK), lead: lead == null ? LEAD : lead };
+  }
+  // Rough spoken length of a word (syllables), for spreading words over a stretch of real speech.
+  function wordLen(w) {
+    const raw = String(w).replace(/[^\p{L}\p{N}]/gu, '');
+    if (!raw) return 0.3;
+    if (/^\d+$/.test(raw)) return 0.4 + raw.length * 1.3;
+    if (/^[A-Z]{2,5}$/.test(raw)) return 0.4 + raw.length; // acronyms are spelled out (POV, CEO)
+    const l = raw.toLowerCase(); let syl = (l.match(/[aeiouy]+/g) || []).length;
+    if (syl > 1 && /[^aeiouy]e$/.test(l) && !/[^aeiouy]le$/.test(l)) syl--;
+    return 0.4 + Math.max(1, syl);
+  }
+  // Pauses (audio time) inside [a, b]: runs below the threshold of at least minDur seconds.
+  function findPauses(prof, a, b, minDur, thr) {
+    const R0 = prof.rate; const v = prof.v; const out = []; const i0 = Math.max(0, Math.floor(a * R0)); const i1 = Math.min(v.length, Math.ceil(b * R0));
+    let k = i0; while (k < i1 && v[k] <= thr) k++; // skip leading silence
+    let run = -1;
+    for (; k < i1; k++) {
+      if (v[k] <= thr) { if (run < 0) run = k; } else if (run >= 0) { if ((k - run) / R0 >= minDur) out.push({ s: run / R0, e: k / R0 }); run = -1; }
+    }
+    return out; // a trailing run is the end of speech, not a pause
+  }
+  // Word onsets (video time) for the flattened words of `list`, aligned to the voice in `prof` between speechStart/End.
+  function alignWords(list, speechStart, speechEnd, prof) {
+    const L = prof.lead; let a = Math.max(0, speechStart - L); let b = Math.max(a + 0.1, speechEnd - L);
+    { // tighten to the first/last loud frame (span edges may sit in silence, e.g. section boundaries)
+      const v = prof.v; const R0 = prof.rate; let i = Math.floor(a * R0); let e = Math.min(v.length, Math.ceil(b * R0)) - 1;
+      while (i < e && v[i] <= prof.thr) i++; while (e > i && v[e] <= prof.thr) e--;
+      if (e - i > 10) { a = i / R0; b = (e + 1) / R0; }
+    }
+    const words = []; list.forEach((bt, bi) => { const ws = String(bt.text).trim().split(/\s+/); ws.forEach((w, wi) => {
+      const last = wi === ws.length - 1; const gap = last ? (bi < list.length - 1 && (list[bi + 1].speaker || '') !== (bt.speaker || '') ? 4 : 3) : /[.!?…]["')\]]*$/.test(w) ? 2 : /[,;:—–-]["')\]]*$/.test(w) ? 1 : 0;
+      words.push({ len: wordLen(w), gap, beat: bi }); }); });
+    const n = words.length; if (!n) return null;
+    const P = findPauses(prof, a, b, ALIGN.minPause, prof.thr);
+    const res = dpAlign(words, a, b, P, ALIGN); if (!res) return null;
+    const onset = res.onset;
+    for (let k = 0; k < n; k++) onset[k] = L + onset[k] + ALIGN.lead;
+    return { onset, words, segs: res.segs.length, pauses: P.length };
+  }
+  // Monotonic DP: which pauses fall between which words. Each stretch between used pauses must fit its words at the
+  // read's average pace (log-ratio cost); pauses prefer beat ends / punctuation; skipping a long pause is costly.
+  // Words inside a stretch are spread by syllables over its voiced time. Returns onsets in audio time.
+  function dpAlign(words, a, b, P, C) {
+    const n = words.length; const m = P.length;
+    const pauseDur = P.map((p) => p.e - p.s); const totalPause = pauseDur.reduce((x, y) => x + y, 0);
+    const speech = (b - a) - totalPause; if (speech <= 0.1 || !n) return null;
+    const cum = [0]; words.forEach((w) => cum.push(cum[cum.length - 1] + w.len));
+    const rate = speech / cum[n]; // seconds per syllable-unit, across this span
+    const GAP_COST = C.gap; // mid-phrase, comma, sentence end, beat end, speaker change
+    const ign = (p) => C.ignBase + C.ignK * Math.min(1, Math.max(0, pauseDur[p] - C.minPause) / C.ignSpan); // ignoring a long pause is costly
+    const segCost = (i, j, dur) => { const E = rate * (cum[j] - cum[i]); const r = Math.log(Math.max(0.03, dur) / Math.max(0.03, E)); return r * r * (C.segA + Math.sqrt(j - i) * C.segB); };
+    const segStart = (p) => (p < 0 ? a : P[p].e); const segEnd = (p) => (p >= m ? b : P[p].s);
+    const voiced = (p0, p1) => { let d = segEnd(p1) - segStart(p0); for (let q = p0 + 1; q < p1; q++) d -= pauseDur[q]; return d; };
+    const ignCost = (p0, p1) => { let c = 0; for (let q = p0 + 1; q < p1; q++) c += ign(q); return c; };
+    const Vat = []; { let before = 0; for (let q = 0; q < m; q++) { Vat.push(P[q].s - a - before); before += pauseDur[q]; } } // voiced time before each pause
+    // dp[p][j]: pause p is used and falls right after word j-1
+    const BACK = 8; const INF = 1e18;
+    const dp = Array.from({ length: m + 1 }, () => new Float64Array(n + 1).fill(INF)); const from = Array.from({ length: m + 1 }, () => new Int32Array((n + 1) * 2).fill(-2));
+    for (let p = 0; p <= m; p++) {
+      const last = p === m;
+      for (let j = 1; j <= n; j++) {
+        if (last && j !== n) continue; if (!last && j === n) continue;
+        if (!last) { const E = rate * cum[j]; if (Math.abs(E - Vat[p]) > Math.max(4, 0.4 * Vat[p])) continue; } // far off the average pace: impossible
+        const gc = last ? 0 : GAP_COST[words[j - 1].gap];
+        let best = p - BACK <= 0 ? segCost(0, j, voiced(-1, p)) + ignCost(-1, p) : INF; let bp = -1; let bj = 0;
+        for (let p0 = Math.max(0, p - BACK); p0 < p; p0++) {
+          const row = dp[p0]; const vd = voiced(p0, p); const ic = ignCost(p0, p);
+          // only word counts that could plausibly fill this stretch (pace within 3.5x of the average)
+          const lo = vd / (3.5 * rate); const hi = vd * 3.5 / rate;
+          for (let i = j - 1; i >= Math.max(1, j - 60); i--) { const u = cum[j] - cum[i]; if (u > hi) break; if (u < lo || row[i] >= INF) continue; const c = row[i] + segCost(i, j, vd) + ic; if (c < best) { best = c; bp = p0; bj = i; } }
+        }
+        dp[p][j] = best + gc; from[p][j * 2] = bp; from[p][j * 2 + 1] = bj;
+      }
+    }
+    if (!(dp[m][n] < INF)) return null;
+    const segs = []; let p = m; let j = n;
+    while (j > 0) { const p0 = from[p][j * 2]; const i = p0 < 0 ? 0 : from[p][j * 2 + 1]; segs.unshift({ i, j, p0, p1: p, a: segStart(p0), b: segEnd(p) }); if (p0 < 0) break; p = p0; j = i; }
+    const onset = new Array(n);
+    segs.forEach((sg) => {
+      // spread the words over the voiced time of the stretch, stepping over any skipped pauses inside it
+      const spans = []; let t = segStart(sg.p0);
+      for (let q = sg.p0 + 1; q < sg.p1; q++) { spans.push([t, P[q].s]); t = P[q].e; } spans.push([t, segEnd(sg.p1)]);
+      const vd = spans.reduce((x, s2) => x + (s2[1] - s2[0]), 0); const tot = cum[sg.j] - cum[sg.i];
+      for (let k = sg.i; k < sg.j; k++) {
+        let want = ((cum[k] - cum[sg.i]) / tot) * vd; let tt = spans[0][0];
+        for (const s2 of spans) { const d = s2[1] - s2[0]; if (want <= d + 1e-9) { tt = s2[0] + want; break; } want -= d; tt = s2[1]; }
+        onset[k] = tt;
+      }
+    });
+    return { onset, segs };
+  }
+  function buildTimeline(beats, speechStart, speechEnd, sections, speech) {
     const list = (beats || []).filter((b) => b && String(b.text || '').trim());
     // Long videos: every section has its own audio span, so captions can't drift across sections.
     if (sections && sections.length > 1 && list.some((b) => b.section != null)) {
       const out = [];
       // sections are spans in video time (lead-in already added); clip to the speech that fits
-      sections.forEach((sp, k) => { const part = list.filter((b) => (b.section || 0) === k); const a = k === 0 ? Math.max(sp.start, speechStart) : sp.start; const e = Math.min(sp.end, speechEnd); if (part.length && e - a > 0.3) out.push.apply(out, buildTimeline(part, a, e)); });
+      sections.forEach((sp, k) => { const part = list.filter((b) => (b.section || 0) === k); const a = k === 0 ? Math.max(sp.start, speechStart) : sp.start; const e = Math.min(sp.end, speechEnd); if (part.length && e - a > 0.3) out.push.apply(out, buildTimeline(part, a, e, null, speech)); });
       if (out.length) return out;
+    }
+    const fields = (b) => ({ step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), scene: b.scene || null, aiImage: b.aiImage || null, section: b.section || 0, chapter: b.chapter || '',
+      speaker: b.speaker || '', fx: b.fx || '', fxText: b.fxText || '', sfx: b.sfx || '', sticker: b.sticker || '', punch: !!b.punch, expr: (b.scene && b.scene.emotion) || '' });
+    // Voice-locked timing: every word at its onset in the real audio; a beat starts just before its first word.
+    let al = null;
+    if (speech && list.length) {
+      // the same voice + script is laid out several times (preview, render, thumbnail): reuse the alignment
+      const key = speechStart.toFixed(3) + '|' + speechEnd.toFixed(3) + '|' + list.map((b) => (b.speaker || '') + ':' + String(b.text).trim()).join('\n');
+      const cache = speech.cache || (speech.cache = new Map());
+      if (cache.has(key)) al = cache.get(key); else { try { al = alignWords(list, speechStart, speechEnd, speech); } catch (_) { al = null; } cache.set(key, al); }
+    }
+    if (al) {
+      const out = []; let k = 0;
+      list.forEach((b) => { const words = String(b.text).trim().split(/\s+/); const wordTimes = words.map(() => al.onset[k++]); out.push(Object.assign({ text: String(b.text).trim(), words, wordTimes, start: 0, end: 0 }, fields(b))); });
+      out.forEach((bt, i) => { const prevLast = i ? out[i - 1].wordTimes[out[i - 1].wordTimes.length - 1] : -1; bt.start = i === 0 ? Math.min(speechStart, bt.wordTimes[0]) : Math.max(prevLast + 0.05, bt.wordTimes[0] - 0.06); });
+      out.forEach((bt, i) => { bt.end = i < out.length - 1 ? out[i + 1].start : Math.max(speechEnd, bt.wordTimes[bt.wordTimes.length - 1] + 0.3); });
+      out.aligned = true;
+      return out;
     }
     const total = list.reduce((a, b) => a + (Number(b.weight) || 1), 0) || 1;
     const span = Math.max(0.5, speechEnd - speechStart);
@@ -81,8 +210,7 @@
       const wsum = ww.reduce((a, x) => a + x, 0) || 1;
       let wacc = 0;
       const wordTimes = words.map((w, i) => { const t = start + (wacc / wsum) * (end - start) * 0.92; wacc += ww[i]; return t; });
-      return { text: String(b.text).trim(), words, wordTimes, start, end, step: Number(b.step) || 0, emphasis: String(b.emphasis || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), scene: b.scene || null, aiImage: b.aiImage || null, section: b.section || 0, chapter: b.chapter || '',
-        speaker: b.speaker || '', fx: b.fx || '', fxText: b.fxText || '', sfx: b.sfx || '', sticker: b.sticker || '', punch: !!b.punch, expr: (b.scene && b.scene.emotion) || '' };
+      return Object.assign({ text: String(b.text).trim(), words, wordTimes, start, end }, fields(b));
     });
   }
 
@@ -106,7 +234,7 @@
       this.LY = layoutFor(this.o.aspect || '9:16', this.scenes); this.DW = this.LY.DW; this.DH = this.LY.DH; this.s = this.canvas.width / this.DW;
       if (this.DW > this.DH) { this.bgW = 480; this.bgH = 270; } else { this.bgW = 270; this.bgH = Math.round(270 * this.DH / this.DW); }
       this.bg = makeCanvas(this.bgW, this.bgH); this.graded = makeCanvas(this.bgW, this.bgH);
-      this.timeline = buildTimeline(o.beats, o.speechStart, o.speechEnd, o.sections);
+      this.timeline = buildTimeline(o.beats, o.speechStart, o.speechEnd, o.sections, o.speech);
       this.layoutCache.clear();
       this.images = [];
       if (this.scenes) this.setupScenes();
@@ -563,7 +691,8 @@
   function plan(buf, maxSeconds) {
     const audioDur = Math.min(buf.duration, Math.min(maxSeconds || MAX_SECONDS, MAX_LONG) - LEAD - TAIL);
     const b = speechBounds(buf);
-    return { audioDur, total: LEAD + audioDur + TAIL, speechStart: LEAD + Math.min(b.start, audioDur), speechEnd: LEAD + Math.min(b.end, audioDur) };
+    // speech: loudness profile of this exact decoded voice, so captions follow the audio (not a words-per-minute guess)
+    return { audioDur, total: LEAD + audioDur + TAIL, speechStart: LEAD + Math.min(b.start, audioDur), speechEnd: LEAD + Math.min(b.end, audioDur), speech: speechProfile(buf, LEAD) };
   }
 
   // Real-time render: canvas stream + voice track -> MediaRecorder.
@@ -574,7 +703,7 @@
     const P = plan(buffer, opts.maxSeconds);
     const r = new Renderer(canvas); r.realtime = true;
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
-    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
+    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections, speech: P.speech }));
     if (opts.probe) r.probe = opts.probe;
     if (VTS.motion) { try { r.env = VTS.motion.envelopeFromBuffer(buffer); } catch (_) { r.env = null; } }
     const illustrated = await r.prepare();
@@ -678,7 +807,7 @@
     const { canvas, buffer } = opts;
     const P = plan(buffer, opts.maxSeconds);
     const r = new Renderer(canvas);
-    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
+    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections, speech: P.speech }));
     if (VTS.motion) { try { r.env = VTS.motion.envelopeFromBuffer(buffer); } catch (_) { r.env = null; } }
     const ac = audioCtx();
     let src = null; let raf = 0; let startAt = 0; let playing = false; let mixed = null;
@@ -710,5 +839,5 @@
     return api;
   }
 
-  VTS.render = { fixWebmDuration, W, H, PRESETS, MAX_SECONDS, MAX_LONG, ASPECTS, ASPECT_LABELS, frameSize, layoutFor, LEAD, TAIL, Renderer, buildTimeline, decodeBlob, silentBuffer, speechBounds, trimBuffer, pickVideoType, canRender, renderVideo, preview, plan, audioCtx };
+  VTS.render = { fixWebmDuration, W, H, PRESETS, MAX_SECONDS, MAX_LONG, ASPECTS, ASPECT_LABELS, frameSize, layoutFor, LEAD, TAIL, Renderer, buildTimeline, decodeBlob, silentBuffer, speechBounds, speechProfile, finishProfile, alignWords, ALIGN, wordLen, trimBuffer, pickVideoType, canRender, renderVideo, preview, plan, audioCtx };
 }());
