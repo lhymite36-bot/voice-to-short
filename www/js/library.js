@@ -1106,7 +1106,7 @@ alarm|p=alarm|w=3
 
   // perspective helper for corridors/aisles: world X (walls ±1), Y (floor +1, ceiling -1), depth z
   const PJ = (X, Y, z) => [540 + X * 1020 / z, 900 + Y * 1020 / z];
-  const quad16 = (ctx, pts) => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); };
+  const quad16 = (ctx, pts, keep) => { if (!keep) ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); };
   const CAR_SIDE = [40, 360, 760, 800]; const CAR_WS = [[870, 360], [1080, 330], [1080, 1160], [1020, 1160]];
   function carWheel16(t) { return { cx: 650, cy: 1150, rx: 46, ry: 165, rot: -0.32 + Math.sin(t * 1.3) * 0.04 }; }
   const onWheel16 = (g, a) => [g.cx + Math.cos(g.rot) * g.rx * Math.cos(a) - Math.sin(g.rot) * g.ry * Math.sin(a), g.cy + Math.sin(g.rot) * g.rx * Math.cos(a) + Math.cos(g.rot) * g.ry * Math.sin(a)];
@@ -1196,12 +1196,12 @@ alarm|p=alarm|w=3
   function weatherFront16(st, ctx, w, t, lt, ground) {
     if (!w || w === 'none') return; ctx.save();
     if (w === 'rain' || w === 'storm') {
-      const n = w === 'storm' ? 110 : 70; const sl = w === 'storm' ? 0.35 : 0.2; ctx.strokeStyle = st.ea('#cfe6ff', 0.55); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath();
-      for (let k = 0; k < n; k++) { const x = hashN(k) * (W + 300) - 150; const sp = 1700 + hashN(k + 7) * 700; const y = ((hashN(k + 3) * 2100 + lt * sp) % 2100) - 100; ctx.moveTo(x + y * sl, y); ctx.lineTo(x + (y + 70) * sl, y + 70); } ctx.stroke();
+      const n = w === 'storm' ? 160 : 115; const sl = w === 'storm' ? 0.35 : 0.2; ctx.strokeStyle = st.ea('#d8ecff', 0.72); ctx.lineWidth = 4.5; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let k = 0; k < n; k++) { const x = hashN(k) * (W + 300) - 150; const sp = 1700 + hashN(k + 7) * 700; const y = ((hashN(k + 3) * 2100 + lt * sp) % 2100) - 100; ctx.moveTo(x + y * sl, y); ctx.lineTo(x + (y + 90) * sl, y + 90); } ctx.stroke();
       ctx.strokeStyle = st.ea('#cfe6ff', 0.45); ctx.lineWidth = 3; for (let k = 0; k < 10; k++) { const p = (lt * 2 + hashN(k + 20)) % 1; const x = hashN(k + 40) * W; ctx.beginPath(); ctx.ellipse(x, ground + 20 + hashN(k + 2) * 160, 10 + p * 34, 3 + p * 8, 0, 0, TAU); ctx.globalAlpha = 1 - p; ctx.stroke(); } ctx.globalAlpha = 1;
       if (w === 'storm') { const c = lt % 3.4; if (c < 0.22) { ctx.fillStyle = 'rgba(255,255,255,' + (0.5 * (1 - c / 0.22)) + ')'; ctx.fillRect(0, 0, W, 1920); ctx.strokeStyle = st.e('#fff7c2'); ctx.lineWidth = 10; ctx.beginPath(); let x = 200 + hashN(Math.floor(lt / 3.4)) * 680; let y = 0; ctx.moveTo(x, y); for (let q = 0; q < 6; q++) { x += (hashN(q + Math.floor(lt)) - 0.5) * 140; y += 110; ctx.lineTo(x, y); } ctx.stroke(); } ctx.fillStyle = 'rgba(20,24,48,0.14)'; ctx.fillRect(0, 0, W, 1920); }
     } else if (w === 'snow') {
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'; for (let k = 0; k < 60; k++) { const x = (hashN(k) * W + Math.sin(lt * 0.8 + k) * 40 + W) % W; const y = ((hashN(k + 5) * 2000 + lt * (90 + hashN(k + 1) * 90)) % 2000) - 40; ctx.beginPath(); ctx.arc(x, y, 4 + hashN(k + 2) * 6, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.strokeStyle = 'rgba(120,145,185,0.45)'; ctx.lineWidth = 2.5; for (let k = 0; k < 110; k++) { const x = (hashN(k) * W + Math.sin(lt * 0.8 + k) * 40 + W) % W; const y = ((hashN(k + 5) * 2000 + lt * (90 + hashN(k + 1) * 90)) % 2000) - 40; ctx.beginPath(); ctx.arc(x, y, 5 + hashN(k + 2) * 7, 0, TAU); ctx.fill(); ctx.stroke(); }
     } else if (w === 'fog') {
       ctx.fillStyle = 'rgba(235,240,246,0.22)'; ctx.fillRect(0, 0, W, 1920); for (let k = 0; k < 4; k++) { const y = 700 + k * 280; const x = ((lt * (20 + k * 8) + k * 300) % 1600) - 400; const g = ctx.createRadialGradient(x + 500, y, 50, x + 500, y, 700); g.addColorStop(0, 'rgba(245,248,252,0.45)'); g.addColorStop(1, 'rgba(245,248,252,0)'); ctx.fillStyle = g; ctx.fillRect(x - 300, y - 300, 1600, 600); }
     } else if (w === 'wind') {
@@ -1365,7 +1365,7 @@ alarm|p=alarm|w=3
     if (V16SET.has(setting)) dynamic16(this, ctx, setting, L, t, lt); else prevDyn16.call(this, ctx, setting, kind, L, t, lt, scene);
     if (!scene) return;
     const w = scene.weather;
-    if (setting === 'car-interior') { if (w && w !== 'none') { ctx.save(); ctx.beginPath(); rr(ctx, CAR_SIDE[0], CAR_SIDE[1], CAR_SIDE[2], CAR_SIDE[3], 60); quad16(ctx, CAR_WS); ctx.clip(); weatherBack16(this, ctx, w, t, 1160); weatherFront16(this, ctx, w, t, lt, 1100); ctx.restore(); } return; }
+    if (setting === 'car-interior') { if (w && w !== 'none') { ctx.save(); ctx.beginPath(); rr(ctx, CAR_SIDE[0], CAR_SIDE[1], CAR_SIDE[2], CAR_SIDE[3], 60); quad16(ctx, CAR_WS, true); ctx.clip(); weatherBack16(this, ctx, w, t, 1160); weatherFront16(this, ctx, w, t, lt, 1100); ctx.restore(); } return; }
     if (OUT16.has(setting)) { if (w) weatherBack16(this, ctx, w, t, SKY16[setting] == null ? 900 : SKY16[setting]); vehicles16(this, ctx, scene, L, t, lt); }
   };
   ST.furnitureBack = function (ctx, setting, kind, L, t) {
