@@ -79,17 +79,23 @@
   addProps('sports', 'football:American football:1f3c8:spin; baseball:Baseball:26be:spin; ping-pong:Ping pong:1f3d3:bounce; goal:Goal net:1f945:bob; gamepad:Game controller:1f3ae:shake; joystick:Joystick:1f579:tilt; chess:Chess:265f:bob; dart:Bullseye:1f3af:pulse; flag:Chequered flag:1f3c1:swing; mountain-top:Summit flag:1f6a9:swing');
   // v1.4 hand-drawn psychology topic props (drawn in comedy.js)
   addProps('psych', 'social-battery:Social battery::pulse; anxiety-meter:Anxiety meter::shake; overthink-yarn:Overthinking tangle::spin0; dopamine-meter:Dopamine meter::pulse; burnout-match:Burnt-out match::bob; people-pleaser:People-pleaser sign::bounce; red-flag:Red flag::swing; green-flag:Green flag::swing; attachment-hearts:Attachment hearts::pulse; habit-tracker:Habit tracker::bob; motivation-fuel:Motivation fuel gauge::bob; discipline-streak:Streak flame::pulse; self-care:Self-care kit::bob; exam-f:Failed exam::tilt; sleep-debt:Sleep debt::bob; screen-time:Screen time::bob; notif-badge:Notification badge::bounce; brain-loading:Brain loading::bob; tomorrow-calendar:"Tomorrow" calendar::bob; money-burn:Burning money::bob; boundary-wall:Boundary wall::bob; therapy-couch:Therapy couch::bob; inner-critic:Inner critic::shake; comfort-zone:Comfort zone::pulse; confidence-meter:Confidence meter::pulse; cortisol-alarm:Cortisol alarm::shake');
+  // v1.6: car radio (hand-drawn, turns down), more vehicles, outdoor bits
+  addProps('v16', 'car-radio:Car radio (volume knob)::bob; scooter:Scooter:1f6f5:bob; motorbike:Motorbike:1f3cd:bob; umbrella:Umbrella:2602:swing; traffic-light:Traffic light:1f6a6:blink; bus-stop-sign:Bus stop sign:1f68f:bob; beach-umbrella:Beach umbrella:1f3d6:bob; sunglasses:Sunglasses:1f576:bob');
   // legacy (hand-drawn in scenes.js) props get a category + label here too
   S.PROPS.forEach(([id, label]) => { if (!P[id]) P[id] = { label, e: '', anim: 'legacy', cat: 'mind' }; });
   // hand-drawn custom props implemented in this file
   const CUSTOM = new Set(['pencil', 'sketchbook', 'paintbrush', 'pen', 'easel', 'paint-canvas', 'open-book', 'code-window', 'dumbbell', 'yoga-mat', 'water-bottle', 'glass-water', 'plate', 'money-jar', 'piggy', 'calculator', 'watering-can', 'trash', 'soda',
-    'social-battery', 'anxiety-meter', 'overthink-yarn', 'dopamine-meter', 'burnout-match', 'people-pleaser', 'red-flag', 'green-flag', 'attachment-hearts', 'habit-tracker', 'motivation-fuel', 'discipline-streak', 'self-care', 'exam-f', 'sleep-debt', 'screen-time', 'notif-badge', 'brain-loading', 'tomorrow-calendar', 'money-burn', 'boundary-wall', 'therapy-couch', 'inner-critic', 'comfort-zone', 'confidence-meter', 'cortisol-alarm']);
+    'social-battery', 'anxiety-meter', 'overthink-yarn', 'dopamine-meter', 'burnout-match', 'people-pleaser', 'red-flag', 'green-flag', 'attachment-hearts', 'habit-tracker', 'motivation-fuel', 'discipline-streak', 'self-care', 'exam-f', 'sleep-debt', 'screen-time', 'notif-badge', 'brain-loading', 'tomorrow-calendar', 'money-burn', 'boundary-wall', 'therapy-couch', 'inner-critic', 'comfort-zone', 'confidence-meter', 'cortisol-alarm', 'car-radio']);
   Object.keys(P).forEach((id) => { if (!P[id].e && P[id].anim !== 'legacy' && !CUSTOM.has(id)) delete P[id]; });
   Object.keys(P).forEach((id) => { if (!S.PROP_IDS.includes(id)) { S.PROPS.push([id, P[id].label]); S.PROP_IDS.push(id); } });
 
   // ======================= settings =======================
   const NEW_SETTINGS = [['art-studio', 'Art studio'], ['gym', 'Gym'], ['kitchen', 'Kitchen'], ['library', 'Library'], ['bathroom', 'Bathroom'], ['bus', 'Bus / commute'],
-    ['stage', 'Stage'], ['shop', 'Shop'], ['living-room', 'Living room'], ['keyword-card', 'Keyword icon card']];
+    ['stage', 'Stage'], ['shop', 'Shop'], ['living-room', 'Living room'],
+    // v1.6
+    ['hallway', 'Hallway / corridor'], ['car-interior', 'Car (inside, driving)'], ['beach', 'Beach'], ['rooftop-night', 'City rooftop · night'], ['bus-stop', 'Bus stop'], ['supermarket', 'Supermarket aisle'],
+    ['mountain-trail', 'Mountain trail'], ['rainy-street', 'Rainy city street'], ['school-yard', 'School yard'], ['train-platform', 'Train / subway platform'],
+    ['keyword-card', 'Keyword icon card']];
   NEW_SETTINGS.forEach(([id, l]) => { if (!S.SET_IDS.includes(id)) { S.SETTINGS.push([id, l]); S.SET_IDS.push(id); } });
   const DESKY = { office: 1352, classroom: 1375, cafe: 1392, library: 1380, 'art-studio': 1380, kitchen: 1360, shop: 1370 };
 
@@ -169,8 +175,45 @@
     (sp, t) => { const k = Math.max(0, Math.sin(t * 9)) * 6; sp.armL = { x: -24, y: -150, bend: -1 }; sp.armR = { x: 24, y: -150 - k, bend: 1 }; sp.handsFront = true; sp.look = { x: 0, y: 0.8 }; sp.headDy = 10; });
   act('hugging', 'Hugging', 'two', ['park', 'living-room', 'street', 'void', 'cafe'], { props: ['heart'], emo: 'happy' }, null);
   act('arguing', 'Arguing', 'two', ['living-room', 'office', 'street', 'kitchen', 'void'], { props: ['anger', 'speech-bubbles'], emo: 'angry' }, null);
-  act('waving', 'Waving hello', 'stand', ['street', 'park', 'void', 'stage', 'classroom'], { emo: 'happy' },
-    (sp, t) => { sp.armR = { x: 170 + swing(t, 7) * 40, y: -330, bend: 1 }; sp.mouth = 'grin'; });
+  // v1.6: one arm up and waving from the elbow, the other relaxed; works solo, in pairs (mirrored) and with an extra behind (scene.behind)
+  function waveArms(sp, t, o) {
+    const m = o && (o.mirror || o.pair === -1) ? -1 : 1; const a = -Math.PI / 2 + Math.sin(t * 9) * 0.55; const el = { x: m * 148, y: -214 };
+    const hand = { x: el.x + Math.cos(a) * 96 * m, y: el.y + Math.sin(a) * 96, el, bend: m };
+    if (m > 0) { sp.armR = hand; sp.armL = { x: -92, y: -6, bend: -1 }; } else { sp.armL = hand; sp.armR = { x: 92, y: -6, bend: 1 }; }
+    sp.headTilt = m * (0.06 + Math.sin(t * 4.5) * 0.03); sp.tilt = -m * 0.02; sp.mouth = 'grin'; sp.look = { x: m * 0.3, y: 0 };
+  }
+  act('waving', 'Waving (one arm)', 'stand', ['street', 'park', 'void', 'stage', 'classroom', 'hallway', 'school-yard', 'beach', 'bus-stop', 'train-platform', 'supermarket'], { emo: 'happy', multi: true, free2: true }, waveArms);
+  act('walking-toward', 'Two people walking toward each other', 'two', ['hallway', 'street', 'park', 'school-yard', 'supermarket', 'train-platform', 'beach', 'office'], { emo: 'awkward', multi: true, free2: true }, null);
+  act('high-five', 'High-five', 'two', ['school-yard', 'park', 'street', 'office', 'gym', 'hallway', 'void'], { emo: 'happy', multi: true, free2: true }, null);
+  act('driving', 'Driving (hands on the wheel)', 'drive', ['car-interior'], { emo: 'neutral' },
+    (sp, t) => { sp.seated = true; sp.facing = 1; sp.tilt = Math.sin(t * 1.3) * 0.025; sp.headTilt = Math.sin(t * 0.9) * 0.03; sp.look = { x: 0.85, y: 0 }; sp.legL = { x: 120, y: 175, bend: -1 }; sp.legR = { x: 150, y: 175, bend: -1 }; });
+  act('cycling', 'Riding a bicycle', 'move', ['street', 'park', 'beach', 'mountain-trail', 'school-yard', 'rainy-street'], { emo: 'happy' }, (sp, t, o) => {
+    const f = 1; const a = t * 7.5; sp.facing = f; sp.tilt = 0.12; sp.hipY = 0; sp.look = { x: 0.9, y: 0 };
+    sp.legL = { x: 10 + Math.cos(a) * 40, y: 128 + Math.sin(a) * 40, bend: -1 }; sp.legR = { x: 10 + Math.cos(a + Math.PI) * 40, y: 128 + Math.sin(a + Math.PI) * 40, bend: -1 };
+    sp.armR = { x: 150, y: -96, bend: 1 }; sp.armL = { x: 136, y: -100, bend: 1 }; sp.mouth = 'grin'; });
+  act('pointing', 'Pointing', 'stand', ['void', 'street', 'classroom', 'office', 'hallway', 'park', 'supermarket'], { emo: 'surprised' },
+    (sp, t) => { sp.armR = { x: 236, y: -236 + Math.sin(t * 3) * 6, el: { x: 150, y: -210 }, bend: 1 }; sp.armL = { x: -92, y: -6, bend: -1 }; sp.look = { x: 0.9, y: -0.2 }; sp.headTilt = 0.06; });
+  act('shrugging', 'Shrugging', 'stand', ['void', 'office', 'street', 'living-room', 'classroom', 'hallway'], { emo: 'bored' },
+    (sp, t) => { const k = Math.abs(Math.sin(t * 2.2)) * 12; sp.armL = { x: -168, y: -178 - k, el: { x: -126, y: -96 }, bend: -1 }; sp.armR = { x: 168, y: -178 - k, el: { x: 126, y: -96 }, bend: 1 }; sp.headTilt = 0.16; sp.headDy = 6 - k * 0.4; sp.mouth = 'hmm'; });
+  act('arms-crossed', 'Arms crossed', 'stand', ['void', 'office', 'living-room', 'street', 'hallway', 'school-yard'], { emo: 'side-eye' },
+    (sp, t) => { sp.armL = { x: 54, y: -112, el: { x: -56, y: -86 }, bend: -1 }; sp.armR = { x: -50, y: -126, el: { x: 60, y: -100 }, bend: 1 }; sp.handsFront = true; sp.tilt = Math.sin(t * 1.1) * 0.015; sp.headTilt = -0.08; });
+  act('hiding-face', 'Hiding face', 'stand', ['void', 'living-room', 'bedroom-day', 'office', 'hallway', 'street'], { emo: 'awkward' },
+    (sp, t) => { const peek = Math.sin(t * 1.6) > 0.6 ? 18 : 0; sp.armL = { x: -40 - peek, y: -282, bend: -1 }; sp.armR = { x: 40, y: -282, bend: 1 }; sp.handsFront = true; sp.headDy = 10; sp.tilt = Math.sin(t * 6) * 0.012; });
+  act('jumping', 'Jumping', 'stand', ['park', 'beach', 'school-yard', 'void', 'street', 'mountain-trail'], { emo: 'happy' },
+    (sp, t) => { const j = Math.abs(Math.sin(t * 3.6)); sp.hipY = -j * 150; sp.armL = { x: -170, y: -300 - j * 30, bend: -1 }; sp.armR = { x: 170, y: -300 - j * 30, bend: 1 }; sp.legL = { x: -60, y: 190 - j * 70, bend: 1 }; sp.legR = { x: 60, y: 190 - j * 70, bend: -1 }; sp.mouth = 'grin'; });
+  act('tripping', 'Tripping / falling', 'stand', ['street', 'hallway', 'school-yard', 'park', 'supermarket', 'void'], { emo: 'shocked' },
+    (sp, t) => { const c = (t % 2.4) / 2.4; const k = c < 0.6 ? c / 0.6 : 1; const f = 1; sp.facing = f; sp.tilt = f * (0.15 + k * 0.55); sp.hipY = k * 40;
+      sp.armL = { x: 60 + Math.sin(t * 16) * 50, y: -300, bend: 1 }; sp.armR = { x: 190 + Math.sin(t * 14) * 40, y: -250, bend: 1 }; sp.legL = { x: -120 * f, y: 120, bend: 1 }; sp.legR = { x: 40 * f, y: 190, bend: -1 }; sp.look = { x: 0.6, y: 0.6 }; });
+  act('sneaking', 'Sneaking / tiptoeing', 'move', ['hallway', 'living-room', 'office', 'void', 'supermarket', 'street'], { emo: 'nervous' }, (sp, t, o) => {
+    const f = o && o.facing ? o.facing : 1; const p = t * 3; sp.facing = f; sp.hipY = 40 + Math.abs(Math.sin(p)) * -10; sp.tilt = 0.08 * f;
+    sp.legL = { x: (Math.sin(p) * 46 - 10) * f, y: 186 - Math.max(0, Math.cos(p)) * 30, bend: -f }; sp.legR = { x: (Math.sin(p + Math.PI) * 46 - 10) * f, y: 186 - Math.max(0, Math.cos(p + Math.PI)) * 30, bend: -f };
+    sp.armL = { x: 70 * f, y: -200, bend: f }; sp.armR = { x: 110 * f, y: -230, bend: f }; sp.handsFront = true; sp.look = { x: -0.8 * f, y: 0 }; });
+  act('sitting-couch', 'Sitting on the couch', 'sit', ['living-room'], { emo: 'calm' },
+    (sp, t) => { sp.tilt = -0.04; sp.armL = { x: -150, y: -70, bend: -1 }; sp.armR = { x: 150, y: -70, bend: 1 }; sp.headTilt = Math.sin(t * 0.7) * 0.05; sp.legL = { x: -80, y: 160, bend: -1 }; sp.legR = { x: 80, y: 160, bend: 1 }; });
+  act('checking-watch', 'Checking the time (waiting)', 'stand', ['bus-stop', 'train-platform', 'street', 'office', 'hallway', 'rainy-street'], { emo: 'anxious' },
+    (sp, t) => { sp.armL = { x: 30, y: -150, el: { x: -60, y: -80 }, bend: -1 }; sp.armR = { x: 92, y: -6, bend: 1 }; sp.handsFront = true; sp.look = { x: -0.1, y: 0.75 }; sp.headDy = 8; sp.tilt = Math.sin(t * 2.4) * 0.02; sp.watch = true; });
+  act('holding-umbrella', 'Holding an umbrella', 'stand', ['rainy-street', 'street', 'bus-stop', 'park', 'beach', 'school-yard'], { emo: 'neutral', umbrella: true },
+    (sp, t) => { sp.armR = { x: 40, y: -200 + Math.sin(t * 2) * 4, el: { x: 120, y: -120 }, bend: 1 }; sp.armL = { x: -92, y: -6, bend: -1 }; sp.handsFront = true; sp.look = { x: 0.2, y: -0.3 }; });
   act('crying', 'Crying', 'sit', ['bedroom-night', 'bedroom-day', 'void', 'living-room'], { props: ['cloud'], emo: 'sad' },
     (sp, t) => { sp.armL = { x: -34, y: -262, bend: -1 }; sp.armR = { x: 34, y: -262, bend: 1 }; sp.handsFront = true; sp.headDy = 14; sp.tilt = swing(t, 9) * 0.015; sp.crying = true; });
   act('laughing', 'Laughing', 'stand', ['living-room', 'cafe', 'park', 'stage', 'void'], { props: ['laugh'], emo: 'happy' },
@@ -188,6 +231,34 @@
   // ======================= lexicon (keyword → visual) =======================
   // "word,word | a=action | p=prop,prop | s=setting | w=weight"   (words are base forms; the lemmatizer handles -s/-ing/-ed/irregulars)
   const LEX_SRC = `
+wave,waving,waved,wave back,waved back|a=waving|p=wave-hand|w=3.2
+steps away,walking toward,walk toward,coming toward,someone you know,bump into,run into|a=walking-toward|s=hallway|w=3.3
+hallway,corridor,hall,locker,lockers|s=hallway|w=2.8
+drive,driving,drove,driver,steering,steering wheel,windshield,dashboard,car music,car radio|a=driving|s=car-interior|w=3.1
+radio,volume,turn down,turned down,turn the music down|p=car-radio|s=car-interior|w=2.9
+car|a=driving|p=car|s=car-interior|w=2.6
+typed,deleted,backspace,delete,paragraph|a=texting|p=speech-bubbles|w=2.7
+point,pointing,pointed|a=pointing|w=2.4
+shrug,shrugging,shrugged,whatever,idk|a=shrugging|w=2.6
+crossed arms,arms crossed,cross my arms|a=arms-crossed|w=3
+hide,hiding,hid,hide my face|a=hiding-face|w=2.6
+high five,high-five,high fived|a=high-five|w=3.2
+bike,bicycle,cycling,cycle,biking,ride a bike|a=cycling|p=bicycle|s=street|w=3
+jump,jumping,jumped|a=jumping|w=2.6
+trip,tripping,tripped,stumble,stumbled,fall over,fell over|a=tripping|w=2.9
+sneak,sneaking,sneaky,tiptoe,tiptoeing,snuck|a=sneaking|w=2.9
+couch,sofa,netflix|a=sitting-couch|s=living-room|w=2.7
+waiting,late,running late,checking the time|a=checking-watch|w=2.3
+umbrella|a=holding-umbrella|p=umbrella|s=rainy-street|w=3
+beach,sand,ocean,seaside,vacation|s=beach|p=beach-umbrella|w=2.8
+rooftop,roof,skyline|s=rooftop-night|w=2.8
+bus stop,the bus|s=bus-stop|p=bus|w=3
+supermarket,grocery,groceries,aisle,checkout|s=supermarket|w=2.8
+trail,mountain,summit,hike up|s=mountain-trail|w=2.6
+schoolyard,school yard,playground,recess|s=school-yard|w=2.8
+platform,subway,metro,train station|s=train-platform|p=train|w=2.8
+scooter|p=scooter|w=2.5
+motorbike,motorcycle|p=motorbike|w=2.5
 social battery,introvert,introverts,introverted,socialising,socializing,social event,small talk|p=social-battery|w=3.2
 anxiety,anxious,worry,worried,worrying,nervous,panic,panicking|p=anxiety-meter|w=2.6
 overthink,overthinking,overthinker,overthinkers,ruminate,ruminating,rumination,spiral,spiralling,spiraling,replaying|p=overthink-yarn|w=3.2
@@ -416,7 +487,14 @@ alarm|p=alarm|w=3
     sc.keywords = uniq((Array.isArray(r.keywords) ? r.keywords : []).concat(Array.isArray(r.objects) ? r.objects : []).map((k) => String(k).toLowerCase().trim().slice(0, 24))).slice(0, 6);
     sc.icon = r.icon && EFILES.has(String(r.icon)) ? String(r.icon) : emojiFile(r.icon);
     sc.iconWord = String(r.iconWord || '').slice(0, 20);
-    if (r.edited) { sc.edited = true; fixup(sc); return sc; } // the user picked this in the editor: validate only
+    { // v1.6: extra characters + weather survive the base repairs
+      const n = Number(r.count || r.characterCount || (typeof r.characters === 'number' ? r.characters : 0)) || 0;
+      if (n >= 2 && A[sc.pose] && A[sc.pose].multi) sc.count = 2;
+      sc.behind = n >= 3 || r.behind === true || r.behind === 'true' || /behind/i.test(String(r.extra || ''));
+      if (!raw || !raw.edited) { if (!sc.behind && /\b(behind (you|me|him|her|them)|person behind)\b/i.test(String(text || '')) && /wav/i.test(String(text || ''))) sc.behind = true; }
+      sc.weather = r.weather || ''; sc.weatherAuto = !r.weather || r.weatherAuto === true;
+    }
+    if (r.edited) { sc.edited = true; fixup(sc); weather16(sc, text, prev); return sc; } // the user picked this in the editor: validate only
     // map Gemini's free-form objects/keywords into props
     sc.keywords.forEach((k) => { const h = lexLookup(k.split(/\s+/).pop()); if (h) h.e.p.slice(0, 1).forEach((p) => { if (!sc.props.includes(p) && sc.props.length < 4) sc.props.push(p); }); });
     const an = analyze(text);
@@ -446,12 +524,15 @@ alarm|p=alarm|w=3
       }
     }
     if (!r.emotion && A[sc.pose] && A[sc.pose].emo) sc.emotion = A[sc.pose].emo;
-    fixup(sc);
+    fixup(sc); weather16(sc, text, prev);
     return sc;
   }
+  function weather16(sc, text, prev) { if (VTS.scenesV16) VTS.scenesV16.weatherFix(sc, text, prev); else { sc.weather = ''; sc.weatherAuto = true; } }
   function fixup(sc) {
     const a = A[sc.pose];
-    if (a && a.base === 'two') sc.count = 2; else if (sc.count === 2 && sc.pose !== 'talking') sc.count = 1;
+    if (a && a.base === 'two') sc.count = 2; else if (sc.count === 2 && sc.pose !== 'talking' && !(a && a.multi)) sc.count = 1;
+    sc.behind = !!sc.behind && sc.setting !== 'phone-screen' && sc.setting !== 'keyword-card' && sc.setting !== 'car-interior' && !(a && a.base === 'sit');
+    if (sc.setting === 'car-interior' && sc.count === 2) sc.count = 1;
     if (a && a.base === 'legacy' && sc.setting === 'keyword-card') sc.pose = 'standing-thinking';
     if (sc.setting === 'keyword-card' && a && a.base !== 'legacy') sc.setting = a.ok[0];
     // work item / default props for the action come first so the action always reads

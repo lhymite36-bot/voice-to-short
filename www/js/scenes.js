@@ -12,7 +12,9 @@
     ['celebrating', 'Celebrating'], ['stressed', 'Stressed'], ['scrolling-phone', 'Scrolling phone'], ['sleeping', 'Sleeping'], ['meditating', 'Meditating'], ['running', 'Running']];
   const EMOTIONS = [['neutral', 'Neutral'], ['anxious', 'Anxious'], ['sad', 'Sad'], ['happy', 'Happy'], ['angry', 'Angry'], ['calm', 'Calm'], ['tired', 'Tired'], ['surprised', 'Surprised'],
     // v1.4 cartoon expressions
-    ['eye-roll', 'Eye-roll'], ['side-eye', 'Side-eye'], ['shocked', 'Shocked'], ['crying-laughing', 'Crying-laughing'], ['smug', 'Smug'], ['dead-inside', 'Dead inside'], ['panicking', 'Panicking'], ['blushing', 'Blushing'], ['rage', 'Rage'], ['facepalm', 'Facepalm']];
+    ['eye-roll', 'Eye-roll'], ['side-eye', 'Side-eye'], ['shocked', 'Shocked'], ['crying-laughing', 'Crying-laughing'], ['smug', 'Smug'], ['dead-inside', 'Dead inside'], ['panicking', 'Panicking'], ['blushing', 'Blushing'], ['rage', 'Rage'], ['facepalm', 'Facepalm'],
+    // v1.6 expressions
+    ['confused', 'Confused'], ['disgusted', 'Disgusted'], ['nervous', 'Nervous (sweating)'], ['proud', 'Proud'], ['bored', 'Bored'], ['jealous', 'Jealous'], ['love-struck', 'Love-struck'], ['determined', 'Determined'], ['awkward', 'Awkward smile'], ['crying', 'Crying']];
   const PROPS = [['phone', 'Phone'], ['clock', 'Clock'], ['brain', 'Brain'], ['thought-bubbles', 'Thought bubbles'], ['question-marks', 'Question marks'], ['lightbulb', 'Lightbulb'],
     ['heart', 'Heart'], ['notebook', 'Notebook'], ['coffee', 'Coffee'], ['moon', 'Moon'], ['sun', 'Sun'], ['calendar', 'Calendar'], ['alarm', 'Alarm clock'], ['arrows', 'Arrows'],
     ['checklist', 'Checklist'], ['battery', 'Battery'], ['cloud', 'Cloud'], ['zzz', 'Zzz'], ['sparkles', 'Sparkles'], ['chains', 'Chains'], ['weights', 'Weights'],
@@ -32,11 +34,11 @@
       cheering: 'celebrating', jumping: 'celebrating', victory: 'celebrating', happy: 'celebrating', celebrate: 'celebrating', overwhelmed: 'stressed', panicking: 'stressed', panic: 'stressed', stress: 'stressed',
       phone: 'scrolling-phone', texting: 'scrolling-phone', scrolling: 'scrolling-phone', asleep: 'sleeping', sleep: 'sleeping', breathing: 'meditating', relaxing: 'meditating', yoga: 'meditating', meditate: 'meditating',
       jogging: 'running', run: 'running', exercise: 'running' },
-    emotion: { nervous: 'anxious', worried: 'anxious', scared: 'anxious', fear: 'anxious', upset: 'sad', lonely: 'sad', depressed: 'sad', joyful: 'happy', excited: 'happy', proud: 'happy', relieved: 'calm',
-      peaceful: 'calm', relaxed: 'calm', mad: 'angry', frustrated: 'angry', annoyed: 'eye-roll', exhausted: 'tired', sleepy: 'tired', amazed: 'surprised', curious: 'surprised', confused: 'anxious',
+    emotion: { nervous: 'nervous', sweating: 'nervous', worried: 'anxious', scared: 'anxious', fear: 'anxious', upset: 'sad', lonely: 'sad', depressed: 'sad', joyful: 'happy', excited: 'happy', proud: 'proud', relieved: 'calm',
+      peaceful: 'calm', relaxed: 'calm', mad: 'angry', frustrated: 'angry', annoyed: 'eye-roll', exhausted: 'tired', sleepy: 'tired', amazed: 'surprised', curious: 'surprised', confused: 'confused', puzzled: 'confused', lost: 'confused', disgusted: 'disgusted', gross: 'disgusted', ew: 'disgusted', grossed: 'disgusted', bored: 'bored', boring: 'bored', meh: 'bored', jealous: 'jealous', envious: 'jealous', envy: 'jealous', 'in-love': 'love-struck', lovestruck: 'love-struck', smitten: 'love-struck', love: 'love-struck', determined: 'determined', focused: 'determined', motivated: 'determined', awkward: 'awkward', 'awkward-smile': 'awkward', 'nervous-sweat': 'nervous', crying: 'crying', sobbing: 'crying', tears: 'crying',
       eyeroll: 'eye-roll', 'rolling-eyes': 'eye-roll', unimpressed: 'side-eye', suspicious: 'side-eye', skeptical: 'side-eye', sideeye: 'side-eye', shook: 'shocked', horrified: 'shocked', stunned: 'shocked', laughing: 'crying-laughing', lol: 'crying-laughing', hysterical: 'crying-laughing',
       smirk: 'smug', smirking: 'smug', confident: 'smug', cocky: 'smug', numb: 'dead-inside', empty: 'dead-inside', 'dead': 'dead-inside', drained: 'dead-inside', burnt: 'dead-inside', burnedout: 'dead-inside', panic: 'panicking', panicked: 'panicking', freaking: 'panicking', stressed: 'panicking',
-      shy: 'blushing', flustered: 'blushing', embarrassed: 'blushing', crush: 'blushing', furious: 'rage', livid: 'rage', raging: 'rage', 'face-palm': 'facepalm', cringe: 'facepalm', cringing: 'facepalm', 'why': 'facepalm' },
+      shy: 'blushing', flustered: 'blushing', embarrassed: 'awkward', crush: 'love-struck', furious: 'rage', livid: 'rage', raging: 'rage', 'face-palm': 'facepalm', cringe: 'facepalm', cringing: 'facepalm', 'why': 'facepalm' },
     prop: { thoughts: 'thought-bubbles', thought: 'thought-bubbles', 'thought-bubble': 'thought-bubbles', 'question-mark': 'question-marks', question: 'question-marks', idea: 'lightbulb', bulb: 'lightbulb', light: 'lightbulb',
       journal: 'notebook', diary: 'notebook', pen: 'notebook', book: 'notebook', tea: 'coffee', mug: 'coffee', cup: 'coffee', stars: 'sparkles', star: 'sparkles', sparkle: 'sparkles', 'alarm-clock': 'alarm',
       arrow: 'arrows', loop: 'arrows', cycle: 'arrows', 'to-do': 'checklist', todo: 'checklist', list: 'checklist', energy: 'battery', rain: 'cloud', storm: 'cloud', clouds: 'cloud', sleep: 'zzz', z: 'zzz', zz: 'zzz',
@@ -115,7 +117,7 @@
     count = count >= 2 && pose === 'talking' && !['phone-screen', 'abstract-mind-space'].includes(setting) && !/^bedroom/.test(setting) ? 2 : 1;
     return { setting, pose, emotion, props, camera, callout, count };
   }
-  const sceneKey = (s) => s ? [s.setting, s.pose, s.emotion, s.props.join('+'), s.count].join('|') : '';
+  const sceneKey = (s) => s ? [s.setting, s.pose, s.emotion, s.props.join('+'), s.count].join('|') + (s.behind ? '|behind' : '') + (s.weather ? '|' + s.weather : '') : '';
 
   // ======================= palette =======================
   const ART = {
@@ -136,6 +138,9 @@
   const AMBIENT = {
     'bedroom-night': ['#2b3f86', 0.34], 'bedroom-day': ['#ffd9a8', 0.06], office: ['#cfe3ff', 0.04], classroom: ['#fff1c9', 0.05], street: ['#ffb27a', 0.08],
     cafe: ['#ffb46b', 0.12], park: ['#fff4c2', 0.04], 'abstract-mind-space': ['#5c4bd6', 0.18], 'phone-screen': ['#233a7a', 0.2], void: ['#000000', 0],
+    // v1.6 settings
+    hallway: ['#fff1d6', 0.05], 'car-interior': ['#ffd9a8', 0.06], beach: ['#fff2c4', 0.05], 'rooftop-night': ['#2b3f86', 0.3], 'bus-stop': ['#ffcf9e', 0.07], supermarket: ['#e8f4ff', 0.04],
+    'mountain-trail': ['#fff4c2', 0.04], 'rainy-street': ['#3a4f7a', 0.22], 'school-yard': ['#fff4c2', 0.04], 'train-platform': ['#d9e4ff', 0.06],
   };
 
   // ======================= small math / easing =======================
@@ -253,6 +258,17 @@
       case 'blushing': Object.assign(f, { eyes: 'dot', brow: [-8, 2], mouth: 'smallsmile', blush: true, blushBig: true, lookDown: true }); break;
       case 'rage': Object.assign(f, { eyes: 'dot', brow: [16, -12], mouth: 'grit', steam: true, blush: true, redFace: true }); break;
       case 'facepalm': Object.assign(f, { eyes: 'closed', brow: [-8, 6], mouth: 'flat', palm: true }); break;
+      // v1.6
+      case 'confused': Object.assign(f, { eyes: 'dot', brow: [-4, 0], mouth: 'wavy', asym: true, qmark: true }); break;
+      case 'disgusted': Object.assign(f, { eyes: 'half', brow: [12, -2], mouth: 'disgust', green: true }); break;
+      case 'nervous': Object.assign(f, { eyes: 'wide', brow: [-12, 6], mouth: 'grimace', sweat: true, sweats: true }); break;
+      case 'proud': Object.assign(f, { eyes: 'closed', brow: [-10, -12], mouth: 'smile', blush: true, sparkle: true }); break;
+      case 'bored': Object.assign(f, { eyes: 'half', brow: [0, 2], mouth: 'flat', lookSide: true }); break;
+      case 'jealous': Object.assign(f, { eyes: 'side', brow: [14, -6], mouth: 'frown', green: true }); break;
+      case 'love-struck': Object.assign(f, { eyes: 'heart', brow: [-10, -8], mouth: 'grin', blush: true, hearts: true }); break;
+      case 'determined': Object.assign(f, { eyes: 'sparkle', brow: [16, -4], mouth: 'set', fire: true }); break;
+      case 'awkward': Object.assign(f, { eyes: 'dot', brow: [-8, 4], mouth: 'grimace', sweat: true, lookSide: true }); break;
+      case 'crying': Object.assign(f, { eyes: 'closed', brow: [-14, 8], mouth: 'wail', cryStreams: true }); break;
       default: break;
     }
     if (pose === 'sleeping') Object.assign(f, { eyes: 'closed', mouth: 'smallo', dart: false, sweat: false, tear: false });
@@ -294,6 +310,8 @@
     pal2(variant, a) {
       const v = variant === 1
         ? { skin: '#c68b62', skinS: '#a86f4b', hair: '#231a1c', top: a.accent2, pants: '#4a3d63', shoe: '#2b2b33', long: true }
+        : variant === 6 ? { skin: '#e9b48e', skinS: '#cf9670', hair: '#c4682b', top: '#6fbf73', pants: '#3b4a5c', shoe: '#f6f2ea', long: false } // v1.6 background extra
+        : variant === 7 ? { skin: '#8d5a3b', skinS: '#734429', hair: '#1b1416', top: '#f2a541', pants: '#2f3e57', shoe: '#ffffff', long: true }
         : { skin: '#f3c6a0', skinS: '#dea27c', hair: '#3b2828', top: a.accent, pants: '#33405f', shoe: '#f6f2ea', long: false };
       return { skin: this.c(v.skin), skinS: this.c(v.skinS), hair: this.c(v.hair), top: this.c(v.top), topS: this.c(mix(v.top, '#1a1030', 0.22)), pants: this.c(v.pants), shoe: this.c(v.shoe), long: v.long, blush: this.ca('#ff6f7d', 0.42) };
     }
@@ -359,17 +377,22 @@
         } else if (mode === 'dead') { // dead inside: hollow rings, no shine
           ctx.beginPath(); ctx.arc(0, 2, 11, 0, TAU); ctx.lineWidth = 4.5; ctx.strokeStyle = OL; ctx.stroke(); ctx.beginPath(); ctx.arc(0, 2, 3, 0, TAU); ctx.fillStyle = OL; ctx.fill();
           ctx.beginPath(); ctx.moveTo(-15, -9); ctx.lineTo(15, -9); ctx.lineWidth = 5; ctx.stroke();
+        } else if (mode === 'heart') { // love-struck: pulsing heart eyes
+          const k = 1 + 0.12 * Math.sin(t * 7); ctx.save(); ctx.scale(k, k); ctx.beginPath(); ctx.moveTo(0, 14); ctx.bezierCurveTo(-26, -2, -16, -24, 0, -10); ctx.bezierCurveTo(16, -24, 26, -2, 0, 14); ctx.closePath(); ctx.fillStyle = this.e('#ff3b6b'); ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = OL; ctx.stroke(); ctx.restore();
+        } else if (mode === 'sparkle') { // determined: big glossy pupils
+          ctx.beginPath(); ctx.ellipse(0, 0, 13, 16 * Math.max(0.1, blink), 0, 0, TAU); ctx.fillStyle = OL; ctx.fill();
+          if (blink > 0.5) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-4, -6, 4.8, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(4, 5, 2.4, 0, TAU); ctx.fill(); }
         } else if (mode === 'half') {
           ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(12, 0); ctx.ellipse(0, 0, 12, 12 * blink, 0, 0, Math.PI); ctx.closePath(); ctx.fillStyle = OL; ctx.fill();
           ctx.beginPath(); ctx.moveTo(-16, -1); ctx.lineTo(16, -1); ctx.lineWidth = 6; ctx.strokeStyle = OL; ctx.stroke();
         } else {
-          const lk = face.lookDown ? { x: 0.3, y: 0.8 } : look;
+          const lk = face.lookDown ? { x: 0.3, y: 0.8 } : face.lookSide ? { x: 0.9, y: 0.1 } : look;
           ctx.beginPath(); ctx.ellipse(lk.x * 4, lk.y * 4, 10.5, 14 * Math.max(0.1, blink), 0, 0, TAU); ctx.fillStyle = OL; ctx.fill();
           if (blink > 0.5) { ctx.beginPath(); ctx.arc(lk.x * 4 - 3, lk.y * 4 - 5, 3.6, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); }
         }
         if (face.bags) { ctx.beginPath(); ctx.moveTo(-12, 20); ctx.quadraticCurveTo(0, 28, 12, 20); ctx.lineWidth = 4; ctx.strokeStyle = rgba(pal.skinS, 0.9); ctx.stroke(); }
         // brow: [inner, outer] offsets
-        const inner = face.brow[0]; const outer = face.brow[1];
+        let inner = face.brow[0]; let outer = face.brow[1]; if (face.asym) { if (s > 0) { inner -= 14; outer -= 20; } else { inner += 6; outer += 4; } }
         ctx.beginPath(); ctx.moveTo(-s * 15, -30 + outer * (s < 0 ? 1 : 1)); ctx.lineTo(s * 13, -30 + inner);
         if (s > 0) { ctx.beginPath(); ctx.moveTo(-13, -30 + inner); ctx.lineTo(15, -30 + outer); } else { ctx.beginPath(); ctx.moveTo(-15, -30 + outer); ctx.lineTo(13, -30 + inner); }
         ctx.lineWidth = 7; ctx.strokeStyle = pal.hair; ctx.stroke();
@@ -400,6 +423,10 @@
       else if (m === 'grit') { ctx.beginPath(); ctx.rect(-22, -6, 44, 19); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke(); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-22, 3.5); ctx.lineTo(22, 3.5); for (let k = -11; k <= 11; k += 11) { ctx.moveTo(k, -6); ctx.lineTo(k, 13); } ctx.stroke(); }
       else if (m === 'hmm') { ctx.beginPath(); ctx.moveTo(-8, 4); ctx.quadraticCurveTo(4, 0, 14, -2); ctx.stroke(); }
       else if (m === 'smirk') { ctx.beginPath(); ctx.moveTo(-16, 4); ctx.quadraticCurveTo(6, 10, 22, -8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(18, -12); ctx.lineTo(24, -4); ctx.lineWidth = 4; ctx.stroke(); }
+      else if (m === 'grimace') { ctx.beginPath(); ctx.moveTo(-26, -2); ctx.quadraticCurveTo(0, 6, 26, -2); ctx.lineTo(24, 12); ctx.quadraticCurveTo(0, 20, -24, 12); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke(); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-25, 6); ctx.quadraticCurveTo(0, 13, 25, 6); for (let k = -12; k <= 12; k += 12) { ctx.moveTo(k, 0); ctx.lineTo(k, 17); } ctx.stroke(); }
+      else if (m === 'disgust') { ctx.beginPath(); ctx.moveTo(-20, 6); ctx.bezierCurveTo(-12, -4, -6, -2, 0, 4); ctx.bezierCurveTo(6, 10, 12, 8, 20, -2); ctx.stroke(); ctx.beginPath(); ctx.ellipse(6, 12, 9, 11, 0.2, 0, Math.PI); ctx.fillStyle = this.c('#ff8a95'); ctx.fill(); ctx.stroke(); }
+      else if (m === 'wail') { const op = 1 + 0.12 * Math.sin(t * 9); ctx.beginPath(); ctx.moveTo(-24, 18 * op); ctx.quadraticCurveTo(0, -16 * op, 24, 18 * op); ctx.quadraticCurveTo(0, 8, -24, 18 * op); ctx.closePath(); ctx.fillStyle = dark; ctx.fill(); ctx.stroke(); }
+      else if (m === 'set') { ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(-16, 6); ctx.quadraticCurveTo(0, 2, 16, 6); ctx.stroke(); }
       else if (m === 'scream') { const op = this._mouthOpen != null ? 0.75 + this._mouthOpen / 40 : 1 + 0.1 * Math.sin(t * 30); ctx.beginPath(); ctx.ellipse(0, 10, 20, 28 * op, 0, 0, TAU); ctx.fillStyle = dark; ctx.fill(); ctx.stroke(); ctx.save(); ctx.clip(); ctx.beginPath(); ctx.ellipse(0, 30, 12, 9, 0, 0, TAU); ctx.fillStyle = this.c('#ff8a95'); ctx.fill(); ctx.restore(); }
       ctx.restore();
       // emotion extras
@@ -408,6 +435,17 @@
       if (face.sweats) { [[-80, -30], [-70, 10], [84, -10]].forEach(([dx, dy], q) => { const p = (t * 0.9 + q * 0.33) % 1; ctx.save(); ctx.globalAlpha = Math.min(1, (1 - p) * 2); ctx.translate(dx, dy + p * 50); this.drop(ctx, 10, this.e('#9fdcff')); ctx.restore(); }); }
       if (face.sweat) { const p = (t * 0.45) % 1; ctx.save(); ctx.globalAlpha = Math.min(1, (1 - p) * 2); ctx.translate(-f * 60 + 74, -46 + p * 50); this.drop(ctx, 13, this.e('#9fdcff')); ctx.restore(); }
       if (face.steam) { for (let k = 0; k < 3; k++) { const p = (t * 0.8 + k / 3) % 1; ctx.beginPath(); ctx.arc((k - 1) * 60 + Math.sin(p * 6 + k) * 10, -120 - p * 90, 16 + p * 16, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,' + (0.55 * (1 - p)) + ')'; ctx.fill(); } }
+      if (face.green) { ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, 90, 88, 0, 0, TAU); ctx.clip(); const g = ctx.createLinearGradient(0, -90, 0, 30); g.addColorStop(0, 'rgba(90,170,70,0.55)'); g.addColorStop(1, 'rgba(90,170,70,0)'); ctx.fillStyle = g; ctx.fillRect(-100, -100, 200, 200); ctx.restore(); }
+      if (face.cryStreams) { ctx.save(); ctx.fillStyle = this.ea('#7cc8ff', 0.85); [-1, 1].forEach((sd) => { const x0 = fx + sd * 32; ctx.beginPath(); ctx.moveTo(x0 - 7, 16); ctx.quadraticCurveTo(x0 + sd * 6 - 9, 60, x0 + sd * 10 - 8, 92); ctx.lineTo(x0 + sd * 10 + 8, 92); ctx.quadraticCurveTo(x0 + sd * 6 + 9, 60, x0 + 7, 16); ctx.closePath(); ctx.fill(); for (let q = 0; q < 2; q++) { const p = (t * 1.4 + q * 0.5) % 1; ctx.globalAlpha = 1 - p; ctx.beginPath(); ctx.arc(x0 + sd * (12 + p * 30), 96 + p * 80, 8, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; } }); ctx.restore(); }
+      if (face.qmark) { const b = Math.sin(t * 3) * 6; ctx.save(); ctx.translate(96, -120 + b); ctx.rotate(0.2); ctx.font = '900 92px Montserrat, "Arial Black", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 10; ctx.strokeStyle = OL; ctx.strokeText('?', 0, 0); ctx.fillStyle = this.e('#ffd166'); ctx.fillText('?', 0, 0); ctx.restore(); }
+      if (face.sparkle || face.hearts || face.fire) {
+        for (let q = 0; q < 3; q++) { const p = (t * 0.8 + q / 3) % 1; const x = (q - 1) * 80 + Math.sin(q * 2 + t) * 10; const y = -110 - p * 90; const a = Math.sin(p * Math.PI);
+          ctx.save(); ctx.translate(x, y); ctx.globalAlpha = a; ctx.scale(0.6 + a * 0.5, 0.6 + a * 0.5);
+          if (face.hearts) { ctx.beginPath(); ctx.moveTo(0, 12); ctx.bezierCurveTo(-22, -2, -14, -20, 0, -8); ctx.bezierCurveTo(14, -20, 22, -2, 0, 12); ctx.closePath(); ctx.fillStyle = this.e('#ff4f7d'); ctx.fill(); ctx.lineWidth = 3.5; ctx.strokeStyle = OL; ctx.stroke(); }
+          else if (face.fire) { if (q === 1) { ctx.beginPath(); ctx.moveTo(0, -26); ctx.quadraticCurveTo(18, -4, 12, 10); ctx.quadraticCurveTo(0, 20, -12, 10); ctx.quadraticCurveTo(-18, -4, 0, -26); ctx.closePath(); ctx.fillStyle = this.e('#ff8a3d'); ctx.fill(); ctx.lineWidth = 3.5; ctx.strokeStyle = OL; ctx.stroke(); } }
+          else { ctx.beginPath(); for (let k = 0; k < 8; k++) { const r = k % 2 ? 6 : 18; const an = k / 8 * TAU; ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r); } ctx.closePath(); ctx.fillStyle = this.e('#ffe066'); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = OL; ctx.stroke(); }
+          ctx.restore(); }
+      }
       if (pal.headAfter) pal.headAfter(ctx, this, face, t, f);
     }
     drop(ctx, r, color) {
@@ -1244,7 +1282,11 @@
           const opts = { seatY: L.seatY, desk: !!L.desk && L.desk !== 'cafe', poseT, facing, seed: 0 };
           X = VTS.sceneExt ? VTS.sceneExt.pre(this, ctx, scene, L, kind, t, lt, x) : null;
           if (X) { if (X.targetR) opts.targetR = X.targetR; if (X.targetL) opts.targetL = X.targetL; }
-          if (scene.count === 2 && (scene.pose === 'hugging' || scene.pose === 'arguing')) {
+          const ext = VTS.sceneExt;
+          if (scene.behind && ext && ext.behind) ext.behind(this, ctx, scene, L, kind, t, lt, x); // v1.6: an extra standing behind the main character
+          const custom = ext && ext.cast ? ext.cast(this, ctx, scene, L, kind, t, lt, x, opts, sh) : null; // v1.6: multi-character staging (waving, walking toward each other, ...)
+          if (custom) A = custom;
+          else if (scene.count === 2 && (scene.pose === 'hugging' || scene.pose === 'arguing')) {
             ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(L.charX2, L.groundY + 4, 140 * L.scale, 22 * L.scale, 0, 0, TAU); ctx.fill();
             this.character(ctx, L.charX2, L.groundY, L.scale, scene.pose, scene.emotion, t, Object.assign({}, opts, { variant: 1, seed: 3, pair: -1 }));
             A = this.character(ctx, x, L.groundY, L.scale, scene.pose, scene.emotion, t, Object.assign({}, opts, { pair: 1 }));
@@ -1262,6 +1304,7 @@
       }
       const placed = this.placeProps(scene, L, A);
       placed.forEach((p) => { if (p.name === 'brain' && p.env.big && !sh.img) return; this.prop(p.name, ctx, p.x, p.y, p.sc, sh.propAge(p.name), t, p.env); });
+      if (!sh.img && kind !== 'card' && VTS.sceneExt && VTS.sceneExt.overlay) VTS.sceneExt.overlay(this, ctx, scene, L, kind, t, lt); // v1.6 weather
       if (scene.callout) {
         // Sticker goes beside the head on the side away from the bubbles; if there is no room, drop to chest level on the other side.
         const head = A.head || { x: 540, y: 1000, r: 90 };
@@ -1310,7 +1353,7 @@
   // Short text description of a scene (used for AI illustration prompts).
   function describe(scene) {
     const lab = (list, id) => (list.find((x) => x[0] === id) || [id, id])[1].toLowerCase();
-    const who = scene.count === 2 ? 'two friendly cartoon characters talking' : 'one friendly cartoon character (young adult in a hoodie)';
+    const who = (scene.count === 2 ? (scene.pose === 'talking' ? 'two friendly cartoon characters talking' : 'two friendly cartoon characters') : 'one friendly cartoon character (young adult in a hoodie)') + (scene.behind ? ' with another person standing behind' : '');
     return who + ', pose: ' + lab(POSES, scene.pose) + ', feeling ' + scene.emotion + ', setting: ' + lab(SETTINGS, scene.setting) + (scene.props.length ? ', with ' + scene.props.map((p) => lab(PROPS, p)).join(', ') : '');
   }
 
