@@ -177,8 +177,8 @@
   act('arguing', 'Arguing', 'two', ['living-room', 'office', 'street', 'kitchen', 'void'], { props: ['anger', 'speech-bubbles'], emo: 'angry' }, null);
   // v1.6: one arm up and waving from the elbow, the other relaxed; works solo, in pairs (mirrored) and with an extra behind (scene.behind)
   function waveArms(sp, t, o) {
-    const m = o && (o.mirror || o.pair === -1) ? -1 : 1; const a = -Math.PI / 2 + Math.sin(t * 9) * 0.55; const el = { x: m * 148, y: -214 };
-    const hand = { x: el.x + Math.cos(a) * 96 * m, y: el.y + Math.sin(a) * 96, el, bend: m };
+    const m = o && (o.mirror || o.pair === -1) ? -1 : 1; const a = -Math.PI / 2 + 0.22 + Math.sin(t * 9) * 0.5; const el = { x: m * 190, y: -205 };
+    const hand = { x: el.x + Math.cos(a) * 124 * m, y: el.y + Math.sin(a) * 124, el, bend: m };
     if (m > 0) { sp.armR = hand; sp.armL = { x: -92, y: -6, bend: -1 }; } else { sp.armL = hand; sp.armR = { x: 92, y: -6, bend: 1 }; }
     sp.headTilt = m * (0.06 + Math.sin(t * 4.5) * 0.03); sp.tilt = -m * 0.02; sp.mouth = 'grin'; sp.look = { x: m * 0.3, y: 0 };
   }
@@ -1382,9 +1382,11 @@ alarm|p=alarm|w=3
       return; }
     return prevFront16.call(this, ctx, setting, kind, L, pose, t);
   };
+  const CAR_OK16 = new Set(['map', 'pin', 'location', 'music', 'music-notes', 'coffee', 'phone', 'fuel', 'clock', 'alarm-clock', 'money', 'sweat', 'question', 'exclamation', 'lightbulb', 'heart', 'fire', 'skull', 'thought-bubble']);
   ST.placeProps = function (scene, L, A) {
     const out = prevPlace16.call(this, scene, L, A);
-    return out.filter((p) => !(VEH16.has(p.name) && OUT16.has(scene.setting)) && !(p.name === 'car-radio' && scene.setting === 'car-interior') && !(p.name === 'umbrella' && scene.pose === 'holding-umbrella') && !(p.name === 'bicycle' && scene.pose === 'cycling') && !(p.name === 'car' && scene.setting === 'car-interior'));
+    return out.filter((p) => !(VEH16.has(p.name) && OUT16.has(scene.setting)) && !(p.name === 'car-radio' && scene.setting === 'car-interior') && !(p.name === 'umbrella' && scene.pose === 'holding-umbrella') && !(p.name === 'bicycle' && scene.pose === 'cycling') && !(p.name === 'car' && scene.setting === 'car-interior')
+      && !(p.name === 'phone' && scene.pose === 'walking-toward') && !(scene.setting === 'car-interior' && !CAR_OK16.has(p.name)));
   };
   // ---------- staging hooks ----------
   function walkLegs16(sp, t, f) { const p = t * TAU * 1.5; sp.facing = f; sp.tilt = 0.03 * f; sp.hipY = -Math.abs(Math.sin(p)) * 9;
@@ -1431,14 +1433,14 @@ alarm|p=alarm|w=3
   function pre16(st, ctx, scene, L, kind, t, lt, x) {
     if (scene.pose === 'cycling') { bike16(st, ctx, x, L, t, lt); return null; }
     if (scene.setting === 'car-interior') { const g = carWheel16(t); let tr = onWheel16(g, -1.75); const tl = onWheel16(g, 1.15);
-      if ((scene.props || []).includes('car-radio')) { const k = lt < 0.7 ? 0 : lt < 1.1 ? ease((lt - 0.7) / 0.4) : lt < 1.9 ? 1 : 1 - ease((lt - 1.9) / 0.4); const knob = [862, 1300]; tr = [tr[0] + (knob[0] - tr[0]) * k, tr[1] + (knob[1] - tr[1]) * k]; }
+      if ((scene.props || []).includes('car-radio')) { const k = lt < 0.7 ? 0 : lt < 1.1 ? ease((lt - 0.7) / 0.4) : lt < 1.9 ? 1 : 1 - ease((lt - 1.9) / 0.4); const knob = [858, 1298]; tr = [tr[0] + (knob[0] - tr[0]) * k, tr[1] + (knob[1] - tr[1]) * k]; }
       return { targetR: tr, targetL: tl, car: true }; }
     return basePre16(st, ctx, scene, L, kind, t, lt, x);
   }
   function post16(st, ctx, scene, L, kind, Ach, X, t, lt, sh) {
     basePost16(st, ctx, scene, L, kind, Ach, X, t, lt, sh);
     if (scene.setting === 'car-interior') {
-      const hasR = (scene.props || []).includes('car-radio'); drawRadio16(st, ctx, 790, 1300, 0.62, t, hasR ? radioK16(lt) : 0);
+      const hasR = (scene.props || []).includes('car-radio'); drawRadio16(st, ctx, 800, 1300, 0.8, t, hasR ? radioK16(lt) : 0);
       const g = carWheel16(t); ctx.save(); ctx.translate(g.cx, g.cy); ctx.rotate(g.rot);
       ctx.lineWidth = 10; ctx.strokeStyle = st.c('#3b3f52'); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(120, 90); ctx.stroke();
       ctx.beginPath(); ctx.ellipse(0, 0, g.rx, g.ry, 0, 0, TAU); ctx.lineWidth = 34; ctx.strokeStyle = st.OL; ctx.stroke(); ctx.lineWidth = 22; ctx.strokeStyle = st.c('#2a2e3f'); ctx.stroke();
