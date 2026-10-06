@@ -37,6 +37,18 @@ It's built for faceless psychology and self-help channels like Quiet Brain Club,
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
 
+## New in 1.6.0 — bigger 2D scene library, weather, caption styles
+
+- **Places:** hallway (with perspective), car interior (windshield + moving road, steering wheel, dashboard radio), beach, rooftop at night, bus stop, supermarket aisle, mountain trail, rainy street, school yard, train platform.
+- **Actions (15 new):** waving (one arm), two people walking toward each other (they switch to the "suddenly my phone is fascinating" pose), high-five, driving, cycling, pointing, shrugging, arms crossed, hiding face, jumping, tripping, sneaking, sitting on the couch, checking the watch, holding an umbrella. A third person can stand behind the main character ("someone standing behind" in the scene editor).
+- **Vehicles:** bicycle (ridden), car, taxi, bus (pulls in at the bus stop), scooter, motorbike, train, plus a car radio whose volume knob turns down.
+- **Expressions (10 new):** confused, disgusted, nervous sweat, proud, bored, jealous, love-struck, determined, awkward smile, crying.
+- **Weather** for outdoor scenes and car windows: rain, storm with lightning, bright sun, snow, fog, wind with leaves, overcast, sunset, night stars. "Auto" picks one from the mood and the words.
+- **Chat effect:** a long message is typed, deleted, and "lol" is sent, with typing sounds.
+- **Caption styles:** word highlight in yellow, green, pink or blue, boxed sticker, Hormozi (thick outline and shadow), typewriter, bounce-in, emoji-accented.
+- **On-screen text:** title card, numbered step badges, "POV:" tag, arrow + label, meme top/bottom text, lower-third name bar.
+- Pipeline: `CAPTION_STYLE=hormozi` / `TEXT_STYLE=pov` environment variables for `tests/live/preview-offline.js` (and the daily run through `e2e-live.js`).
+
 ## Fixed in 1.4.2
 
 - "Write my Short" no longer stops at *"Gemini returned an empty response."* That message came from any reply that had no text: Gemini returned no candidates, stopped with OTHER / RECITATION / PROHIBITED_CONTENT, or the reply could not be read on the phone. 1.4.1 treated one such reply as final, with no retry and no other model. Now the app:

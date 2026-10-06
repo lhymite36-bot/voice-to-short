@@ -1,5 +1,5 @@
 /* App-shell service worker. Gemini API calls are never cached. */
-const CACHE = 'vts-shell-v1.5.0';
+const CACHE = 'vts-shell-v1.6.0';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.json', './capacitor.js',
   './js/gemini.js', './js/emoji-index.js', './js/scenes.js', './js/library.js', './js/shortgen.js', './js/db.js', './js/speech.js', './js/native.js', './js/render.js', './js/segments.js', './js/audiofx.js', './js/comedy.js', './js/motion.js', './js/three3d.js', './js/captions16.js', './vendor/three.min.js', './js/ideas.js', './js/app.js',
