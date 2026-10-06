@@ -102,10 +102,17 @@
       return { start: hb.silent ? 0 : hb.start, end: tb.silent ? d : t0 + tb.end, silent: false };
     }
   }
+  // 10 ms loudness profile of the whole track (read 30 s at a time) so captions are aligned to the real voice.
+  async function trackProfile(track) {
+    if (!R.finishProfile) return null; const hop = Math.max(1, Math.round(track.sr / 100)); const v = new Float32Array(Math.ceil(track.length / hop)); const d = track.duration;
+    for (let t0 = 0; t0 < d; t0 += 30) { const f = await track.floats(t0, Math.min(d, t0 + 30)); const k0 = Math.round(t0 * 100); for (let k = 0; k * hop < f.length && k0 + k < v.length; k++) { let s = 0; const e = Math.min(f.length, (k + 1) * hop); for (let j = k * hop; j < e; j++) s += f[j] * f[j]; v[k0 + k] = Math.sqrt(s / Math.max(1, e - k * hop)); } }
+    return R.finishProfile(v, R.LEAD);
+  }
   async function planTrack(track, maxSeconds) {
     const cap = Math.min(maxSeconds || R.MAX_LONG, R.MAX_LONG);
     const audioDur = Math.min(track.duration, cap - R.LEAD - R.TAIL); const b = await track.bounds();
-    return { audioDur, total: R.LEAD + audioDur + R.TAIL, speechStart: R.LEAD + Math.min(b.start, audioDur), speechEnd: R.LEAD + Math.min(b.end, audioDur) };
+    let speech = null; try { speech = await trackProfile(track); } catch (_) { speech = null; }
+    return { audioDur, total: R.LEAD + audioDur + R.TAIL, speechStart: R.LEAD + Math.min(b.start, audioDur), speechEnd: R.LEAD + Math.min(b.end, audioDur), speech };
   }
 
   // ======================= streaming WebM (Matroska) join =======================
@@ -324,7 +331,7 @@
     const P = opts.plan || (await planTrack(opts.track, opts.maxSeconds));
     const r = new R.Renderer(opts.canvas); r.realtime = true;
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
-    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections }));
+    r.setup(Object.assign({}, opts.look, { beats: opts.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: opts.sections, speech: P.speech }));
     if (VTS.motion) { try { r.env = await VTS.motion.envelopeFromTrack(opts.track); } catch (_) { r.env = null; } }
     await r.prepare();
     if (opts.probe) r.probe = opts.probe;
@@ -402,5 +409,5 @@
     return { where: 'your Downloads folder' };
   }
 
-  VTS.segments = { openStore, AudioTrack, planTrack, joinWebm, renderLong, segmentBounds, exportStored, memStore };
+  VTS.segments = { openStore, AudioTrack, planTrack, trackProfile, joinWebm, renderLong, segmentBounds, exportStored, memStore };
 }());

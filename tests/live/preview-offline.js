@@ -30,7 +30,7 @@ function serve() {
       textHook: pkg.textHook || '', ctaSticker: pkg.cta || 'Follow if your brain does this too 🧠', template: 'classic', humour: 2, stepLabel: 'STEP', anim, motion, handle: '' };
     Object.assign(look, lookx, { aspect, anim, motion, visual: lookx.visual || 'scenes' });
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }
-    const r = new R.Renderer(c); r.setup(Object.assign({}, look, { beats: pkg.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: null }));
+    const r = new R.Renderer(c); r.setup(Object.assign({}, look, { beats: pkg.beats, speechStart: P.speechStart, speechEnd: P.speechEnd, duration: P.total, sections: null, speech: P.speech }));
     r.env = window.VTS.motion.envelopeFromBuffer(buf); await r.prepare(); window.__r = r; window.__c = c;
     let mixWav = '';
     if (window.VTS.audiofx && r.cx && (look.sfx !== false || (look.music && look.music !== 'none'))) {
