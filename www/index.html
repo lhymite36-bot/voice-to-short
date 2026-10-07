@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0a0a10">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="Talk an idea, get a colour-graded vertical YouTube Short with captions. Free, on your phone.">
+  <meta name="description" content="Talk an idea, get a colour-graded vertical YouTube Short with captions — or turn your comic panels into a narrated Comic Recap. Free, on your phone.">
   <title>Voice to Short</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
@@ -24,6 +24,7 @@
     <main>
       <!-- ================= CREATE ================= -->
       <section id="view-create" class="view active" aria-label="Create">
+        <div class="seg mode-seg" id="mode-seg" role="radiogroup" aria-label="What are you making?"><button type="button" data-v="short" role="radio">🎙 Voice Short</button><button type="button" data-v="comic" role="radio">💥 Comic Recap</button></div>
         <nav class="stepper" aria-label="Steps">
           <button type="button" class="step" data-step="idea"><i>1</i><span>Idea</span></button>
           <button type="button" class="step" data-step="script"><i>2</i><span>Script</span></button>
@@ -33,6 +34,7 @@
 
         <!-- Step 1: Idea -->
         <div class="pane" id="pane-idea">
+          <div class="short-only">
           <div class="hero">
             <h1>What’s the idea?</h1>
             <p class="muted">Tap the mic and ramble — up to 20 minutes, pauses are fine (the transcript is saved as you talk). Or paste text or an outline. Gemini turns it into a funny, scroll-stopping Short: a hook, jokes that keep the psychology accurate, and a loopable ending. Stuck? Open the 💡 Idea bank.</p>
@@ -80,6 +82,20 @@
           <p class="small muted" id="length-note"></p>
           <button type="button" class="btn primary big" id="generate"><span>✨ Write my Short</span></button>
           <div id="gen-status" class="status" role="status"></div>
+          </div>
+          <div class="comic-only" id="comic-idea">
+            <div class="hero"><h1>Comic Recap</h1><p class="muted">Add the comic panels you want to recap, in reading order. Gemini looks at them and narrates the story scene by scene — each panel stays on screen exactly while its part of the story is told. Use panels you own or have the right to share.</p></div>
+            <label class="btn primary big comic-add" id="comic-add"><span>🖼 Add panels from gallery</span><input type="file" id="comic-files" accept="image/*" multiple hidden></label>
+            <p class="small muted center" id="comic-count">No panels yet · 4–12 panels work best</p>
+            <ol class="comic-grid" id="comic-grid" aria-label="Panels in reading order"></ol>
+            <label class="field"><span class="label-row"><span>Title or topic <em class="muted small">(optional)</em></span></span><input id="comic-title" type="text" maxlength="100" placeholder="e.g. The night the Council betrayed its hero"></label>
+            <label class="field"><span class="label-row"><span>Notes for the narrator <em class="muted small">(optional)</em></span></span><textarea id="comic-notes" rows="3" maxlength="1500" placeholder="Names, who is who, what happened before these panels…"></textarea></label>
+            <div class="field"><span class="label-row"><span>Video length</span><span class="muted small" id="comic-len-note"></span></span>
+              <div class="seg" id="comic-len-seg" role="radiogroup"><button type="button" data-v="30">30 s</button><button type="button" data-v="60">60 s</button><button type="button" data-v="90">90 s</button></div></div>
+            <button type="button" class="btn primary big" id="comic-generate"><span>✨ Write the recap</span></button>
+            <button type="button" class="btn comic-own" id="comic-own">✍️ Write my own script</button>
+            <div id="comic-status" class="status" role="status"></div>
+          </div>
         </div>
 
         <!-- Step 2: Script -->
@@ -90,16 +106,22 @@
           </div>
           <div id="script-empty" class="empty-card hidden"><h2>No script yet</h2><p class="muted">Add your idea in step 1 and tap “Write my Short”.</p><button type="button" class="btn" data-goto="idea">Go to Idea</button></div>
           <div id="script-body" class="hidden">
-            <div class="card">
+            <div class="card comic-only" id="comic-script-card">
+              <div class="card-head"><h2>Recap script · scene by scene</h2><span id="comic-word-badge" class="badge">0 words</span></div>
+              <p class="small muted">Each panel is on screen exactly while its lines are spoken. One line per row · wrap key words in *stars* to make them yellow · the first line is your hook.</p>
+              <ol id="comic-lines" class="comic-lines"></ol>
+              <p class="small muted" id="comic-script-est"></p>
+            </div>
+            <div class="card short-only">
               <div class="card-head"><h2>Pick your hook</h2><span class="muted small">The first 2 seconds decide everything</span></div>
               <div id="hooks" class="hooks" role="radiogroup"></div>
             </div>
-            <div class="card">
+            <div class="card short-only">
               <div class="card-head"><h2>Voiceover script</h2><span id="word-badge" class="badge">0 words</span></div>
               <textarea id="script" rows="9" aria-label="Voiceover script"></textarea>
               <div class="row-between small"><span class="muted" id="script-est">≈ 0 s spoken</span><button type="button" class="link-btn hidden" id="rebuild-beats">↻ Update captions from script</button></div>
             </div>
-            <div class="card">
+            <div class="card short-only">
               <div class="card-head"><h2>Caption beats &amp; scenes</h2><span class="muted small">One phrase per beat · weight = time</span></div>
               <div class="field"><span class="label-row"><span>Visual style</span></span>
                 <div class="seg vis-seg" id="vis-seg-script"><button type="button" data-v="scenes">🎨 Animated scenes</button><button type="button" data-v="classic">Captions only (classic)</button></div>
@@ -110,7 +132,7 @@
               <ol id="beats" class="beats"></ol>
               <button type="button" class="btn ghost" id="add-beat">+ Add beat</button>
             </div>
-            <div class="card">
+            <div class="card short-only">
               <div class="card-head"><h2>On-screen stickers</h2><span class="muted small">Big text most viewers read with the sound off</span></div>
               <label class="field"><span class="label-row"><span>First-frame text hook</span><span class="muted small" id="texthook-count"></span></span><input id="f-texthook" type="text" maxlength="60" placeholder="e.g. your brain at 3 a.m. 💀"></label>
               <label class="field"><span class="label-row"><span>Ending CTA sticker</span></span><input id="f-cta" type="text" maxlength="60"></label>
@@ -148,7 +170,7 @@
             <div class="voice-list" id="ai-voices" role="radiogroup" aria-label="AI voices"></div>
             <label class="field"><span>Delivery style</span>
               <select id="ai-style">
-                <option value="tone">Match my tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="sarcastic">Sarcastic bestie</option><option value="deadpan">Deadpan</option><option value="genz">Chaotic Gen-Z</option><option value="roast">Roast me (gently)</option><option value="custom">Custom…</option>
+                <option value="tone">Match my tone</option><option value="dramatic">Dramatic narrator</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="sarcastic">Sarcastic bestie</option><option value="deadpan">Deadpan</option><option value="genz">Chaotic Gen-Z</option><option value="roast">Roast me (gently)</option><option value="custom">Custom…</option>
               </select>
             </label>
             <input id="ai-style-custom" class="hidden" type="text" maxlength="160" placeholder="e.g. warm late-night radio host, slow and intimate">
@@ -203,28 +225,39 @@
               <div class="preview-time" id="preview-time"></div>
             </div>
             <div class="render-controls">
-              <div class="field"><span class="label-row"><span>Animation style</span><span class="muted small" id="anim-note"></span></span>
+              <div class="card comic-only" id="comic-fx-card">
+                <div class="card-head"><h2>💥 Comic effects</h2><span class="muted small">Ken Burns moves on every panel</span></div>
+                <label class="switch"><input type="checkbox" id="cx-glow"><span>Energy glow &amp; colour tint</span></label>
+                <div class="swatches" id="cx-colors" role="radiogroup" aria-label="Glow colour"></div>
+                <label class="switch"><input type="checkbox" id="cx-speed"><span>Speed lines</span></label>
+                <label class="switch"><input type="checkbox" id="cx-flash"><span>Impact flashes</span></label>
+                <label class="switch"><input type="checkbox" id="cx-shake"><span>Camera shake on impacts</span></label>
+                <label class="switch"><input type="checkbox" id="cx-sfx"><span>Comic sound-effect lettering <em class="muted">(KRAK! BOOM! with matching sounds)</em></span></label>
+                <div class="field"><span class="label-row"><span>Transitions</span></span><div class="seg seg-wrap" id="cx-trans" role="radiogroup"></div></div>
+                <div class="field"><span class="label-row"><span>Panel fit</span><span class="muted small" id="cx-fit-note"></span></span><div class="seg" id="cx-fit" role="radiogroup"></div></div>
+              </div>
+              <div class="field short-only"><span class="label-row"><span>Animation style</span><span class="muted small" id="anim-note"></span></span>
                 <div class="seg" id="anim-seg"><button type="button" data-v="2d">✏️ 2D cartoon</button><button type="button" data-v="3d">🧊 3D clay</button></div></div>
-              <div class="field" id="motion-row"><span class="label-row"><span>Motion</span><span class="muted small" id="motion-note"></span></span>
+              <div class="field short-only" id="motion-row"><span class="label-row"><span>Motion</span><span class="muted small" id="motion-note"></span></span>
                 <div class="seg" id="motion-seg"><button type="button" data-v="smooth">✨ Smooth (v1.5)</button><button type="button" data-v="classic">Classic (v1.4)</button></div></div>
-              <div class="field"><span class="label-row"><span>Visual style</span></span>
+              <div class="field short-only"><span class="label-row"><span>Visual style</span></span>
                 <div class="seg vis-seg" id="vis-seg-render"><button type="button" data-v="scenes">🎨 Animated scenes</button><button type="button" data-v="classic">Captions only</button></div>
               </div>
-              <label class="switch" id="ai-img-row"><input type="checkbox" id="opt-ai-images"><span>Use AI-drawn illustrations when available <em class="muted">(uses Gemini image quota · needs a billing-enabled key, ≈ $0.03–0.04 per scene · falls back to built-in scenes)</em></span></label>
-              <div class="field"><span class="label-row"><span>Frame shape</span><span class="muted small" id="aspect-note"></span></span>
+              <label class="switch short-only" id="ai-img-row"><input type="checkbox" id="opt-ai-images"><span>Use AI-drawn illustrations when available <em class="muted">(uses Gemini image quota · needs a billing-enabled key, ≈ $0.03–0.04 per scene · falls back to built-in scenes)</em></span></label>
+              <div class="field short-only"><span class="label-row"><span>Frame shape</span><span class="muted small" id="aspect-note"></span></span>
                 <div class="seg" id="aspect-seg"><button type="button" data-v="9:16">9:16</button><button type="button" data-v="16:9">16:9</button><button type="button" data-v="1:1">1:1</button><button type="button" data-v="4:5">4:5</button></div></div>
-              <div class="field"><span class="label-row"><span>Colour grade</span></span><div class="grades" id="grades"></div></div>
+              <div class="field short-only"><span class="label-row"><span>Colour grade</span></span><div class="grades" id="grades"></div></div>
               <div class="field"><span class="label-row"><span>Captions</span></span>
-                <div class="seg" id="cap-style"><button type="button" data-v="tiktok">TikTok bold</button><button type="button" data-v="beast">Big &amp; loud</button><button type="button" data-v="clean">Clean</button><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button><button type="button" data-v="hl-yellow">Highlight 🟨</button><button type="button" data-v="hl-green">Highlight 🟩</button><button type="button" data-v="hl-pink">Highlight 🩷</button><button type="button" data-v="hl-blue">Highlight 🟦</button><button type="button" data-v="boxed">Boxed sticker</button><button type="button" data-v="hormozi">Hormozi</button><button type="button" data-v="typewriter">Typewriter</button><button type="button" data-v="bounce">Bounce-in</button><button type="button" data-v="emoji">Emoji-accented</button><button type="button" data-v="none">None</button></div>
+                <div class="seg" id="cap-style"><button type="button" data-v="tiktok">TikTok bold</button><button type="button" data-v="beast">Big &amp; loud</button><button type="button" data-v="clean">Clean</button><button type="button" data-v="pop">Word pop</button><button type="button" data-v="karaoke">Karaoke</button><button type="button" data-v="hl-yellow">Highlight 🟨</button><button type="button" data-v="hl-green">Highlight 🟩</button><button type="button" data-v="hl-pink">Highlight 🩷</button><button type="button" data-v="hl-blue">Highlight 🟦</button><button type="button" data-v="boxed">Boxed sticker</button><button type="button" data-v="hormozi">Hormozi</button><button type="button" data-v="typewriter">Typewriter</button><button type="button" data-v="bounce">Bounce-in</button><button type="button" data-v="emoji">Emoji-accented</button><button type="button" data-v="comic">Comic Bold 💥</button><button type="button" data-v="none">None</button></div>
                 <div class="seg" id="cap-case"><button type="button" data-v="upper">UPPERCASE</button><button type="button" data-v="sentence">Sentence case</button></div>
-                <label class="label-row" for="text-style"><span>On-screen text</span><span class="muted small">title cards, step badges, POV tag, arrows, meme text, lower-third</span></label><select id="text-style"><option value="none">None</option><option value="title-card">Title card</option><option value="step-badge">Numbered step badges</option><option value="pov">“POV:” tag</option><option value="arrow-label">Arrow + label</option><option value="meme">Meme top/bottom text</option><option value="lower-third">Lower-third name bar</option></select>
+                <div class="short-only"><label class="label-row" for="text-style"><span>On-screen text</span><span class="muted small">title cards, step badges, POV tag, arrows, meme text, lower-third</span></label><select id="text-style"><option value="none">None</option><option value="title-card">Title card</option><option value="step-badge">Numbered step badges</option><option value="pov">“POV:” tag</option><option value="arrow-label">Arrow + label</option><option value="meme">Meme top/bottom text</option><option value="lower-third">Lower-third name bar</option></select></div>
               </div>
-              <div class="field"><span class="label-row"><span>Energy · pattern interrupts</span><span class="muted small" id="intensity-note"></span></span>
+              <div class="field short-only"><span class="label-row"><span>Energy · pattern interrupts</span><span class="muted small" id="intensity-note"></span></span>
                 <div class="seg" id="intensity-seg"><button type="button" data-v="off">Off</button><button type="button" data-v="chill">Chill</button><button type="button" data-v="punchy">Punchy</button><button type="button" data-v="chaotic">Chaotic</button></div></div>
-              <label class="switch"><input type="checkbox" id="opt-hook"><span>First-frame text hook <em class="muted" id="hook-preview"></em></span></label>
-              <label class="switch"><input type="checkbox" id="opt-cta"><span>CTA sticker at the end</span></label>
-              <label class="switch"><input type="checkbox" id="opt-emoji"><span>Auto emoji &amp; reaction stickers</span></label>
-              <label class="switch"><input type="checkbox" id="opt-loop"><span>Loop ending <em class="muted">(last frame melts into the first, so it replays seamlessly)</em></span></label>
+              <label class="switch short-only"><input type="checkbox" id="opt-hook"><span>First-frame text hook <em class="muted" id="hook-preview"></em></span></label>
+              <label class="switch short-only"><input type="checkbox" id="opt-cta"><span>CTA sticker at the end</span></label>
+              <label class="switch short-only"><input type="checkbox" id="opt-emoji"><span>Auto emoji &amp; reaction stickers</span></label>
+              <label class="switch short-only"><input type="checkbox" id="opt-loop"><span>Loop ending <em class="muted">(last frame melts into the first, so it replays seamlessly)</em></span></label>
               <label class="switch"><input type="checkbox" id="opt-safe"><span>Show TikTok / YouTube safe zones <em class="muted">(preview only, never rendered)</em></span></label>
               <div class="card sound-card">
                 <div class="card-head"><h2>🔊 Sound</h2><span class="muted small">Your voice always stays on top</span></div>
@@ -303,7 +336,7 @@
         <div class="card">
           <div class="card-head"><h2>AI voice (Gemini)</h2></div>
           <label class="field"><span>Default voice</span><select id="s-tts-voice"></select></label>
-          <label class="field"><span>Delivery style</span><select id="s-tts-style"><option value="tone">Match the project tone</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="sarcastic">Sarcastic bestie</option><option value="deadpan">Deadpan</option><option value="genz">Chaotic Gen-Z</option><option value="roast">Roast me (gently)</option><option value="custom">Custom…</option></select></label>
+          <label class="field"><span>Delivery style</span><select id="s-tts-style"><option value="tone">Match the project tone</option><option value="dramatic">Dramatic narrator</option><option value="calm">Calm teacher</option><option value="bold">Bold</option><option value="soft">Soft</option><option value="sarcastic">Sarcastic bestie</option><option value="deadpan">Deadpan</option><option value="genz">Chaotic Gen-Z</option><option value="roast">Roast me (gently)</option><option value="custom">Custom…</option></select></label>
           <input id="s-tts-custom" class="hidden" type="text" maxlength="160" placeholder="Custom style, e.g. warm late-night radio host">
           <label class="field"><span>Voice model</span><select id="s-tts-model"></select></label>
           <button type="button" class="btn ghost" id="load-tts-models">Load voice models from my key</button>
@@ -326,7 +359,7 @@
           <p class="small muted">Backups contain your ideas, scripts and settings (not audio or video files, and never your API key).</p>
         </div>
         <p class="center small muted" id="app-version"></p>
-        <p class="center small muted" id="credits">Keyword icons: <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener">Twemoji</a> © Twitter/X and contributors, CC-BY 4.0 (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">license</a>). Sound effects: <a href="https://kenney.nl/assets" target="_blank" rel="noopener">Kenney</a> (CC0); laugh: “Laughter” by lonemonk (freesound #72844), CC BY 3.0; other sounds and music are generated in the app. Emoji names: emojibase (MIT). Scenes and characters are drawn in code on your device.</p>
+        <p class="center small muted" id="credits">Keyword icons: <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener">Twemoji</a> © Twitter/X and contributors, CC-BY 4.0 (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">license</a>). Sound effects: <a href="https://kenney.nl/assets" target="_blank" rel="noopener">Kenney</a> (CC0); laugh: “Laughter” by lonemonk (freesound #72844), CC BY 3.0; other sounds and music are generated in the app. Emoji names: emojibase (MIT). Scenes and characters are drawn in code on your device. Comic sound-effect lettering: Bangers font by Vernon Adams (SIL Open Font License 1.1). Comic Recap uses only the panels you add; nothing is downloaded.</p>
       </section>
     </main>
 
@@ -378,6 +411,7 @@
   <script src="js/motion.js"></script>
   <script src="js/three3d.js"></script>
   <script src="js/captions16.js"></script>
+  <script src="js/comic.js"></script>
   <script src="js/ideas.js"></script>
   <script src="js/app.js"></script>
 </body>

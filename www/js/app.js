@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.7.0';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 20 * 60; // long dictation (auto-restarts after pauses)
@@ -9,6 +9,8 @@
   const MAX_LONG_VOICE = R.MAX_LONG - R.LEAD - R.TAIL; // 20 min videos
   const LONG_RENDER_SEC = 150; // above this the render is done in segments saved to disk
   const SG = VTS.segments;
+  const CM = VTS.comic; // v1.7 Comic Recap
+  const COMIC_MAX_SEC = 180; // comic recaps: up to 3 min (YouTube Shorts / TikTok limit)
 
   const SPEECH_LANGS = [
     ['en-US', 'English (US)'], ['en-GB', 'English (UK)'], ['en-IN', 'English (India)'], ['en-NG', 'English (Nigeria)'], ['en-GH', 'English (Ghana)'], ['en-KE', 'English (Kenya)'],
@@ -53,6 +55,7 @@
     deadpan: { style: 'deadpan: flat, understated and unimpressed, perfectly timed pauses, never over-acted', prefix: 'Say in a flat, deadpan, unimpressed voice' },
     genz: { style: 'chaotic Gen-Z: fast, expressive and animated, big reactions, playful emphasis on punchlines', prefix: 'Say in a fast, expressive, playful Gen-Z voice' },
     roast: { style: 'gentle roast: amused, teasing and warm, like a friend lovingly calling you out; punchy timing', prefix: 'Say in an amused, teasing but warm voice' },
+    dramatic: { style: 'dramatic storyteller narrating an epic comic: deep, intense and cinematic, building suspense, short punchy pauses before reveals, rising energy on action, never cheesy', prefix: 'Narrate like a dramatic, intense, cinematic storyteller' },
   };
   // v1.4: sarcastic bestie becomes the default tone for new projects (once).
   if (!load('vts.v14', false)) { save(K.tone, 'sarcastic'); save('vts.v14', true); }
@@ -62,7 +65,7 @@
   function ttsStyle() {
     const mode = load(K.ttsStyle, 'tone');
     if (mode === 'custom') { const c = String(load(K.ttsCustom, '') || '').trim(); if (c) return { style: c, prefix: 'Say in this style (' + c + ')' }; }
-    const key = mode === 'tone' || mode === 'custom' ? (P && P.tone) || load(K.tone, 'sarcastic') : mode;
+    const key = mode === 'tone' || mode === 'custom' ? (P && P.mode === 'comic' ? 'dramatic' : (P && P.tone) || load(K.tone, 'sarcastic')) : mode;
     return TTS_STYLES[key] || TTS_STYLES.calm;
   }
   Object.assign(G.host, {
@@ -135,7 +138,7 @@
     const tone = load(K.tone, 'sarcastic');
     return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone, length: defLength(aspect),
       template: 'classic', humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, platform: load('vts.platform', 'both'),
-      pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null,
+      pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null, mode: 'short', comic: null,
       look: Object.assign({ aspect, quality: 'auto', preset: load(K.grade, 'teal'), captionCase: 'upper', watermark: !!load(K.watermark, false), format: 'auto',
         visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) }, defaultLook()) };
   }
@@ -144,17 +147,19 @@
     const run = () => {
       if (!P) return;
       P.updatedAt = new Date().toISOString();
-      if (!P.idea.trim() && !P.pkg && !P.voice) return; // do not keep empty drafts
+      if (!P.idea.trim() && !P.pkg && !P.voice && !(P.comic && P.comic.panels && P.comic.panels.length)) return; // do not keep empty drafts
       DB.put(P).catch((err) => toast('Could not save project: ' + (err && err.message || err), true));
       save(K.last, P.id);
     };
     if (now) run(); else saveTimer = setTimeout(run, 500);
   }
   const lengthId = () => (P && P.length) || '60';
-  const isShortLen = () => lengthId() === '60' || lengthId() === '30';
-  const maxVoice = () => (isShortLen() ? MAX_VOICE_SEC : MAX_LONG_VOICE);
-  const aspectOf = () => (P && P.look && R.ASPECTS[P.look.aspect] ? P.look.aspect : '9:16');
-  const voiceIsLong = () => !!(P && P.voice && (P.voice.parts || (!isShortLen() && P.voice.duration > LONG_RENDER_SEC)));
+  const isComic = () => !!(P && P.mode === 'comic');
+  const isShortLen = () => !isComic() && (lengthId() === '60' || lengthId() === '30');
+  const maxVoice = () => (isComic() ? COMIC_MAX_SEC - R.LEAD - R.TAIL : isShortLen() ? MAX_VOICE_SEC : MAX_LONG_VOICE);
+  const maxSecFor = () => (isComic() ? COMIC_MAX_SEC : isShortLen() ? undefined : R.MAX_LONG); // renderer cap (undefined = 60 s Short)
+  const aspectOf = () => (isComic() ? '9:16' : P && P.look && R.ASPECTS[P.look.aspect] ? P.look.aspect : '9:16');
+  const voiceIsLong = () => !isComic() && !!(P && P.voice && (P.voice.parts || (!isShortLen() && P.voice.duration > LONG_RENDER_SEC)));
   // A WAV header + raw PCM blob: nothing is decoded or copied (Blob parts stay on disk).
   function wavHeader(bytes, rate, ch) {
     const h = new DataView(new ArrayBuffer(44)); const w = (o, t) => { for (let i = 0; i < 4; i++) h.setUint8(o + i, t.charCodeAt(i)); };
@@ -173,7 +178,7 @@
       a.src = url; setTimeout(() => fin(0), 10000);
     });
   }
-  function projectTitle(p) { return (p.pkg && p.pkg.title) || (p.idea ? p.idea.trim().split(/\s+/).slice(0, 8).join(' ') + (S.wordCount(p.idea) > 8 ? '…' : '') : 'New Short'); }
+  function projectTitle(p) { if (p.mode === 'comic') return (p.pkg && p.pkg.title) || (p.comic && p.comic.title) || 'Comic Recap'; return (p.pkg && p.pkg.title) || (p.idea ? p.idea.trim().split(/\s+/).slice(0, 8).join(' ') + (S.wordCount(p.idea) > 8 ? '…' : '') : 'New Short'); }
   async function openProject(id, step) {
     const p = await DB.get(id);
     if (!p) { toast('That project was not found.', true); return; }
@@ -184,19 +189,22 @@
     if (p.humour === undefined) { P.template = 'classic'; P.humour = S.TONES[P.tone] && S.TONES[P.tone].funny ? 2 : 0; }
     if (!p.look || !p.look.aspect) P.look.aspect = '9:16'; // projects from v1.2 were vertical
     if (!p.length) P.length = p.pkg && p.pkg.long ? String((p.pkg.lengthSec || 600)) : '60';
+    if (P.mode === 'comic') normalizeComic(P);
     voiceBuffer = null; save(K.last, P.id);
     renderAll();
     showView('create');
     showStep(step || P.step || 'idea');
   }
-  function newProject() {
+  function newProject(mode) {
     stopAll();
     persist(true);
+    const keep = mode === 'comic' || (mode == null && isComic()); // “New” keeps the current mode
     P = blankProject(); voiceBuffer = null;
+    if (keep) { P.mode = 'comic'; normalizeComic(P, true); }
     localStorage.removeItem(K.last);
     renderAll(); showView('create'); showStep('idea');
   }
-  function renderAll() { renderIdea(); renderScript(); renderVoice(); renderRenderPane(); $('project-name').textContent = projectTitle(P); }
+  function renderAll() { paintMode(); renderIdea(); renderComicIdea(); renderScript(); renderVoice(); renderRenderPane(); $('project-name').textContent = projectTitle(P); }
 
   // ---------- navigation ----------
   const views = { create: $('view-create'), library: $('view-library'), settings: $('view-settings') };
@@ -214,17 +222,18 @@
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => showView(tab.dataset.view)));
   $('new-project').addEventListener('click', () => {
     if (rendering) { toast('Wait for the render to finish (or cancel it).', true); return; }
-    newProject(); toast('New Short started');
+    newProject(); toast(isComic() ? 'New Comic Recap started' : 'New Short started');
   });
 
   const STEPS = ['idea', 'script', 'voice', 'render'];
   function stepAllowed(s) {
     if (s === 'idea' || s === 'script') return true;
+    if (isComic()) return !!P.pkg && CM.wordCount(P.pkg.script) > 0;
     if (s === 'voice') return !!P.pkg;
     return !!P.pkg;
   }
   function showStep(s) {
-    if (!stepAllowed(s)) { toast(s === 'voice' || s === 'render' ? 'Write the script first.' : 'Not yet.', true); s = P.pkg ? 'script' : 'idea'; }
+    if (!stepAllowed(s)) { toast(s === 'voice' || s === 'render' ? (isComic() && P.pkg ? 'Write at least one line of the recap first.' : 'Write the script first.') : 'Not yet.', true); s = P.pkg ? 'script' : 'idea'; }
     if (s !== 'render') stopPreview();
     if (s !== 'idea' && dictating) stopDictation();
     P.step = s; persist();
@@ -236,7 +245,7 @@
     window.scrollTo(0, 0);
   }
   function paintStepper() {
-    const done = { idea: !!P.idea.trim() && !!P.pkg, script: !!P.pkg, voice: !!P.voice, render: !!P.video };
+    const done = { idea: isComic() ? !!(P.comic && P.comic.panels.length) && !!P.pkg : !!P.idea.trim() && !!P.pkg, script: !!P.pkg, voice: !!P.voice, render: !!P.video };
     document.querySelectorAll('.step').forEach((b) => {
       const s = b.dataset.step;
       b.classList.toggle('active', s === P.step);
@@ -465,7 +474,10 @@
     }
   }
   $('generate').addEventListener('click', generate);
-  $('regenerate').addEventListener('click', () => { if (!confirm('Write a fresh script from the same idea? Your edits to this script will be replaced.')) return; P.genPartial = null; generate(); });
+  $('regenerate').addEventListener('click', () => {
+    if (isComic()) { if (!confirm('Write a fresh recap from the same panels? Your edits to the lines will be replaced.')) return; comicGenerate(); return; }
+    if (!confirm('Write a fresh script from the same idea? Your edits to this script will be replaced.')) return; P.genPartial = null; generate();
+  });
 
   // ---------- step 2: script ----------
   let beatsStale = false;
@@ -475,6 +487,7 @@
     $('script-body').classList.toggle('hidden', !has || generating);
     if (!has) return;
     const pkg = P.pkg;
+    if (isComic()) { renderComicScript(); renderKit(pkg); return; }
     const hooks = $('hooks'); hooks.innerHTML = '';
     pkg.hooks.forEach((h, i) => {
       const row = document.createElement('div');
@@ -505,10 +518,14 @@
     updateScriptMeta();
     $('rebuild-beats').classList.toggle('hidden', !beatsStale);
     renderBeats();
+    renderKit(pkg);
+  }
+  function renderKit(pkg) {
     $('f-title').value = pkg.title; $('f-description').value = pkg.description; $('f-hashtags').value = pkg.hashtags.join(' ');
     $('f-pinned').value = pkg.pinnedComment; $('f-thumb').value = pkg.thumbnailText;
     $('f-texthook').value = pkg.textHook || ''; $('f-cta').value = pkg.cta || '';
     $('texthook-count').textContent = pkg.textHook ? S.wordCount(pkg.textHook) + ' words · shown for the first ~2 s' : 'optional';
+    $('script-empty').querySelector('p').textContent = isComic() ? 'Add your panels in step 1 and tap “Write the recap” (or “Write my own script”).' : 'Add your idea in step 1 and tap “Write my Short”.';
     $('f-tt-caption').value = pkg.tiktokCaption || ''; $('f-tt-hashtags').value = (pkg.tiktokHashtags || []).join(' ');
     const plat = P.platform || 'both';
     $('kit-tiktok').classList.toggle('hidden', plat === 'youtube'); $('kit-yt-h').classList.toggle('hidden', plat === 'tiktok');
@@ -791,8 +808,9 @@
       $('ai-regenerate').classList.toggle('hidden', v.source !== 'gemini');
       $('take-info').textContent = (v.source === 'gemini' && v.ttsModel ? 'Gemini ' + v.ttsModel + ' · ' : '') + fmt(v.duration) + (v.source === 'silent' ? ' of captions at a relaxed pace. Record a voiceover in the YouTube app after uploading.' : ' · silences at the start and end are trimmed when rendering')
         + (v.parts ? ' · ' + v.parts.length + ' parts' : '')
-        + (v.duration > maxVoice() ? (isShortLen() ? ' · Longer than ~59 s, so the end will be cut to keep the Short under 60 s (pick a longer video length in step 1 to keep it all).' : ' · Longer than 20 min, so the end will be cut.') : '')
-        + (!isShortLen() && aspectOf() === '9:16' && v.duration > 178 ? ' · Over 3 min: YouTube will treat this vertical video as a regular video, not a Short.' : '');
+        + (v.duration > maxVoice() ? (isComic() ? ' · Longer than 3 min, so the end will be cut.' : isShortLen() ? ' · Longer than ~59 s, so the end will be cut to keep the Short under 60 s (pick a longer video length in step 1 to keep it all).' : ' · Longer than 20 min, so the end will be cut.') : '')
+        + (!isShortLen() && !isComic() && aspectOf() === '9:16' && v.duration > 178 ? ' · Over 3 min: YouTube will treat this vertical video as a regular video, not a Short.' : '')
+        + (isComic() && v.forScript != null && P.pkg && v.forScript !== P.pkg.script ? ' · ⚠️ You edited the recap after making this voice — regenerate or re-record it so the panels match what is said.' : '');
     }
     paintAiVoices();
     // Honest TTS notes.
@@ -828,7 +846,7 @@
       if (blob && blob.size > 12 * 1024 * 1024) { dur = await mediaDuration(blob); if (!dur) { const buf = await R.decodeBlob(blob); dur = buf.duration; } }
       else if (blob) { const buf = await R.decodeBlob(blob); dur = buf.duration; if (R.speechBounds(buf).silent && source !== 'silent') toast('That recording sounds silent. Check the mic and try again.', true); }
       else if (meta && meta.parts) dur = meta.parts.reduce((a, x) => a + (x.duration || 0), 0);
-      P.voice = Object.assign({ blob: blob || null, source, duration: dur, mime: blob ? blob.type : '', createdAt: new Date().toISOString() }, meta || {});
+      P.voice = Object.assign({ blob: blob || null, source, duration: dur, mime: blob ? blob.type : '', createdAt: new Date().toISOString() }, isComic() && P.pkg ? { forScript: P.pkg.script } : {}, meta || {});
       voiceBuffer = null; P.renderState = null; markVideoStale(); persist(true); renderVoice();
       setStatus('voice-status', 'Voice ready (' + fmt(dur) + '). Next: render your video.', 'ok');
     } catch (err) {
@@ -902,7 +920,7 @@
   function paintAiVoices() {
     const v2 = $('ai-voice2');
     if (v2.options.length !== G.TTS_VOICES.length + 2) { v2.innerHTML = ''; v2.add(new Option('Auto (a contrasting voice)', 'auto')); v2.add(new Option('Off — one voice reads everything', 'off')); G.TTS_VOICES.forEach(([n, d]) => v2.add(new Option(n + ' — ' + d, n))); }
-    v2.value = voice2Pref(); $('ai-voice2-row').classList.toggle('hidden', !dialogueLines(P && P.pkg));
+    v2.value = voice2Pref(); $('ai-voice2-row').classList.toggle('hidden', isComic() || !dialogueLines(P && P.pkg));
     const list = $('ai-voices'); const cur = ttsVoice();
     if (list.childElementCount !== G.TTS_VOICES.length) {
       list.innerHTML = '';
@@ -919,7 +937,7 @@
     const d = (G.TTS_VOICES.find(([n]) => n === cur) || [])[1];
     $('ai-voice-name').textContent = cur + (d ? ' — ' + d : '');
     const mode = load(K.ttsStyle, 'tone'); $('ai-style').value = mode;
-    $('ai-style').options[0].textContent = 'Match my tone (' + ((S.TONES[P && P.tone] || S.TONES.calm).label) + ')';
+    $('ai-style').options[0].textContent = isComic() ? 'Match the mode (Dramatic narrator)' : 'Match my tone (' + ((S.TONES[P && P.tone] || S.TONES.calm).label) + ')';
     $('ai-style-custom').classList.toggle('hidden', mode !== 'custom'); $('ai-style-custom').value = load(K.ttsCustom, '');
   }
   $('ai-voice2').addEventListener('change', (e) => save('vts.ttsVoice2', e.target.value));
@@ -949,7 +967,8 @@
   }
   function aiError(err) {
     const msg = G.friendlyError(err);
-    return err && err.quota ? msg : 'AI voice failed: ' + msg;
+    const alt = isComic() ? ' Meanwhile you can use “Record my voice”, the device voice or an imported file below — the recap renders exactly the same way.' : '';
+    return (err && err.quota ? msg : 'AI voice failed: ' + msg) + alt;
   }
   let aiBusy = false;
   async function generateAiVoice() {
@@ -959,7 +978,7 @@
     aiBusy = true; const btns = [$('ai-generate'), $('ai-regenerate')]; btns.forEach((b) => { b.disabled = true; });
     const label = $('ai-generate').querySelector('span'); const old = label.textContent;
     const st = ttsStyle(); const voice = ttsVoice();
-    const long = !isShortLen() && (S.wordCount(P.pkg.script) > 320 || (P.pkg.sections && P.pkg.sections.length > 1));
+    const long = !isComic() && !isShortLen() && (S.wordCount(P.pkg.script) > 320 || (P.pkg.sections && P.pkg.sections.length > 1));
     setStatus('voice-status', 'Creating the ' + voice + ' voice with Gemini… ' + (long ? '(long script: generated in parts, each saved as it finishes)' : '(about 10–30 s)'), 'live');
     try {
       if (long) {
@@ -975,7 +994,7 @@
         setStatus('voice-status', 'AI voice ready (' + voice + ', ' + r.model + ', ' + parts.length + ' parts, ' + fmt(P.voice.duration) + ').', 'ok');
         return;
       }
-      const dlg = dialogueLines(P.pkg); const v2 = dlg ? voice2For(voice) : '';
+      const dlg = isComic() ? null : dialogueLines(P.pkg); const v2 = dlg ? voice2For(voice) : '';
       const onProgress = (i, n) => { label.textContent = n > 1 ? 'Generating part ' + (i + 1) + ' / ' + n + '…' : 'Generating…'; };
       let r = null; let note = '';
       if (dlg && v2) {
@@ -992,7 +1011,7 @@
           r = null; note = ' · one voice (two-voice mode was not available: ' + G.friendlyError(err).slice(0, 80) + ')';
         }
       }
-      if (!r) r = await G.generateSpeech(P.pkg.script, { voice, style: st.style, prefix: st.prefix, onProgress });
+      if (!r) r = await G.generateSpeech(P.pkg.script, { voice, style: st.style, prefix: st.prefix, onProgress, maxWords: isComic() ? 260 : undefined }); // a comic recap is usually one TTS request
       await setVoice(r.blob, 'gemini', 0, { ttsVoice: r.dialogue ? voice + ' + ' + v2 : voice, ttsModel: r.model, ttsStyle: st.style });
       if (note) { setStatus('voice-status', 'AI voice ready (' + r.model + note + ', ' + fmt(P.voice.duration) + '). Play it below, or regenerate for a different read.', 'ok'); return; }
       setStatus('voice-status', 'AI voice ready (' + voice + ', ' + r.model + (r.chunks > 1 ? ', ' + r.chunks + ' parts joined' : '') + '). Play it below, or regenerate for a different read.', 'ok');
@@ -1175,6 +1194,7 @@
     lk.stepLabel = F ? F.badge : 'STEP';
     if (forRender) lk.safeZones = false; // guides are for the preview only
     else lk.safeZones = lk.safeZones ? (P.platform || 'both') : false;
+    if (isComic()) Object.assign(lk, { visual: 'comic', aspect: '9:16', anim: '2d', aiImages: false, textHook: '', ctaSticker: '', intensity: 'off', loop: false, autoEmoji: false, textStyle: 'none', comic: { panels: P.comic.panels, fx: CM.fxOf(P.comic.fx) } });
     return lk;
   }
   function sizePreview() {
@@ -1194,11 +1214,11 @@
     try {
       const buf = await getVoiceBuffer();
       sizePreview();
-      pv = R.preview({ canvas: $('preview'), buffer: buf, beats: previewBeats(buf), look: look(), maxSeconds: isShortLen() ? undefined : R.MAX_LONG, onTime: (t, d) => { $('preview-time').textContent = fmt(t) + ' / ' + fmt(d) + (buf.previewOnly ? ' (part 1 preview)' : ''); } });
+      pv = R.preview({ canvas: $('preview'), buffer: buf, beats: previewBeats(buf), look: look(), maxSeconds: maxSecFor(), onTime: (t, d) => { $('preview-time').textContent = fmt(t) + ' / ' + fmt(d) + (buf.previewOnly ? ' (part 1 preview)' : ''); } });
       try { await document.fonts.load('800 100px Montserrat'); } catch (_) { /* ignore */ }
       try { await pv.ready; } catch (_) { /* ignore */ }
       const first = pv.renderer.timeline; // voice-aligned, same as the preview/export
-      const stepBeat = first.find((b) => b.step === 1);
+      const stepBeat = isComic() ? null : first.find((b) => b.step === 1);
       pv.drawAt(stepBeat ? stepBeat.start + 0.9 : 1.2);
       $('preview-time').textContent = buf.previewOnly ? 'Preview of part 1 · full video ' + fmt(P.voice.duration + R.LEAD + R.TAIL) : fmt(pv.duration);
     } catch (err) { setStatus('render-status', 'Preview failed: ' + (err && err.message || err), 'err'); }
@@ -1242,7 +1262,8 @@
     $('render').disabled = rendering;
     const [fw, fh] = R.frameSize(a, renderScale());
     const resumable = P.renderState && P.renderState.done && P.renderState.done.length && !P.renderState.final;
-    $('render').querySelector('span').textContent = P.voice ? (resumable ? '▶ Resume render (' + P.renderState.done.length + ' / ' + P.renderState.bounds.length + ' parts done)' : P.video ? '🎬 Render again' : '🎬 Render ' + fw + '×' + fh + ' ' + a + ' video') : '🎙 Add a voice first';
+    $('render').querySelector('span').textContent = P.voice ? (resumable ? '▶ Resume render (' + P.renderState.done.length + ' / ' + P.renderState.bounds.length + ' parts done)' : P.video ? '🎬 Render again' : '🎬 Render ' + fw + '×' + fh + ' ' + (isComic() ? 'comic recap' : a + ' video')) : '🎙 Add a voice first';
+    if (isComic()) paintComicFx();
     paintResult();
     if (currentView === 'create' && P.step === 'render' && !rendering) buildPreview();
   }
@@ -1285,7 +1306,12 @@
     } catch (err) { toast('Could not play music: ' + (err && err.message || err), true); }
   });
   $('cover-png').addEventListener('click', async () => {
-    if (!P.pkg || !VTS.comedy || !VTS.comedy.cover) return;
+    if (!P.pkg) return;
+    if (isComic()) {
+      try { const blob = await CM.cover(document.createElement('canvas'), { beats: P.pkg.beats, look: look(true), text: P.pkg.thumbnailText || P.pkg.title, handle: handle() }); const r = await N.saveFile(blob, (P.pkg.title || 'comic-recap').replace(/[^a-z0-9]+/gi, '-').slice(0, 40).replace(/^-|-$/g, '') + '-cover.png'); toast('Cover saved to ' + r.where); } catch (err) { toast('Could not make the cover: ' + (err && err.message || err), true); }
+      return;
+    }
+    if (!VTS.comedy || !VTS.comedy.cover) return;
     try {
       const blob = await VTS.comedy.cover(document.createElement('canvas'), { beats: P.pkg.beats, look: look(true), text: P.pkg.thumbnailText || P.pkg.textHook || P.pkg.title, handle: handle() });
       const name = (P.pkg.title || 'short').replace(/[^a-z0-9]+/gi, '-').slice(0, 40).replace(/^-|-$/g, '') + '-cover.png';
@@ -1385,11 +1411,12 @@
     const reWake = async () => { try { if (navigator.wakeLock && document.visibilityState === 'visible') wake = await navigator.wakeLock.request('screen'); } catch (_) { /* ignore */ } };
     await reWake(); document.addEventListener('visibilitychange', reWake);
     const t0 = Date.now();
-    const long = voiceIsLong() || (!isShortLen() && P.voice.duration > LONG_RENDER_SEC);
+    const long = voiceIsLong() || (!isComic() && !isShortLen() && P.voice.duration > LONG_RENDER_SEC);
     try {
       const lk = look(true); let aiNote = '';
-      if (lk.visual !== 'classic') { ensureScenes(); if (long && SC.diversify && !P.pkg.diversified) { SC.diversify(P.pkg.beats.map((b2) => b2.scene)); P.pkg.diversified = true; } }
-      if (lk.visual !== 'classic' && lk.aiImages) {
+      if (isComic() && !P.comic.panels.some((pn) => (pn.lines || []).some((l) => CM.clean(l)))) throw new Error('The recap has no lines yet — write them in step 2.');
+      if (lk.visual !== 'classic' && lk.visual !== 'comic') { ensureScenes(); if (long && SC.diversify && !P.pkg.diversified) { SC.diversify(P.pkg.beats.map((b2) => b2.scene)); P.pkg.diversified = true; } }
+      if (lk.visual !== 'classic' && lk.visual !== 'comic' && lk.aiImages) {
         if (!getKey()) aiNote = ' AI illustrations need a Gemini key, so the built-in scenes were used.';
         else {
           const r0 = await prepareAiImages(renderAbort.signal);
@@ -1430,14 +1457,15 @@
       } else {
         const buf = await getVoiceBuffer();
         const res = await R.renderVideo({
-          canvas, buffer: buf, beats: P.pkg.beats, look: lk, format: P.look.format, signal: renderAbort.signal, maxSeconds: isShortLen() ? undefined : R.MAX_LONG,
+          canvas, buffer: buf, beats: P.pkg.beats, look: lk, format: P.look.format, signal: renderAbort.signal, maxSeconds: maxSecFor(),
           onProgress: (p, t, total) => { bar(p); $('render-label').textContent = 'Rendering… ' + Math.round(p * 100) + '% (' + fmt(t) + ' / ' + fmt(total) + ')'; },
         });
         if (!res) { setStatus('render-status', 'Render cancelled.'); return; }
         if (!res.blob.size) throw new Error('The recorder produced an empty file.');
-        const P2 = R.plan(buf, isShortLen() ? undefined : R.MAX_LONG);
-        P.thumb = thumbFrame(lk, P2.total, null, P2);
+        const P2 = R.plan(buf, maxSecFor());
+        if (isComic()) { try { P.thumb = await CM.thumb({ beats: P.pkg.beats, look: lk }); } catch (_) { P.thumb = ''; } } else P.thumb = thumbFrame(lk, P2.total, null, P2);
         P.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect, createdAt: new Date().toISOString(), renderMs: Date.now() - t0, frames: res.frames, fps: res.fps, avgDrawMs: res.avgDrawMs, illustrated: res.illustrated || 0, visual: res.scenes ? 'scenes' : 'classic', audioMix: res.audioMix || null, cues: res.cues || 0, cuts: res.cuts || 0 };
+        if (isComic()) P.video.visual = 'comic';
         setStatus('render-status', 'Done! Share it straight to YouTube or save it to your phone.' + aiNote, 'ok');
       }
       persist(true);
@@ -1493,7 +1521,7 @@
   }
   function fileName(suffix) {
     const v = P.video; const ext = /mp4/.test(v.type) ? 'mp4' : 'webm';
-    const slug = (P.pkg.title || 'short').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'short';
+    const slug = (P.pkg.title || (isComic() ? 'comic-recap' : 'short')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'short';
     return 'VoiceToShort-' + slug + '-' + new Date().toISOString().slice(0, 10) + (suffix ? suffix.replace(/\s+/g, '-') : '') + '.' + ext;
   }
   $('save-video').addEventListener('click', async () => {
@@ -1537,6 +1565,7 @@
       li.querySelector('.small').textContent = when(p.updatedAt);
       const meta = li.querySelector('.lib-meta');
       const add = (t, cls) => { const s = document.createElement('span'); s.className = 'badge ' + (cls || ''); s.textContent = t; meta.appendChild(s); };
+      if (p.mode === 'comic') add('💥 Comic' + (p.comic && p.comic.panels ? ' · ' + p.comic.panels.length + ' panels' : ''), 'comic');
       if (p.pkg) add('Script', 'ok'); if (p.voice) add('Voice', 'ok');
       if (p.video) add((/mp4/.test(p.video.type) ? 'MP4' : 'WebM') + ' ' + fmt(p.video.duration) + (p.video.aspect && p.video.aspect !== '9:16' ? ' · ' + p.video.aspect : ''), 'ok'); else add('No video');
       if (!p.video && p.renderState && p.renderState.done && p.renderState.done.length) add('Render paused ' + p.renderState.done.length + '/' + p.renderState.bounds.length, 'warn');
@@ -1654,7 +1683,7 @@
     } catch (err) { toast(G.friendlyError(err), true); } finally { btn.disabled = false; btn.textContent = 'Load voice models from my key'; }
   });
   $('export-data').addEventListener('click', async () => {
-    const projects = (await DB.all()).map((p) => { const c = Object.assign({}, p); delete c.ideaAudio; delete c.video; if (c.voice) c.voice = Object.assign({}, c.voice, { blob: null, parts: null }); delete c.genPartial; delete c.renderState; if (c.pkg && c.pkg.beats) c.pkg = Object.assign({}, c.pkg, { beats: c.pkg.beats.map((b) => Object.assign({}, b, { aiImage: null, aiPrompt: '' })) }); return c; });
+    const projects = (await DB.all()).map((p) => { const c = Object.assign({}, p); delete c.ideaAudio; delete c.video; if (c.voice) c.voice = Object.assign({}, c.voice, { blob: null, parts: null }); delete c.genPartial; delete c.renderState; if (c.pkg && c.pkg.beats) c.pkg = Object.assign({}, c.pkg, { beats: c.pkg.beats.map((b) => Object.assign({}, b, { aiImage: null, aiPrompt: '' })) }); if (c.comic && c.comic.panels) c.comic = Object.assign({}, c.comic, { panels: c.comic.panels.map((pn) => Object.assign({}, pn, { blob: null })) }); return c; });
     const settings = {}; Object.entries(K).forEach(([k, v]) => { if (k !== 'key' && k !== 'last') { const raw = localStorage.getItem(v); if (raw != null) settings[v] = raw; } });
     const payload = JSON.stringify({ app: 'voice-to-short', version: APP_VERSION, exportedAt: new Date().toISOString(), settings, projects }, null, 2);
     const name = 'voice-to-short-backup-' + new Date().toISOString().slice(0, 10) + '.json';
@@ -1671,6 +1700,7 @@
         const cur = await DB.get(p.id);
         if (cur && String(cur.updatedAt) >= String(p.updatedAt)) continue;
         if (p.voice && !p.voice.blob && p.voice.source !== 'silent') p.voice = null; // audio is not in backups
+        if (p.comic && Array.isArray(p.comic.panels) && p.comic.panels.some((pn) => !pn.blob)) { const curPanels = cur && cur.comic && cur.comic.panels || []; p.comic.panels.forEach((pn) => { const same = curPanels.find((x) => x.id === pn.id && x.blob); pn.blob = same ? same.blob : null; }); p.comic.panels = p.comic.panels.filter((pn) => pn.blob); if (!p.comic.panels.length) p.video = null; } // panel images are not in backups
         await DB.put(p); n++;
       }
       Object.entries(data.settings || {}).forEach(([k, v]) => { if (k.startsWith('vts.') && k !== K.key) localStorage.setItem(k, v); });
@@ -1683,6 +1713,153 @@
     P = blankProject(); voiceBuffer = null; renderAll(); showStep('idea'); renderLibrary(); toast('All projects deleted');
   });
 
+  // ---------- v1.7 Comic Recap mode ----------
+  // A project with mode 'comic' keeps its panels (image blobs + the lines narrated over each) in P.comic; P.pkg is derived
+  // from them (CM.makePkg), so voice, render, share, save and the library work exactly like a normal Short.
+  function normalizeComic(p, fresh) {
+    const c = p.comic && typeof p.comic === 'object' ? p.comic : {};
+    p.comic = { panels: Array.isArray(c.panels) ? c.panels.filter((pn) => pn && pn.blob) : [], title: String(c.title || ''), notes: String(c.notes || ''), length: CM.LENGTHS.some((l) => l.id === c.length) ? c.length : '60', fx: CM.fxOf(c.fx) };
+    p.comic.panels.forEach((pn) => { if (!Array.isArray(pn.lines)) pn.lines = []; if (!pn.id) pn.id = uuid(); });
+    if (fresh) Object.assign(p.look, { captionStyle: 'comic', captionCase: 'upper', music: 'suspense', musicVol: 0.4, sfx: true, sfxVol: 0.75, aspect: '9:16', progress: true });
+    return p.comic;
+  }
+  function paintMode() {
+    const comic = isComic();
+    $('view-create').classList.toggle('mode-comic', comic);
+    document.querySelectorAll('#mode-seg button').forEach((b) => { const on = b.dataset.v === (comic ? 'comic' : 'short'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    const st = document.querySelector('.step[data-step=idea] span'); if (st) st.textContent = comic ? 'Panels' : 'Idea';
+    $('new-project').setAttribute('aria-label', comic ? 'New Comic Recap' : 'New Short'); $('new-project').title = comic ? 'New Comic Recap' : 'New Short';
+  }
+  function hasContent(p) { return !!(p && (p.idea.trim() || p.pkg || p.voice || (p.comic && p.comic.panels && p.comic.panels.length))); }
+  function setMode(m) {
+    m = m === 'comic' ? 'comic' : 'short';
+    if ((isComic() ? 'comic' : 'short') === m) return;
+    if (rendering || generating) { toast('Wait for the current job to finish first.', true); return; }
+    stopAll();
+    if (hasContent(P)) { persist(true); P = blankProject(); voiceBuffer = null; localStorage.removeItem(K.last); toast('Started a new ' + (m === 'comic' ? 'Comic Recap' : 'Short') + ' — your other project is saved in the Library.'); }
+    P.mode = m; if (m === 'comic') normalizeComic(P, true);
+    renderAll(); showStep('idea');
+  }
+  document.querySelectorAll('#mode-seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.v)));
+  const panelUrls = new WeakMap();
+  function panelUrl(pn) { if (!pn || !pn.blob) return ''; let u = panelUrls.get(pn.blob); if (!u) { u = URL.createObjectURL(pn.blob); panelUrls.set(pn.blob, u); } return u; }
+  function comicChanged(rebuildPkg) {
+    if (rebuildPkg && P.pkg) { P.pkg = CM.makePkg(P.comic.panels, {}, P.pkg); markVideoStale(); }
+    persist(); $('project-name').textContent = projectTitle(P);
+  }
+  function renderComicIdea() {
+    if (!isComic()) return;
+    const C = P.comic || normalizeComic(P); const n = C.panels.length;
+    $('comic-count').textContent = n ? n + ' panel' + (n === 1 ? '' : 's') + ' · reading order · tap ◀ ▶ to reorder, ✕ to remove' + (n > 14 ? ' · that is a lot for ' + CM.lengthOf(C.length).label + ' — try 4–12' : '') : 'No panels yet · 4–12 panels work best';
+    $('comic-add').querySelector('span').textContent = n ? '🖼 Add more panels' : '🖼 Add panels from gallery';
+    const grid = $('comic-grid'); grid.innerHTML = '';
+    C.panels.forEach((pn, k) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<img alt=""><span class="cg-n"></span><div class="cg-bar"><button type="button" data-a="l" aria-label="Move earlier">◀</button><button type="button" data-a="x" aria-label="Remove panel">✕</button><button type="button" data-a="r" aria-label="Move later">▶</button></div>';
+      li.querySelector('img').src = panelUrl(pn); li.querySelector('img').alt = 'Panel ' + (k + 1); li.querySelector('.cg-n').textContent = k + 1;
+      if (P.pkg && !(pn.lines || []).some((l) => CM.clean(l))) { const w = document.createElement('span'); w.className = 'cg-warn'; w.textContent = '⚠️'; w.title = 'No narration for this panel yet (it will be skipped)'; li.appendChild(w); }
+      li.querySelector('[data-a=l]').disabled = k === 0; li.querySelector('[data-a=r]').disabled = k === n - 1;
+      li.querySelector('.cg-bar').addEventListener('click', (e) => {
+        const a = e.target.closest('button'); if (!a) return; const act = a.dataset.a;
+        if (act === 'x') { if ((pn.lines || []).some((l) => CM.clean(l)) && !confirm('Remove panel ' + (k + 1) + ' and its narration?')) return; C.panels.splice(k, 1); }
+        else { const j = act === 'l' ? k - 1 : k + 1; if (j < 0 || j >= n) return; const t = C.panels[j]; C.panels[j] = C.panels[k]; C.panels[k] = t; }
+        comicChanged(true); renderComicIdea(); if (P.pkg) renderScript(); paintStepper();
+      });
+      grid.appendChild(li);
+    });
+    $('comic-title').value = C.title || ''; $('comic-notes').value = C.notes || '';
+    document.querySelectorAll('#comic-len-seg button').forEach((b) => { const on = b.dataset.v === C.length; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    const L = CM.lengthOf(C.length); $('comic-len-note').textContent = '≈ ' + L.words[0] + '–' + L.words[1] + ' words of narration';
+    $('comic-generate').querySelector('span').textContent = P.pkg ? '✨ Rewrite the recap' : '✨ Write the recap';
+    $('comic-own').textContent = P.pkg ? '✍️ Edit the script' : '✍️ Write my own script';
+    if (!getKey() && !$('comic-status').textContent) setStatus('comic-status', 'Tip: add your free Gemini API key in Settings so Gemini can read the panels and write the recap — or write your own script.');
+  }
+  $('comic-files').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []).filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|heic|heif|avif)$/i.test(f.name || '')); e.target.value = '';
+    if (!files.length) return;
+    files.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true })); // gallery order is random on some phones; numbered files keep their order
+    const C = P.comic; let bad = 0;
+    for (let i = 0; i < files.length; i++) {
+      if (C.panels.length >= 30) { toast('30 panels max per recap.', true); break; }
+      setStatus('comic-status', 'Adding panel ' + (i + 1) + ' of ' + files.length + '…', 'live');
+      try { C.panels.push(await CM.importImage(files[i])); } catch (_) { bad++; }
+    }
+    setStatus('comic-status', bad ? bad + ' image' + (bad > 1 ? 's' : '') + ' could not be read (try JPG or PNG).' : '', bad ? 'err' : '');
+    comicChanged(true); persist(true); renderComicIdea(); paintStepper();
+  });
+  $('comic-title').addEventListener('input', (e) => { P.comic.title = e.target.value; comicChanged(false); });
+  $('comic-notes').addEventListener('input', (e) => { P.comic.notes = e.target.value; comicChanged(false); });
+  document.querySelectorAll('#comic-len-seg button').forEach((b) => b.addEventListener('click', () => { P.comic.length = b.dataset.v; comicChanged(false); renderComicIdea(); }));
+  async function comicGenerate() {
+    if (generating || !isComic()) return;
+    const C = P.comic;
+    if (!C.panels.length) { setStatus('comic-status', 'Add your comic panels first.', 'err'); showStep('idea'); return; }
+    if (!getKey()) { setStatus('comic-status', 'Add your free Gemini API key in Settings first — or tap “Write my own script”.', 'err'); showView('settings'); toast('Paste your Gemini key here first', true); return; }
+    generating = true; $('comic-generate').disabled = true; $('regenerate').disabled = true; setStatus('comic-status', '');
+    P.step = 'script'; STEPS.forEach((k) => $('pane-' + k).classList.toggle('active', k === 'script')); paintStepper();
+    $('script-loading').classList.remove('hidden'); $('script-body').classList.add('hidden'); $('script-empty').classList.add('hidden');
+    const lt = $('script-loading-text'); lt.textContent = 'Gemini is reading your ' + C.panels.length + ' panels…';
+    try {
+      const out = await CM.writeScript(C.panels, { title: C.title, notes: C.notes, length: C.length, language: load(K.language, 'English'),
+        onProgress: (q) => { if (q.phase === 'prep') lt.textContent = 'Preparing panel ' + (q.i + 1) + ' of ' + q.n + '…'; else if (q.phase === 'write') lt.textContent = 'Gemini is reading the panels and writing the story, scene by scene… (about 20–60 s)'; else if (q.phase === 'repair') lt.textContent = 'Gemini’s reply was incomplete — trying once more…'; else if (q.phase === 'expand') lt.textContent = 'The story came out short (' + q.words + ' words) — asking Gemini to flesh out each scene…'; } });
+      out.panels.forEach((q, k) => { const pn = C.panels[k]; if (!pn) return; pn.lines = q.lines; if (q.focus) pn.focus = q.focus; pn.impact = !!q.impact; pn.sfx = q.sfx || ''; });
+      P.pkg = CM.makePkg(C.panels, { title: out.title || C.title, description: out.description || null, hashtags: out.hashtags && out.hashtags.length ? out.hashtags : null, tiktokCaption: out.tiktokCaption || null }, null);
+      P.video = null; P.renderState = null; persist(true); $('project-name').textContent = projectTitle(P);
+      toast(out.missing.length ? 'Recap ready — panel ' + out.missing.map((k) => k + 1).join(', ') + ' has no lines yet, add some' : 'Recap ready — tweak any line, then add the voice');
+    } catch (err) {
+      const msg = G.friendlyError(err) + ' You can also tap “Write my own script”.';
+      if (P.pkg) toast(msg, true); else { showStep('idea'); setStatus('comic-status', msg, 'err'); }
+    } finally {
+      generating = false; $('comic-generate').disabled = false; $('regenerate').disabled = false; $('script-loading').classList.add('hidden');
+      if (P.pkg) { renderScript(); paintStepper(); }
+      renderComicIdea();
+    }
+  }
+  $('comic-generate').addEventListener('click', comicGenerate);
+  $('comic-own').addEventListener('click', () => {
+    if (!P.comic.panels.length) { setStatus('comic-status', 'Add your comic panels first.', 'err'); return; }
+    if (!P.pkg) { P.pkg = CM.makePkg(P.comic.panels, { title: P.comic.title }, null); persist(true); }
+    showStep('script');
+    const first = document.querySelector('#comic-lines textarea'); if (first && !first.value) setTimeout(() => first.focus(), 200);
+  });
+  function paintComicMeta() {
+    const n = CM.wordCount(P.pkg ? P.pkg.script : ''); const L = CM.lengthOf(P.comic.length); const [lo, hi] = L.words;
+    const b = $('comic-word-badge'); b.textContent = n + ' words'; b.className = 'badge ' + (n >= lo * 0.85 && n <= hi * 1.15 ? 'ok' : 'warn');
+    const empty = P.comic.panels.filter((pn) => !(pn.lines || []).some((l) => CM.clean(l))).length;
+    $('comic-script-est').textContent = '≈ ' + Math.round(n / 2.6) + ' s spoken · target ' + L.label + ' (' + lo + '–' + hi + ' words)' + (empty ? ' · ' + empty + ' panel' + (empty > 1 ? 's have' : ' has') + ' no lines and will be skipped' : '');
+  }
+  function renderComicScript() {
+    const ol = $('comic-lines'); ol.innerHTML = '';
+    P.comic.panels.forEach((pn, k) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<div><img alt=""><div class="cl-n"></div></div><div><textarea rows="3" spellcheck="true"></textarea><div class="cl-fx"><label><input type="checkbox" class="cl-impact"> 💥 Impact</label><input type="text" class="cl-sfx" maxlength="14" placeholder="SFX e.g. KRAK!" aria-label="Sound-effect lettering"></div></div>';
+      li.querySelector('img').src = panelUrl(pn); li.querySelector('.cl-n').textContent = 'Panel ' + (k + 1);
+      const ta = li.querySelector('textarea'); ta.value = (pn.lines || []).join('\n'); ta.setAttribute('aria-label', 'Narration for panel ' + (k + 1));
+      ta.placeholder = k === 0 ? 'Hook first (a shocking line), then what happens in this panel…' : 'What happens in this panel…';
+      const paintEmpty = () => li.classList.toggle('empty', !(pn.lines || []).some((l) => CM.clean(l)));
+      paintEmpty();
+      const grow = () => { if (!ta.offsetParent) return; ta.style.height = 'auto'; ta.style.height = Math.min(320, ta.scrollHeight + 4) + 'px'; };
+      ta.addEventListener('input', () => { pn.lines = ta.value.split('\n').map((l) => l.trim()).filter(Boolean); paintEmpty(); comicChanged(true); paintComicMeta(); paintStepper(); grow(); });
+      requestAnimationFrame(grow);
+      const imp = li.querySelector('.cl-impact'); const sfx = li.querySelector('.cl-sfx'); imp.checked = !!pn.impact; sfx.value = pn.sfx || '';
+      imp.addEventListener('change', () => { pn.impact = imp.checked; comicChanged(true); });
+      sfx.addEventListener('input', () => { pn.sfx = sfx.value.toUpperCase().slice(0, 14); if (pn.sfx && !pn.impact) { pn.impact = true; imp.checked = true; } comicChanged(true); });
+      ol.appendChild(li);
+    });
+    paintComicMeta();
+  }
+  function paintComicFx() {
+    const fx = P.comic.fx = CM.fxOf(P.comic.fx);
+    [['cx-glow', 'glow'], ['cx-speed', 'speedLines'], ['cx-flash', 'flashes'], ['cx-shake', 'shake'], ['cx-sfx', 'sfxText']].forEach(([id, k]) => { $(id).checked = !!fx[k]; });
+    const sw = $('cx-colors'); sw.classList.toggle('hidden', !fx.glow);
+    if (!sw.childElementCount) CM.COLORS.forEach(([c, name]) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.v = c; b.title = name; b.setAttribute('aria-label', name); b.setAttribute('role', 'radio'); b.style.background = c; b.style.color = c; b.addEventListener('click', () => { P.comic.fx.color = c; markVideoStale(); persist(); renderRenderPane(); }); sw.appendChild(b); });
+    sw.querySelectorAll('button').forEach((b) => { const on = b.dataset.v === fx.color; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    const seg = (id, list, key) => { const el = $(id); if (!el.childElementCount) list.forEach(([v, l]) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.v = v; b.textContent = l; b.setAttribute('role', 'radio'); b.addEventListener('click', () => { P.comic.fx[key] = v; markVideoStale(); persist(); renderRenderPane(); }); el.appendChild(b); }); el.querySelectorAll('button').forEach((b) => { const on = b.dataset.v === fx[key]; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); };
+    seg('cx-trans', CM.TRANS, 'transitions'); seg('cx-fit', CM.FIT, 'fit');
+    $('cx-fit-note').textContent = { smart: 'fills the frame, keeps most of wide panels', cover: 'always fills the frame (crops)', fit: 'whole panel on a blurred background' }[fx.fit] || '';
+  }
+  [['cx-glow', 'glow'], ['cx-speed', 'speedLines'], ['cx-flash', 'flashes'], ['cx-shake', 'shake'], ['cx-sfx', 'sfxText']].forEach(([id, k]) => $(id).addEventListener('change', (e) => { P.comic.fx[k] = e.target.checked; markVideoStale(); persist(); renderRenderPane(); }));
+
   function stopAll() { stopPreview(); stopVoicePreview(); if (dictating) stopDictation(true); N.stopSpeaking(); if (pState) closePrompter(); }
 
   // ---------- boot ----------
@@ -1691,14 +1868,14 @@
   (async function boot() {
     P = blankProject();
     const last = load(K.last, null);
-    if (last) { try { const p = await DB.get(last); if (p) { P = Object.assign(blankProject(), p); P.look = Object.assign(blankProject().look, p.look || {}); } } catch (_) { /* ignore */ } }
+    if (last) { try { const p = await DB.get(last); if (p) { P = Object.assign(blankProject(), p); P.look = Object.assign(blankProject().look, p.look || {}); if (P.mode === 'comic') normalizeComic(P); } } catch (_) { /* ignore */ } }
     renderAll();
     const hash = location.hash.replace('#', '');
     showView(['library', 'settings'].includes(hash) ? hash : 'create');
     showStep(P.step || 'idea');
     if (!getKey() && !P.pkg) setStatus('gen-status', 'Tip: add your free Gemini API key in Settings to write scripts.');
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { persist(true); if (rendering) toast('Keep Voice to Short open while rendering.', true); } });
-    window.VTS.app = { get project() { return P; }, renderAll: () => renderAll(), showStep, showView, startRender, openProject, newProject, setVoice };
+    window.VTS.app = { get project() { return P; }, renderAll: () => renderAll(), showStep, showView, startRender, openProject, newProject, setVoice, setMode: (m) => setMode(m) };
   })();
 
   if (!N.isNative && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
