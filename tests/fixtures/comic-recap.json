@@ -1,0 +1,72 @@
+{
+ "title": "The Ember Warden (original test comic)",
+ "panels": [
+  {
+   "file": "comic-panels/01-council.jpg",
+   "lines": [
+    "The *Council* just sentenced its own hero.",
+    "The *Ember Council* had spoken, and Kael was finished."
+   ],
+   "focus": {
+    "x": 0.5,
+    "y": 0.35
+   }
+  },
+  {
+   "file": "comic-panels/02-kneel.jpg",
+   "lines": [
+    "They stripped his *gauntlet* in the rain.",
+    "No gauntlet. No power. *Nothing* left."
+   ]
+  },
+  {
+   "file": "comic-panels/03-vex.jpg",
+   "lines": [
+    "Then they sent *Vex*, his old partner, to bring him in.",
+    "Stand down, Kael. *Big* mistake."
+   ],
+   "impact": false
+  },
+  {
+   "file": "comic-panels/04-clash.jpg",
+   "lines": [
+    "Kael refused, and the two *clash* in a blast of fire."
+   ],
+   "impact": true,
+   "sfx": "KRA-KOOM!"
+  },
+  {
+   "file": "comic-panels/05-reveal.jpg",
+   "lines": [
+    "But in the wreckage, a *hologram* flickers on.",
+    "Directive nine. The *Council* framed him."
+   ]
+  },
+  {
+   "file": "comic-panels/06-shock.jpg",
+   "lines": [
+    "Vex freezes. They used *her* too."
+   ]
+  },
+  {
+   "file": "comic-panels/07-tower.jpg",
+   "lines": [
+    "Now the hunter and the hunted march on the *tower* together."
+   ]
+  },
+  {
+   "file": "comic-panels/08-gauntlet.jpg",
+   "lines": [
+    "And the gauntlet *ignites* again. It chose him.",
+    "Follow for part two."
+   ],
+   "impact": true,
+   "sfx": "VMMMM!"
+  }
+ ],
+ "fx": {
+  "color": "#39ff7a"
+ },
+ "notes": "Original test comic. Kael is the Ember Warden; the hooded Ember Council strips his power gauntlet. Vex is his former partner sent to arrest him. A hologram reveals 'Directive 9: frame Kael'. Vex turns, they march on the Council tower, and the gauntlet reignites.",
+ "length": "60"
+}
