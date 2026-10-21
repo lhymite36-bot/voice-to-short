@@ -5,3 +5,6 @@ out/
 *.keystore
 tests/out/
 .DS_Store
+desktop/node_modules/
+desktop/dist/
+.env
