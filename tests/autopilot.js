@@ -203,6 +203,40 @@ test('GitHub host: creates the media release if missing, uploads, returns public
   await assert.rejects(C.HOSTS.github.upload(async () => jres(401, {}), up, { token: 'T', repo: 'a/b', name: 'x' }), (e) => e.fatal);
 });
 
+test('GitHub host: create 422 already_exists recovers via re-GET', async () => {
+  let gets = 0;
+  const http = async (req) => {
+    if (req.method === 'GET') { gets++; return gets === 1 ? jres(404, {}) : jres(200, { id: 88 }); }
+    return jres(422, { message: 'Validation Failed', errors: [{ code: 'already_exists', field: 'tag_name' }] });
+  };
+  const up = async () => jres(201, { browser_download_url: 'https://github.com/pedro/qb-media/releases/download/vts-autopilot-media/short-2.mp4' });
+  const url = await C.HOSTS.github.upload(http, up, { token: 'T', repo: 'pedro/qb-media', name: 'short-2.mp4', blob: fakeBlob(4), mime: 'video/mp4' });
+  assert.strictEqual(url, 'https://github.com/pedro/qb-media/releases/download/vts-autopilot-media/short-2.mp4');
+  assert.strictEqual(gets, 2);
+});
+test('GitHub host: empty-repo create 422 is fatal with a clear message', async () => {
+  const http = async (req) => req.method === 'GET' ? jres(404, {}) : jres(422, { message: 'Validation Failed' });
+  await assert.rejects(C.HOSTS.github.upload(http, async () => jres(201, {}), { token: 'T', repo: 'pedro/qb-media', name: 'x.mp4', blob: fakeBlob(1) }), (e) => e.fatal && /empty/i.test(e.message));
+});
+
+test('GitHub host: empty repo (422) -> creates README via contents API, then the release', async () => {
+  const seen = []; let hasCommit = false;
+  const http = async (req) => { seen.push(req.method + ' ' + req.url.replace('https://api.github.com/repos/pedro/qb-media', ''));
+    if (req.method === 'GET') return jres(404, {});
+    if (req.method === 'PUT') { const b = JSON.parse(req.body); assert.ok(/README/.test(req.url) && b.content && b.message); hasCommit = true; return jres(201, {}); }
+    return hasCommit ? jres(201, { id: 5 }) : jres(422, { message: 'Repository is empty.' }); };
+  const up = async () => jres(201, { browser_download_url: 'https://x/y.mp4' });
+  assert.strictEqual(await C.HOSTS.github.upload(http, up, { token: 'T', repo: 'pedro/qb-media', name: 'a.mp4', blob: fakeBlob(1) }), 'https://x/y.mp4');
+  assert.deepStrictEqual(seen, ['GET /releases/tags/vts-autopilot-media', 'POST /releases', 'GET /releases/tags/vts-autopilot-media', 'PUT /contents/README.md', 'POST /releases']);
+  const noPerm = async (req) => (req.method === 'GET' ? jres(404, {}) : req.method === 'PUT' ? jres(403, {}) : jres(422, {}));
+  await assert.rejects(C.HOSTS.github.upload(noPerm, up, { token: 'T', repo: 'pedro/qb-media', name: 'a.mp4' }), (e) => e.fatal && /empty/.test(e.message));
+});
+test('MP4 check: the real phone upload (fragmented, 0 header duration, 1770 s video) is rejected', () => {
+  const E = require('../www/js/encode.js'); const fs = require('fs'); const f = __dirname + '/fixtures/phone-fragmented-head.bin';
+  if (!fs.existsSync(f)) return; const info = E.mp4Info(new Uint8Array(fs.readFileSync(f)));
+  assert.ok(info.fragmented && info.mvhdDuration === 0 && info.duration > 1000); const c = E.checkShort(info); assert.ok(!c.ok && c.problems.includes('fragmented MP4'));
+});
+
 (async () => {
   let fail = 0;
   for (const [name, fn] of tests) { try { await fn(); n++; console.log('ok  ' + name); } catch (e) { fail++; console.log('FAIL ' + name + '\n   ' + (e && e.stack || e)); } }

@@ -246,8 +246,28 @@
         if (!/^[\w.-]+\/[\w.-]+$/.test(o.repo || '')) throw Object.assign(new Error('Set the GitHub repo as owner/name in Settings.'), { fatal: true });
         const H = { Authorization: 'Bearer ' + o.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
         const tag = o.tag || 'vts-autopilot-media';
-        let rel = await http({ url: 'https://api.github.com/repos/' + o.repo + '/releases/tags/' + tag, method: 'GET', headers: H });
-        if (rel.status === 404) rel = await http({ url: 'https://api.github.com/repos/' + o.repo + '/releases', method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, H), body: JSON.stringify({ tag_name: tag, name: 'Voice to Short autopilot media', body: 'Videos uploaded by Voice to Short autopilot so Buffer can fetch them. Safe to delete after they are posted.', prerelease: true, make_latest: 'false' }) });
+        const getRel = () => http({ url: 'https://api.github.com/repos/' + o.repo + '/releases/tags/' + tag, method: 'GET', headers: H });
+        let rel = await getRel();
+        const mk = () => http({ url: 'https://api.github.com/repos/' + o.repo + '/releases', method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, H), body: JSON.stringify({ tag_name: tag, name: 'Voice to Short autopilot media', body: 'Videos uploaded by Voice to Short autopilot so Buffer can fetch them. Safe to delete after they are posted.', prerelease: true, make_latest: 'false' }) });
+        if (rel.status === 404) {
+          let created = await mk();
+          if (created.status === 422 || created.status === 409) {
+            const again = await getRel(); // release made by a racing run?
+            if (again.status < 300) created = again;
+            else {
+              // An empty repo (no commits) cannot have releases. Add a first commit (README) via the contents API, then retry.
+              const readme = 'This repo holds videos uploaded by Voice to Short Autopilot so Buffer can fetch them.\nKeep it public. Old files in the "vts-autopilot-media" release can be deleted after they are posted.\n';
+              const b64 = typeof btoa === 'function' ? btoa(readme) : Buffer.from(readme).toString('base64');
+              const put = await http({ url: 'https://api.github.com/repos/' + o.repo + '/contents/README.md', method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, H), body: JSON.stringify({ message: 'Initial commit (Voice to Short autopilot media)', content: b64 }) });
+              if (put.status === 401 || put.status === 403 || put.status === 404) throw Object.assign(new Error('The GitHub repo ' + o.repo + ' looks empty and the token cannot add a first file. Give the token Contents: Read and write on this repo, or add any file (e.g. a README) on github.com, then try again.'), { status: put.status, fatal: true });
+              if (put.status >= 300 && put.status !== 422) throw Object.assign(new Error('The GitHub repo ' + o.repo + ' looks empty and adding a README failed (HTTP ' + put.status + ').'), { status: put.status });
+              created = await mk();
+              if (created.status === 422) created = await getRel();
+              if (created.status >= 300) throw Object.assign(new Error('GitHub would not create the media release in ' + o.repo + ' (HTTP ' + created.status + '), even after trying to add a README to the empty repo. Check the repo exists, is public, and the token has Contents: Read and write.'), { status: created.status, fatal: true });
+            }
+          }
+          rel = created;
+        }
         if (rel.status === 401 || rel.status === 403) throw Object.assign(new Error('GitHub rejected the token (it needs Contents: read and write on ' + o.repo + ').'), { status: rel.status, fatal: true });
         if (rel.status >= 300) throw Object.assign(new Error('GitHub release: HTTP ' + rel.status), { status: rel.status });
         const r = await rel.json();

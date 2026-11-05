@@ -1,6 +1,5 @@
-Voice to Short 1.10.0 (TEST build) — Autopilot
+Voice to Short 1.10.1 (TEST build) — Autopilot fixes
 
-- Autopilot posts Shorts by itself on a schedule (default 6/day at 9, 11 AM, 1, 4, 7, 9 PM IST).
-- Default method: Buffer (your Buffer API key + a public GitHub repo as the video host). No Google review needed.
-- Optional: direct YouTube upload with your own Google OAuth client (see docs/youtube-audit.md).
-- Windows: runs in the tray, optional start with Windows, catches up after sleep.
+- Autopilot now renders frame by frame with WebCodecs into a normal MP4 (correct duration, max 59 s), even with the screen off or the window hidden. Fixes Buffer's "Video must be no longer than 3 minutes" error.
+- The video is checked (duration, container) before upload; a bad file is never uploaded.
+- An empty GitHub media repo now gets a README automatically (clear error if the token can't).

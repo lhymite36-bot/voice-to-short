@@ -1887,7 +1887,7 @@
       catch (e) { if (e && (e.quota || e.status === 429)) throw e; r = null; }
     }
     if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix });
-    const buf = R.trimBuffer(await R.decodeBlob(r.blob), 60);
+    const buf = R.trimBuffer(await R.decodeBlob(r.blob), 56);
     Q.voice = { blob: r.blob, source: 'gemini', duration: buf.duration, mime: r.blob.type, createdAt: new Date().toISOString(), ttsVoice: voice, ttsModel: r.model };
     step('render');
     const lk = Object.assign({}, Q.look, { aspect: '9:16', handle: handle(), textHook: pkg.textHook || '', ctaSticker: pkg.cta || CTAS[0], template: Q.template, humour: Q.humour, stepLabel: (S.FORMATS[Q.template] || {}).badge || 'STEP', safeZones: false });
@@ -1895,14 +1895,25 @@
     canvas.style.cssText = 'position:fixed;left:-99999px;top:0;width:270px;height:480px;pointer-events:none'; document.body.appendChild(canvas);
     N.keepAwake(true);
     let res;
-    try { res = await R.renderVideo({ canvas, buffer: buf, beats: pkg.beats, look: lk, format: 'auto', signal: h.signal, maxSeconds: 60, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } }); }
-    finally { canvas.remove(); N.keepAwake(false); }
+    const MAXS = 59; const E = VTS.encode; let how = 'webcodecs';
+    try {
+      // Frame-exact WebCodecs encode -> flat MP4 with a real duration (never throttled when the screen is off / app hidden).
+      if (E && E.supported()) { try { res = await E.renderOffline({ canvas, buffer: buf, beats: pkg.beats, look: lk, signal: h.signal, maxSeconds: MAXS, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } }); } catch (e) { if (h.signal && h.signal.aborted) throw e; res = null; how = 'mediarecorder (WebCodecs failed: ' + (e && e.message || e) + ')'; } }
+      else how = 'mediarecorder';
+      if (!res) res = await R.renderVideo({ canvas, buffer: buf, beats: pkg.beats, look: lk, format: 'auto', signal: h.signal, maxSeconds: MAXS, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } });
+    } finally { canvas.remove(); N.keepAwake(false); }
     if (!res || !res.blob.size) throw new Error('Render produced no video.');
+    if (E && /mp4/.test(res.type || res.mime || '')) {
+      const info = await E.blobInfo(res.blob); const chk = E.checkShort(info, 59.9);
+      if (!chk.ok) throw Object.assign(new Error('The rendered video is not a valid Short (' + chk.problems.join(', ') + '; renderer: ' + how + '). It was not uploaded.'), { fatal: true });
+      res.checkedDuration = info.duration;
+    }
+    res.how = how;
     Q.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect: '9:16', createdAt: new Date().toISOString(), visual: 'scenes' };
     try { const P2 = R.plan(buf, 60); const keep = P; P = Q; try { Q.thumb = thumbFrame(lk, P2.total, null, P2); } finally { P = keep; } } catch (_) { Q.thumb = ''; }
     Q.step = 'render'; Q.updatedAt = new Date().toISOString();
     try { await DB.put(Q); } catch (_) { /* library save is best-effort */ }
-    return { project: Q, pkg, blob: res.blob, mime: res.type || 'video/webm' };
+    return { project: Q, pkg, blob: res.blob, mime: res.type || 'video/webm', duration: res.checkedDuration || res.duration, how: res.how };
   }
   VTS.makeShortHeadless = makeShortHeadless;
 

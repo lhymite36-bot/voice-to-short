@@ -110,7 +110,7 @@
       const it = prev.idea ? prev.idea : pickIdea(); if (!it) throw Object.assign(new Error('Idea bank is empty.'), { fatal: true });
       putLog({ slot: slot.id, idea: it, title: it.text.slice(0, 80), step: 'script' });
       const made = await C.withRetry(() => VTS.makeShortHeadless(it, { onStep: (st) => putLog({ slot: slot.id, step: st }) }), { tries: 4, onWait: (ms) => putLog({ slot: slot.id, step: 'waiting ' + Math.round(ms / 1000) + ' s (Gemini busy)' }) });
-      const title = C.buildMetadata(made.pkg).snippet.title; putLog({ slot: slot.id, title, step: 'upload' });
+      const title = C.buildMetadata(made.pkg).snippet.title; putLog({ slot: slot.id, title, step: 'upload', duration: made.duration ? Math.round(made.duration * 10) / 10 : null, renderer: made.how });
       if (s.method === 'buffer') {
         const host = C.HOSTS[load(LS.host, 'github')] || C.HOSTS.github;
         const ext = /webm/.test(made.mime) ? 'webm' : 'mp4'; const name = 'short-' + stamp(slot) + '-' + Date.now().toString(36) + '.' + ext;
