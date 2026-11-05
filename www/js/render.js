@@ -345,6 +345,9 @@
           ctx.save(); ctx.translate(-W * p, 0); drawOld(); ctx.restore();
           ctx.save(); ctx.translate(W * (1 - p), 0); drawNew(); ctx.restore();
           ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(W * (1 - p) - 18, 0, 18, H);
+        } else if (type === 'dolly') { // v1.9 Kurzgesagt-style: camera keeps pushing in while the next shot dissolves in and settles
+          const zo = 1 + p * 0.18; ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(zo, zo); ctx.translate(-W / 2, -H / 2); drawOld(); ctx.restore();
+          const zn = 1.1 - 0.1 * p; ctx.save(); ctx.globalAlpha = p; ctx.translate(W / 2, H / 2); ctx.scale(zn, zn); ctx.translate(-W / 2, -H / 2); drawNew(); ctx.restore();
         } else if (type === 'zoom') {
           if (p < 0.5) { const z = 1 + p * 0.8; ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); drawOld(); ctx.restore(); }
           else { const z = 1.25 - (p - 0.5) * 0.5; ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); drawNew(); ctx.restore(); }

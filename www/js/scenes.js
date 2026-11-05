@@ -177,6 +177,14 @@
     return score(a) >= score(b) ? a : b;
   }
   const SH = { x: 66, y: -176 }; const HIP = { x: 36, y: 6 }; const ARM = [98, 94]; const LEG = [93, 93];
+  // v1.9 natural blinks: every 2.2-5.6 s (irregular), 70 ms close + 110 ms open, ~1 in 5 is a double blink.
+  function blinkAt(t) {
+    const hs = (n) => { const x = Math.sin(n * 91.7 + 17.3) * 43758.5453; return x - Math.floor(x); };
+    let at = 0.8; let k = 0; while (at + 6 < t && k < 4000) { at += 2.2 + hs(k) * 3.4; k++; }
+    for (let j = 0; j < 3; j++) { const st = at; const dbl = hs(k + 500) < 0.2; const one = (d) => (d < 0 ? 1 : d < 0.07 ? 1 - d / 0.07 : d < 0.18 ? (d - 0.07) / 0.11 : 1);
+      const v = Math.min(one(t - st), dbl ? one(t - st - 0.24) : 1); if (v < 1) return Math.max(0.05, v); at += 2.2 + hs(k) * 3.4; k++; }
+    return 1;
+  }
   function poseSpec(pose, t, o) {
     const sp = {
       hipY: 0, tilt: 0, headTilt: 0, headDx: 0, headDy: 0, facing: 0,
@@ -224,18 +232,19 @@
         sp.look = { x: 0.1, y: 0.75 }; sp.holding = 'phone'; break;
       }
       case 'walking': case 'running': {
-        const run = pose === 'running'; const p = t * TAU * (run ? 2.3 : 1.5); const amp = run ? 92 : 58;
-        sp.facing = o && o.facing ? o.facing : 1; sp.tilt = run ? 0.14 * sp.facing : 0.03 * sp.facing; sp.hipY = -Math.abs(Math.sin(p)) * (run ? 20 : 9);
-        sp.legL = { x: Math.sin(p) * amp * sp.facing, y: 190 - Math.max(0, Math.cos(p)) * (run ? 60 : 22), bend: -sp.facing };
-        sp.legR = { x: Math.sin(p + Math.PI) * amp * sp.facing, y: 190 - Math.max(0, Math.cos(p + Math.PI)) * (run ? 60 : 22), bend: -sp.facing };
-        if (run) {
-          sp.armL = { x: 10 + Math.sin(p + Math.PI) * 70 * sp.facing, y: -96 - Math.max(0, Math.sin(p + Math.PI) * sp.facing) * 30, bend: sp.facing };
-          sp.armR = { x: -10 + Math.sin(p) * 70 * sp.facing, y: -96 - Math.max(0, Math.sin(p) * sp.facing) * 30, bend: sp.facing };
-        } else {
-          sp.armL = { x: -14 + Math.sin(p + Math.PI) * 60 * sp.facing, y: -12, bend: sp.facing };
-          sp.armR = { x: 14 + Math.sin(p) * 60 * sp.facing, y: -12, bend: sp.facing };
-        }
-        sp.look = { x: 0.8 * sp.facing, y: 0 }; break;
+        // v1.9 gait: planted stance foot travels back at constant speed (no foot sliding), swing foot arcs forward with ease,
+        // hips dip at each contact (2 bobs per cycle), arms swing opposite the legs with a soft elbow, slight forward lean.
+        const run = pose === 'running'; const u = (t * (run ? 2.3 : 1.15)) % 1; const amp = run ? 88 : 56; const lift = run ? 64 : 30; const duty = run ? 0.42 : 0.6;
+        sp.facing = o && o.facing ? o.facing : 1; const fc = sp.facing;
+        const foot = (ph) => { ph = ((ph % 1) + 1) % 1; if (ph < duty) { const k = ph / duty; return { x: (1 - 2 * k) * amp, y: 190 }; } const k = (ph - duty) / (1 - duty); const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; return { x: (-1 + 2 * e) * amp, y: 190 - Math.sin(k * Math.PI) * lift }; };
+        const fL = foot(u); const fR = foot(u + 0.5);
+        sp.legL = { x: fL.x * fc, y: fL.y, bend: -fc }; sp.legR = { x: fR.x * fc, y: fR.y, bend: -fc };
+        sp.hipY = -(0.5 - 0.5 * Math.cos(u * TAU * 2)) * (run ? 18 : 8); sp.tilt = (run ? 0.13 : 0.045) * fc + Math.sin(u * TAU * 2) * 0.008;
+        const swing = (ph) => Math.cos(ph * TAU); const aa = run ? 62 : 46;
+        sp.armL = { x: (-30 + swing(u + 0.5) * aa) * fc - 14, y: run ? -110 + Math.max(0, swing(u + 0.5)) * -26 : -18 - Math.max(0, swing(u + 0.5)) * 14, bend: fc };
+        sp.armR = { x: (30 + swing(u) * aa) * fc + 14, y: run ? -110 + Math.max(0, swing(u)) * -26 : -18 - Math.max(0, swing(u)) * 14, bend: fc };
+        if (!run) [[sp.armL, -1], [sp.armR, 1]].forEach(([A, sd]) => { A.el = { x: (A.x + sd * 60) / 2 + sd * 6, y: -96 }; }); // elbows hang under the shoulders, slightly bent
+        sp.headDy = Math.sin(u * TAU * 2) * 2; sp.look = { x: 0.8 * fc, y: 0 }; break;
       }
       case 'meditating': {
         sp.lotus = true; sp.hipY = -16 + Math.sin(t * 1.3) * 12; sp.breathe = 2.2;
@@ -244,6 +253,8 @@
       }
       default: if (VTS.sceneExt && VTS.sceneExt.pose) VTS.sceneExt.pose(pose, sp, t, o); break;
     }
+    // v1.9 idle life: slow head drift + tiny weight shift so nobody stands frozen between gestures
+    if (!['sleeping', 'lying-awake'].includes(pose)) { sp.headTilt += Math.sin(t * 0.83 + 1.1) * 0.022 + Math.sin(t * 1.97) * 0.008; sp.headDx += Math.sin(t * 0.61) * 3; sp.headDy += Math.sin(t * 1.7 + 0.4) * 1.5; }
     return sp;
   }
 
@@ -342,7 +353,7 @@
     head(ctx, pal, face, t, o) {
       const f = o.facing || 0; const fx = f * 24; const lw = this.lw; const OL = this.OL;
       if (pal.headBehind) pal.headBehind(ctx, this, face, t, f);
-      const blinkT = (t + (o.seed || 0) * 1.7) % 3.6; const blink = face.eyes === 'closed' || face.eyes === 'happy' ? 1 : (blinkT < 0.14 ? Math.abs(Math.cos(blinkT / 0.14 * Math.PI)) : 1);
+      const blink = face.eyes === 'closed' || face.eyes === 'happy' ? 1 : blinkAt(t + (o.seed || 0) * 1.7);
       if (pal.headShape) pal.headShape(ctx, this, face, t, f); else {
       if (pal.long) { ctx.beginPath(); ctx.moveTo(-104, -20); ctx.bezierCurveTo(-112, 60, -100, 118, -70, 126); ctx.lineTo(70, 126); ctx.bezierCurveTo(100, 118, 112, 60, 104, -20); ctx.closePath(); this.fs(ctx, pal.hair); }
       // ears
@@ -429,8 +440,8 @@
       const dark = this.c('#6d2430');
       ctx.lineWidth = 5.5; ctx.strokeStyle = OL; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       if (m === 'talk') {
-        const open = this._mouthOpen != null ? this._mouthOpen : 4 + 13 * Math.abs(noise(t * 7, 2)); const happy = face.mouth === 'grin' || face.mouth === 'smile';
-        ctx.beginPath(); if (happy) { ctx.moveTo(-18, -4); ctx.quadraticCurveTo(0, open * 2.2, 18, -4); ctx.closePath(); } else ctx.ellipse(0, 2, 15, open, 0, 0, TAU);
+        const open = this._mouthOpen != null ? this._mouthOpen : 4 + 13 * Math.abs(noise(t * 7, 2)); const happy = face.mouth === 'grin' || face.mouth === 'smile'; const mw = this._mouthWide || 1;
+        ctx.beginPath(); if (happy) { ctx.moveTo(-18, -4); ctx.quadraticCurveTo(0, open * 2.2, 18, -4); ctx.closePath(); } else if (open < 2.2) { ctx.moveTo(-14 * mw, 2); ctx.quadraticCurveTo(0, 4, 14 * mw, 2); } else ctx.ellipse(0, 2, 15 * mw, open, 0, 0, TAU);
         ctx.fillStyle = dark; ctx.fill(); ctx.stroke();
       } else if (m === 'grin') {
         ctx.beginPath(); ctx.moveTo(-27, -6); ctx.quadraticCurveTo(0, 42, 27, -6); ctx.closePath(); ctx.fillStyle = dark; ctx.fill();
@@ -1379,5 +1390,5 @@
     return who + ', pose: ' + lab(POSES, scene.pose) + ', feeling ' + scene.emotion + ', setting: ' + lab(SETTINGS, scene.setting) + (scene.props.length ? ', with ' + scene.props.map((p) => lab(PROPS, p)).join(', ') : '');
   }
 
-  VTS.scenes = { SETTINGS, POSES, EMOTIONS, PROPS, CAMERAS, TRANSITIONS, SET_IDS, POSE_IDS, EMO_IDS, PROP_IDS, CAM_IDS, normalizeScene, inferScene, sceneKey, Stage, drawPreview, describe, ART, easeInOut, easeOut };
+  VTS.scenes = { SETTINGS, POSES, EMOTIONS, PROPS, CAMERAS, TRANSITIONS, SET_IDS, POSE_IDS, EMO_IDS, PROP_IDS, CAM_IDS, normalizeScene, inferScene, sceneKey, Stage, drawPreview, describe, ART, easeInOut, easeOut, poseSpec, blinkAt };
 }());

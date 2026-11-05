@@ -24,7 +24,10 @@
     for (let i = 0; i < n; i++) { let v = raw[i] / p95; v = v < 0.14 ? 0 : Math.min(1, (v - 0.14) / 0.86); prev = v > prev ? prev + (v - prev) * 0.65 : prev + (v - prev) * 0.3; d[i] = prev; }
     return { rate: RATE, d };
   }
-  function envelopeFromBuffer(buf) { if (!buf || !buf.getChannelData) return null; const raw = []; rmsFrames(buf.getChannelData(0), buf.sampleRate, raw); return finish(raw); }
+  // v1.9 lip-sync: zero-crossing rate per hop ~ how "bright" the sound is (s/ee/t = wide flat mouth, ah/oh = tall round mouth)
+  function zcrFrames(f, sr) { const hop = Math.max(1, Math.round(sr / RATE)); const out = []; for (let a = 0; a < f.length; a += hop) { const b = Math.min(f.length, a + hop); let z = 0; for (let j = a + 1; j < b; j++) if ((f[j] >= 0) !== (f[j - 1] >= 0)) z++; out.push(z / Math.max(1, b - a)); } const d = new Float32Array(out.length); let p = 0; for (let i = 0; i < out.length; i++) { p += (Math.min(1, out[i] / 0.25) - p) * 0.5; d[i] = p; } return d; }
+  function envelopeFromBuffer(buf) { if (!buf || !buf.getChannelData) return null; const raw = []; const ch = buf.getChannelData(0); rmsFrames(ch, buf.sampleRate, raw); const e = finish(raw); e.zcr = zcrFrames(ch, buf.sampleRate); return e; }
+  function zcrAt(env, t) { if (!env || !env.zcr || t < 0) return 0.3; const i = Math.min(env.zcr.length - 1, Math.floor(t * env.rate)); return env.zcr[i] || 0; }
   async function envelopeFromTrack(track) { if (!track || !track.floats) return null; const raw = []; const d = track.duration; for (let t0 = 0; t0 < d; t0 += 30) { rmsFrames(await track.floats(t0, Math.min(d, t0 + 30)), track.sr, raw); } return finish(raw); }
   function envAt(env, t) { if (!env || !env.d.length || t < 0) return 0; const x = t * env.rate; const i = Math.floor(x); if (i >= env.d.length - 1) return env.d[env.d.length - 1] || 0; const f = x - i; return env.d[i] * (1 - f) + env.d[i + 1] * f; }
 
@@ -52,8 +55,9 @@
   RP.setupScenes = function () {
     baseSetupScenes.call(this);
     if (!smooth(this)) { this.trDur = 0; return; }
-    const TYPES = ['whip', 'zoom', 'glitch', 'wipe', 'whip', 'slide', 'pop'];
-    this.trDur = 0.34;
+    const kurz = this.o.preset === 'kurz'; // v1.9: Kurzgesagt-style motion = calm dolly + eased push/slide transitions, no glitch/whip
+    const TYPES = kurz ? ['dolly', 'slide', 'dolly', 'wipe', 'dolly', 'slide'] : ['whip', 'zoom', 'glitch', 'wipe', 'whip', 'slide', 'pop'];
+    this.trDur = kurz ? 0.5 : 0.34;
     (this.shots || []).forEach((sh, k) => { sh.transition = TYPES[(k * 3 + Math.floor(hash(k + 4) * 3)) % TYPES.length]; });
     this.timeline.forEach((b, i) => {
       if (b.sc && (!b.sc.emotion || b.sc.emotion === 'neutral')) { const e = exprFromText(b.text); if (e) b.sc.emotion = e; }
@@ -94,10 +98,12 @@
     const env = r.env; const voiced = t >= (r.o.speechStart || 0) - 0.05 && t <= (r.o.speechEnd || 1e9) + 0.1;
     let amp = env ? envAt(env, t - (R.LEAD || 0.3)) : (voiced && t < b.end - 0.05 ? 0.35 + 0.35 * Math.abs(Math.sin(t * 11.3) * Math.sin(t * 4.1 + 1)) : 0);
     if (!voiced) amp = 0;
+    const bright = env ? zcrAt(env, t - (R.LEAD || 0.3) + 0.02) : 0.3; // v1.9: viseme width (sampled a hair early: mouths lead the sound)
+    if (env) amp = Math.max(amp, envAt(env, t - (R.LEAD || 0.3) + 0.04) * 0.9);
     const age = t - (b.start || 0); const emo = (b.sc && b.sc.emotion) || 'neutral';
     let gesture = null;
     if (b.emphIdx >= 0 && b.wordTimes) { const wt = b.wordTimes[b.emphIdx]; const p = (t - wt + 0.12) / 0.9; if (p > 0 && p < 1) gesture = { kind: GESTURE(emo), k: Math.sin(p * Math.PI) }; }
-    return { t, i, b, sh, amp, age, emo, emoChanged: !!b.prevEmo && b.prevEmo !== emo, gesture, chaos: CHAOS.includes(emo), punch: !!b.punch, speaker: (b.sc && b.sc.speaker) || '' };
+    return { t, i, b, sh, amp, age, emo, emoChanged: !!b.prevEmo && b.prevEmo !== emo, gesture, bright, chaos: CHAOS.includes(emo), kurz: r.o.preset === 'kurz', punch: !!b.punch, speaker: (b.sc && b.sc.speaker) || '' };
   }
 
   // ---------- characters: squash & stretch, sway, gestures, voice-synced mouth ----------
@@ -119,10 +125,10 @@
       const T = { point: [[1, 200, 410]], fist: [[1, 95, 640]], 'hands-up': [[1, 130, 600], [-1, 130, 600]], shrug: [[1, 175, 300], [-1, 175, 300]] }[g.kind] || [];
       T.forEach(([side, dx, dy]) => { const a = rest(side); const b = [x + side * dx * s, groundY - dy * s]; const p = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; if (side > 0) o2.targetR = p; else o2.targetL = p; });
     }
-    this._forceTalk = talking && solo; this._mouthOpen = talking ? 3 + 20 * mo.amp : (pose === 'talking' ? 3 : null);
+    this._forceTalk = talking && solo; const br = mo.bright == null ? 0.3 : mo.bright; this._mouthOpen = talking ? (mo.amp < 0.08 ? 1.5 : 3 + 20 * mo.amp * (1 - 0.45 * br)) : (pose === 'talking' ? 1.5 : null); this._mouthWide = talking ? 0.78 + 0.62 * br : 1;
     ctx.save(); ctx.translate(x, groundY); ctx.rotate(sway); ctx.scale(sx, sy); ctx.translate(-x, -groundY);
     let A;
-    try { A = baseCharacter.call(this, ctx, x, groundY, scale, pose, emotion, t, o2); } finally { ctx.restore(); this._forceTalk = false; this._mouthOpen = null; }
+    try { A = baseCharacter.call(this, ctx, x, groundY, scale, pose, emotion, t, o2); } finally { ctx.restore(); this._forceTalk = false; this._mouthOpen = null; this._mouthWide = 1; }
     if (A && A.head) { A.head.y = groundY + (A.head.y - groundY) * sy; const h = this._heads && this._heads[this._heads.length - 1]; if (h && h !== A.head && Math.abs(h.x - A.head.x) < 1) h.y = A.head.y; }
     return A;
   };
@@ -134,12 +140,12 @@
     let cam = this._cam; let made = false;
     if (!cam) { cam = { z: 1, dx: 0, dy: 0, rot: 0, fx: 540, fy: 1150 }; this._cam = cam; this._camLast = cam; made = true; }
     if (cam._mt !== mo.t) {
-      cam._mt = mo.t; const t = mo.t;
-      cam.dx += sm(t * 0.9, 1) * 7; cam.dy += sm(t * 0.8, 4) * 6; cam.rot = (cam.rot || 0) + sm(t * 0.5, 7) * 0.006; // handheld
+      cam._mt = mo.t; const t = mo.t; const kz = mo.kurz;
+      const hh = kz ? 0.3 : 1; cam.dx += sm(t * (kz ? 0.35 : 0.9), 1) * 7 * hh; cam.dy += sm(t * (kz ? 0.3 : 0.8), 4) * 6 * hh; cam.rot = (cam.rot || 0) + sm(t * 0.5, 7) * 0.006 * hh; // handheld (Kurzgesagt: slow floating dolly)
       const s0 = mo.sh; if (s0) { const p = clamp01((t - s0.start) / Math.max(1.5, s0.end - s0.start)); const dir = s0.idx % 2 ? 1 : -1; cam.dx += (p - 0.5) * 70 * dir; cam.z *= 1.035 + 0.035 * easeInOut(p); } // slow pan + push
-      if (mo.punch) cam.z *= 1 + 0.15 * easeOutBack(mo.age / 0.22) * (mo.age < (mo.b.end - mo.b.start) ? 1 : 0); // punch-in on the joke
+      if (mo.punch) cam.z *= 1 + (kz ? 0.09 * easeInOut(mo.age / 0.45) : 0.15 * easeOutBack(mo.age / 0.22)) * (mo.age < (mo.b.end - mo.b.start) ? 1 : 0); // punch-in on the joke
       if (mo.gesture) cam.z *= 1 + 0.035 * mo.gesture.k; // micro push on the emphasised word
-      if (mo.chaos && mo.age < 0.9) { const a = 16 * Math.exp(-mo.age * 3.5); cam.dx += Math.sin(t * 61) * a; cam.dy += Math.cos(t * 47) * a; cam.rot += Math.sin(t * 33) * a * 0.0011; } // shake on chaos beats
+      if (mo.chaos && mo.age < 0.9) { const a = (kz ? 6 : 16) * Math.exp(-mo.age * 3.5); cam.dx += Math.sin(t * 61) * a; cam.dy += Math.cos(t * 47) * a; cam.rot += Math.sin(t * 33) * a * 0.0011; } // shake on chaos beats
       this._bgShift = { x: -cam.dx * 0.45 + sm(t * 0.15, 9) * 18, y: -cam.dy * 0.4 };
     }
     try { return prevDrawShot.call(this, ctx, sh); } finally { if (made) { this._cam = null; } }
@@ -178,5 +184,5 @@
   const prevPrepare = RP.prepare;
   RP.prepare = async function () { const n = await prevPrepare.call(this); if (this.pops && this.pops.length && S.EMO && S.EMO.load) { try { await S.EMO.load(Array.from(new Set(this.pops.map((p) => p.file)))); } catch (_) { /* optional */ } } return n; };
 
-  VTS.motion = { envelopeFromBuffer, envelopeFromTrack, envAt, frameState, exprFromText, GESTURE, CHAOS, sm, smooth };
+  VTS.motion = { envelopeFromBuffer, envelopeFromTrack, envAt, zcrAt, frameState, exprFromText, GESTURE, CHAOS, sm, smooth };
 }());
