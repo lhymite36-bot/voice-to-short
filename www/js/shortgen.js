@@ -90,7 +90,7 @@
     'Multi-character poses: waving (one arm; characters 2 = both wave; characters 3 adds a person standing behind the main character, e.g. "you waved back at someone who was waving at the person behind you"), walking-toward (two people approach from far apart, e.g. hallway; add prop phone if the main character pretends to scroll), high-five. driving uses setting car-interior (add prop car-radio for turning the music down). Weather (optional): rain, storm, sun, snow, fog, wind, overcast, sunset, stars, or none; it is drawn over outdoor places and auto-matched to the mood when omitted.',
     SC() ? 'Allowed prop ids (use only these exact ids in "props"; anything else goes in "objects"/"keywords"): ' + SC().PROP_IDS.join(', ') + '.' : '',
   ].filter(Boolean).join('\n');
-  const SPEAKERS = ['narrator', 'me', 'brain', 'friend', 'boss', 'crush', 'mom', 'therapist', 'cat'];
+  const SPEAKERS = ['narrator', 'me', 'brain', 'friend', 'boss', 'crush', 'mom', 'therapist', 'cat', 'other'];
   const FX_IDS = ['none', 'zoom-punch', 'freeze', 'spotlight', 'impact', 'split', 'before-after', 'chat', 'notification', 'loading', 'xp', 'checklist', 'rating', 'argument', 'myth-fact', 'countdown', 'typing-delete'];
   const SFX_IDS = ['none', 'whoosh', 'pop', 'ding', 'boom', 'scratch', 'boing', 'bruh', 'trombone', 'laugh', 'typing', 'notif', 'heartbeat', 'tick', 'cash', 'levelup', 'wrong', 'tada', 'riser'];
   const SCHEMA = {
@@ -169,7 +169,8 @@
       'Tone: ' + tone.prompt,
       HUMOUR_PROMPT[humourOf(opts)],
       'Length: the script is ' + L.words[0] + '-' + L.words[1] + ' words (about ' + L.sec + ' seconds spoken, never more). Beats: ' + bt[0] + '-' + bt[1] + ' beats; each beat is one sentence or clause of 3-12 words with ONE speaker, text copied verbatim from the script, in order, covering all of it; weight = spoken words.',
-      'Per beat: speaker (narrator | me = the viewer as a cartoon | brain = their Brain as a cute pink character | friend | boss | crush | mom | therapist | cat). scene.emotion is an exaggerated cartoon expression of the speaker (eye-roll, side-eye, shocked, crying-laughing, smug, dead-inside, panicking, blushing, rage, facepalm, or the basic ones). punch = true on punchlines. sticker = optional 1-3 word reaction (BRUH, WAIT WHAT, NOT AGAIN, SIR??, IT ME, or one emoji like 💀 😭) on at most 3 beats. sfx: boom on dramatic reveals, scratch before a "wait", bruh on facepalms, ding on tips, typing/notif on phone moments, cash for money, heartbeat for anxiety, tick for time pressure, trombone for fails, else none.',
+      'STORY ORDER (most important): tell the moment in chronological order like a sketch: setup -> the other person speaks/acts -> what you do -> how the Brain reacts -> explanation -> payoff. A reaction, mockery or answer must come AFTER the line or action it reacts to; never react to something that has not been said or shown yet.',
+      'Per beat: speaker (narrator | me = the viewer as a cartoon | brain = their Brain as a cute pink character | friend | boss | crush | mom | therapist | cat | other = anyone else in the scene: barber, cashier, waiter, coworker, stranger). A line said by someone else in the scene (e.g. the barber asking a question) is speaker other (or friend/boss/...), never me or brain. scene.emotion is an exaggerated cartoon expression of the speaker (eye-roll, side-eye, shocked, crying-laughing, smug, dead-inside, panicking, blushing, rage, facepalm, or the basic ones). punch = true on punchlines. sticker = optional 1-3 word reaction (BRUH, WAIT WHAT, NOT AGAIN, SIR??, IT ME, or one emoji like 💀 😭) on at most 3 beats. sfx: boom on dramatic reveals, scratch before a "wait", bruh on facepalms, ding on tips, typing/notif on phone moments, cash for money, heartbeat for anxiety, tick for time pressure, trombone for fails, else none.',
       'fx overlays (at most 1 in 3 beats, never two in a row) with fxText: zoom-punch (optional short caption), freeze (caption like "Yep. That\'s me."), spotlight (short label), impact (1-2 word POW text), split ("Expectation|Reality"), before-after ("Before|After"), chat (2-4 texts "Name: message|me: message"), notification ("App: message"), loading ("Loading motivation…"), xp ("+50 XP · Self-respect"), checklist ("item|item|item"), rating ("Habit|score/10"), argument ("Me: line|Brain: line"), myth-fact ("MYTH" or "FACT"), countdown ("5 second rule"), typing-delete (a long text typed then deleted and replaced: "Bestie: you up?|me: long paragraph you never send|lol").',
       'textHook: 3-7 words of on-screen text for the very first frame that makes people stay (different wording from the spoken hook; e.g. "POV: it\'s 3 a.m. again" or "your brain at 3am:").',
       'Platform text: YouTube title + description + 3-6 hashtags including #Shorts; TikTok tiktokCaption (short, conversational, ends with a question) + 3-5 tiktokHashtags (one broad like #psychology plus niche ones); cta for the on-screen sticker (e.g. "Follow if your brain does this too 🧠"); pinnedComment; thumbnailText.',
@@ -332,6 +333,13 @@
     });
     return out;
   }
+  // v1.9: a line that addresses someone in the service-worker voice ("Sir, ...", "Do you like the length?") is not the viewer or the Brain.
+  function fixSpeaker(b) {
+    if (!b || !/^(me|brain)$/.test(b.speaker || '')) return b;
+    const t = String(b.text || '').trim();
+    if (/^(sir|ma'?am|miss|excuse me|next( customer)?|okay so|alright,? so)\b[,!.]?/i.test(t) && !/\b(my brain|i think|i feel)\b/i.test(t)) b.speaker = 'other';
+    return b;
+  }
   function completeBeats(script, beats) {
     const all = words(script); const covered = wordCount(beats.map((b) => b.text).join(' '));
     if (all.length - covered < 4 || covered >= all.length * 0.97) return beats;
@@ -364,6 +372,7 @@
       punch: !!(b && (b.punch === true || b.punch === 'true')),
     })).filter((b) => b.text);
     beats = splitLongBeats(beats);
+    beats.forEach(fixSpeaker);
     beats.forEach((b) => { ['speaker', 'fx', 'fxText', 'sfx', 'sticker'].forEach((k) => { if (!b[k]) delete b[k]; }); if (!b.punch) delete b.punch; if (b.fx === 'none') delete b.fx; if (b.sfx === 'none') delete b.sfx; });
     if (beats.length < 3) beats = beatsFromScript(script, hooks[0], beats);
     else beats = completeBeats(script, beats);
@@ -621,5 +630,5 @@
     return s.normalizeScene(raw, b.text, b.step, index > 0 ? pkg.beats[index - 1].scene : null);
   }
 
-  VTS.shortgen = { FORMATS, HUMOUR, HUMOUR_PROMPT, COMEDY_RULES, SPEAKERS, FX_IDS, SFX_IDS, isComedy, humourOf, buildComedyPrompt, LENGTHS, lengthOf, isLong, generateLong, stitchLong, sectionCount, SYSTEM_LONG, OUTLINE_SCHEMA, sectionSchema, attachScenes, regenerateScene, sceneSchema, schemaWithScenes, rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, repairJSON, completeBeats, joinContinuation, askJSON, compactSchema, metaSchema, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
+  VTS.shortgen = { fixSpeaker, FORMATS, HUMOUR, HUMOUR_PROMPT, COMEDY_RULES, SPEAKERS, FX_IDS, SFX_IDS, isComedy, humourOf, buildComedyPrompt, LENGTHS, lengthOf, isLong, generateLong, stitchLong, sectionCount, SYSTEM_LONG, OUTLINE_SCHEMA, sectionSchema, attachScenes, regenerateScene, sceneSchema, schemaWithScenes, rebuildHookBeats, TONES, LANGUAGES, SYSTEM, SCHEMA, buildPrompt, normalize, parseJSONLoose, repairJSON, completeBeats, joinContinuation, askJSON, compactSchema, metaSchema, generatePackage, applyHook, beatsFromScript, chunkText, wordCount, words, normHashtag, splitHook };
 }());

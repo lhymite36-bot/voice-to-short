@@ -136,7 +136,7 @@
     return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone, length: defLength(aspect),
       template: 'classic', humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, platform: load('vts.platform', 'both'),
       pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null,
-      look: Object.assign({ aspect, quality: 'auto', preset: load(K.grade, 'teal'), captionCase: 'upper', watermark: !!load(K.watermark, false), format: 'auto',
+      look: Object.assign({ aspect, quality: 'auto', preset: load(K.grade, 'kurz'), captionCase: 'upper', watermark: !!load(K.watermark, false), format: 'auto',
         visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) }, defaultLook()) };
   }
   function persist(now) {
@@ -1576,7 +1576,7 @@
     $('s-handle').value = load(K.handle, '');
     fillSelect($('s-tone'), Object.entries(S.TONES).map(([k, t]) => [k, t.label]), load(K.tone, 'sarcastic'));
     fillSelect($('s-language'), S.LANGUAGES.map((l) => [l, l]), load(K.language, 'English'));
-    fillSelect($('s-grade'), Object.entries(R.PRESETS).map(([k, p]) => [k, p.name]), load(K.grade, 'teal'));
+    fillSelect($('s-grade'), Object.entries(R.PRESETS).map(([k, p]) => [k, p.name]), load(K.grade, 'kurz'));
     fillSelect($('s-aspect'), R.ASPECTS ? Object.keys(R.ASPECTS).map((k) => [k, (R.ASPECT_LABELS && R.ASPECT_LABELS[k]) || k]) : [['9:16', '9:16']], defAspect());
     $('s-watermark').checked = !!load(K.watermark, false);
     $('s-visual').value = load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes'; $('s-ai-images').checked = !!load(K.aiImages, false);

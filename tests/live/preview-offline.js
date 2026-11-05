@@ -26,7 +26,7 @@ function serve() {
     let buf = buf0; if (maxs && buf0.duration > maxs) { const ac = R.audioCtx(); const n = Math.floor(maxs * buf0.sampleRate); buf = ac.createBuffer(1, n, buf0.sampleRate); buf.copyToChannel(buf0.getChannelData(0).subarray(0, n), 0); }
     const P = R.plan(buf, Math.max(60, buf.duration + 2));
     const [cw, ch] = R.frameSize(aspect, 1); const c = document.createElement('canvas'); c.width = cw; c.height = ch; document.body.appendChild(c);
-    const look = { preset: 'teal', aspect, visual: 'scenes', captionStyle: 'tiktok', captionCase: 'upper', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, progress: true, sfx: false, music: 'none',
+    const look = { preset: 'kurz', aspect, visual: 'scenes', captionStyle: 'tiktok', captionCase: 'upper', intensity: 'punchy', hook: true, cta: true, autoEmoji: true, loop: true, progress: true, sfx: false, music: 'none',
       textHook: pkg.textHook || '', ctaSticker: pkg.cta || 'Follow if your brain does this too 🧠', template: 'classic', humour: 2, stepLabel: 'STEP', anim, motion, handle: '' };
     Object.assign(look, lookx, { aspect, anim, motion, visual: lookx.visual || 'scenes' });
     try { await document.fonts.load('800 100px Montserrat'); await document.fonts.load('900 100px Montserrat'); } catch (_) { /* ignore */ }

@@ -20,8 +20,8 @@
   const OLC = '#1d1b2a';
 
   // ======================= vocabulary (kept small for the Gemini schema) =======================
-  const SPEAKERS = ['narrator', 'me', 'brain', 'friend', 'boss', 'crush', 'mom', 'therapist', 'cat'];
-  const SPEAKER_LABELS = { narrator: 'Narrator', me: 'You', brain: 'Your Brain', friend: 'Friend', boss: 'Boss', crush: 'Crush', mom: 'Mom', therapist: 'Therapist', cat: 'Cat' };
+  const SPEAKERS = ['narrator', 'me', 'brain', 'friend', 'boss', 'crush', 'mom', 'therapist', 'cat', 'other'];
+  const SPEAKER_LABELS = { narrator: 'Narrator', me: 'You', brain: 'Your Brain', friend: 'Friend', boss: 'Boss', crush: 'Crush', mom: 'Mom', therapist: 'Therapist', cat: 'Cat', other: 'Them' };
   const FX = ['none', 'zoom-punch', 'freeze', 'spotlight', 'impact', 'split', 'before-after', 'chat', 'notification', 'loading', 'xp', 'checklist', 'rating', 'argument', 'myth-fact', 'countdown', 'typing-delete'];
   const FX_LABELS = { none: 'None', 'zoom-punch': 'Zoom punch on face', freeze: 'Record-scratch freeze "yep, that\'s me"', spotlight: 'Dramatic spotlight', impact: 'Impact frame', split: 'Split screen: expectation vs reality',
     'before-after': 'Before / after', chat: 'Text-message chat', notification: 'Notification pop-up', loading: '"Loading…" brain bar', xp: 'XP / level-up bar', checklist: 'Checklist ticks', rating: 'Star rating',
@@ -33,12 +33,13 @@
   const CTAS = ['Follow if your brain does this too 🧠', 'Comment your 3 a.m. thought 👇', 'Send this to your overthinker 📲', 'Which one are you? 1 or 2? 👇', 'Save this for your next spiral 📌', 'Tag the friend who needs this 👀'];
 
   // ======================= cast =======================
-  const CASTV = { boss: 2, crush: 3, mom: 4, therapist: 5 };
+  const CASTV = { boss: 2, crush: 3, mom: 4, therapist: 5, other: 6 }; // v1.9: other = barber / cashier / waiter / stranger
   const CAST_PAL = {
     2: { skin: '#e8b791', skinS: '#cc956d', hair: '#8c8c96', top: '#39415a', pants: '#262b3b', shoe: '#17171c', long: false, who: 'boss' },
     3: { skin: '#f4c7a6', skinS: '#dca07c', hair: '#8a4a2b', top: '#ff8fb3', pants: '#3e4b80', shoe: '#ffffff', long: true, who: 'crush' },
     4: { skin: '#d9a17b', skinS: '#bf845f', hair: '#5b3a2e', top: '#9b7bd4', pants: '#4a4066', shoe: '#6b4f3a', long: false, who: 'mom' },
     5: { skin: '#8e5b3c', skinS: '#74462c', hair: '#1c1718', top: '#3f8577', pants: '#2f3342', shoe: '#2b2b33', long: false, who: 'therapist' },
+    6: { skin: '#c98b62', skinS: '#ad714b', hair: '#2a211e', top: '#2b2f3a', pants: '#3a3f52', shoe: '#1d1d22', long: false, who: 'other' },
   };
   const basePal2 = ST.pal2;
   ST.pal2 = function (variant, a) {
@@ -264,9 +265,12 @@
   VTS.comedy.drawProp = drawProp; VTS.comedy.brainShape = brainShape;
 
   // ======================= director: cast, pattern interrupts, stickers, sound cues =======================
+  // v1.9: auto (AI-less) text stickers must agree with what is being said; emoji stickers are non-verbal and always ok.
+  const STICKER_FITS = { 'NOT AGAIN': /\b(again|every (single )?time|always|keeps? happening|here we go|every day|repeat)/i, 'WAIT WHAT': /\?|\b(wait|what|huh|seriously|really)\b/i, 'BRUH': /\b(bruh|seriously|really|sure|totally|obviously|normal|great)\b|\.\.\./i, 'THE AUDACITY': /\b(how dare|audacity|nerve|seriously|really|they)\b/i, 'HELLO??': /\b(hello|anyone|hey|excuse me|sir|ma'?am)\b|\?/i, 'SIR??': /\b(sir|excuse me|what|why|who)\b|\?/i };
+  function stickerFits(stk, text) { if (!stk) return false; const re = STICKER_FITS[stk]; if (re) return re.test(String(text || '')); return !/[a-z]/i.test(stk); }
   const AUTO_STICKER = { panicking: 'NOT AGAIN', shocked: 'WAIT WHAT', 'dead-inside': '💀', smug: '😏', 'eye-roll': 'BRUH', 'side-eye': '🤨', 'crying-laughing': '😭', facepalm: 'BRUH', rage: 'THE AUDACITY', blushing: '😳', anxious: 'HELLO??', surprised: 'WAIT WHAT', tired: '🫠', sad: '😭', angry: 'SIR??' };
   const STICKER_SFX = (txt) => { const s = String(txt || '').toUpperCase(); if (/BRUH|NAH|OOF/.test(s)) return 'bruh'; if (/💀|AUDACITY|UNWELL/.test(s)) return 'boom'; if (/WAIT|HELLO|SIR/.test(s)) return 'scratch'; if (/🤡|DELULU|LMAO|😭/.test(s)) return 'boing'; return 'pop'; };
-  function normSpeaker(v) { const k = String(v || '').toLowerCase().replace(/[^a-z]/g, ''); if (!k) return ''; if (SPEAKERS.includes(k)) return k; if (/^(you|i|myself|self|user)$/.test(k)) return 'me'; if (/brain|mind/.test(k)) return 'brain'; if (/mum|mother|parent|dad/.test(k)) return 'mom'; if (/bestie|bff|friend/.test(k)) return 'friend'; if (/manager|boss|teacher/.test(k)) return 'boss'; if (/crush|date|partner|ex/.test(k)) return 'crush'; if (/therap|doctor|counsel/.test(k)) return 'therapist'; if (/cat|kitty|pet/.test(k)) return 'cat'; return 'narrator'; }
+  function normSpeaker(v) { const k = String(v || '').toLowerCase().replace(/[^a-z]/g, ''); if (!k) return ''; if (SPEAKERS.includes(k)) return k; if (/^(you|i|myself|self|user)$/.test(k)) return 'me'; if (/brain|mind/.test(k)) return 'brain'; if (/mum|mother|parent|dad/.test(k)) return 'mom'; if (/bestie|bff|friend/.test(k)) return 'friend'; if (/manager|boss|teacher/.test(k)) return 'boss'; if (/crush|date|partner|ex/.test(k)) return 'crush'; if (/therap|doctor|counsel/.test(k)) return 'therapist'; if (/cat|kitty|pet/.test(k)) return 'cat'; if (/barber|stylist|cashier|waiter|server|barista|stranger|coworker|colleague|clerk|driver|doctor|dentist|neighbou?r|other|them|they|person|customer|guy|lady/.test(k)) return 'other'; return 'narrator'; }
   function normFx(v) { const k = String(v || '').toLowerCase().replace(/[^a-z-]/g, ''); if (FX.includes(k)) return k; const syn = { zoom: 'zoom-punch', punch: 'zoom-punch', 'freeze-frame': 'freeze', scratch: 'freeze', text: 'chat', texts: 'chat', phone: 'chat', message: 'chat', notif: 'notification', expectation: 'split', 'expectation-reality': 'split', splitscreen: 'split', xpbar: 'xp', levelup: 'xp', 'level-up': 'xp', list: 'checklist', stars: 'rating', myth: 'myth-fact', fact: 'myth-fact', timer: 'countdown', beforeafter: 'before-after', thought: 'argument', typing: 'typing-delete', backspace: 'typing-delete', delete: 'typing-delete', 'typed-deleted': 'typing-delete', lol: 'typing-delete' }; return syn[k] || 'none'; }
   function setupCast(r, tl) {
     const fmt = r.o.template || ''; const anyBrain = tl.some((b) => normSpeaker(b.speaker) === 'brain');
@@ -276,7 +280,7 @@
       if (sp === 'brain' || (sp === 'me' && (fmt === 'brain-vs-me' || near('brain')))) {
         if (fmt === 'brain-vs-me' || near('me') || anyBrain) { sc.count = 2; sc.cast1 = 'me'; sc.cast2 = 'brain'; }
         else { sc.cast1 = 'brain'; }
-      } else if (['friend', 'boss', 'crush', 'mom', 'therapist', 'cat'].includes(sp)) { sc.count = 2; sc.cast1 = 'me'; sc.cast2 = sp; }
+      } else if (['friend', 'boss', 'crush', 'mom', 'therapist', 'cat', 'other'].includes(sp)) { sc.count = 2; sc.cast1 = 'me'; sc.cast2 = sp; }
       if ((sc.cast1 === 'brain' || sc.cast2 === 'brain') && Array.isArray(sc.props)) sc.props = sc.props.filter((p) => p !== 'brain'); // the Brain is already on stage
       if (sc.setting === 'car-interior') { sc.count = 1; sc.cast2 = ''; } // v1.6: the driver is alone in the car shot
       const free2 = S.ACTIONS && S.ACTIONS[sc.pose] && S.ACTIONS[sc.pose].multi;
@@ -325,7 +329,7 @@
       if (inten) { let guard = 0; while (b.end - last > gap * 1.35 && guard++ < 8) { const tt = last + gap; const wt = b.wordTimes.find((x) => x >= tt - 0.2 && x < b.end - 0.4); if (wt == null) break; cx.cuts.push({ t: wt, type: 'jump' }); last = wt; } }
       // reaction sticker
       let stk = b.fxType === 'freeze' ? '' : b.stickerText; // the freeze-frame already says "that's me"
-      if (!stk && inten && humour >= 2 && (b.punch || (b.sc && AUTO_STICKER[b.sc.emotion] && b.sc.emotion !== 'neutral')) && b.start - lastSticker > (o.intensity === 'chaotic' ? 3.5 : 6) && i > 0 && b.step !== 4) { stk = AUTO_STICKER[(b.sc && b.sc.emotion) || ''] || ''; if (cx.stickers.some((q) => q.text === stk)) stk = ''; }
+      if (!stk && inten && humour >= 2 && (b.punch || (b.sc && AUTO_STICKER[b.sc.emotion] && b.sc.emotion !== 'neutral')) && b.start - lastSticker > (o.intensity === 'chaotic' ? 3.5 : 6) && i > 0 && b.step !== 4) { stk = AUTO_STICKER[(b.sc && b.sc.emotion) || ''] || ''; if (!stickerFits(stk, b.text)) stk = ''; if (cx.stickers.some((q) => q.text === stk)) stk = ''; }
       if (stk) { const at = b.start + Math.min(0.9, (b.end - b.start) * 0.35); cx.stickers.push({ text: stk, start: at, end: Math.max(b.end, at + 1.1), beat: i, seed: hashStr(stk + i) }); lastSticker = at; cue(at, STICKER_SFX(stk), 0.9, 0, 2); const ef2 = S.emojiFile && S.emojiFile(Array.from(stk)[0]); if (ef2) cx.emojis.add(ef2); }
       if (b.punch && humour >= 2 && !b.sfx) cue(b.end - 0.25, i % 2 ? 'boing' : 'pop', 0.7, 0, 1);
       if (b.punch && humour >= 3 && laughs < 1 && i >= tl.length / 2 && o.laugh !== false) { cue(b.end - 0.1, 'laugh', 0.8, 0, 2); laughs++; }
@@ -382,7 +386,7 @@
     ctx.save(); ctx.translate(cam.fx + cam.dx, cam.fy + cam.dy); ctx.rotate(cam.rot || 0); ctx.scale(cam.z, cam.z); ctx.translate(-cam.fx, -cam.fy);
     try { return drawShot2.call(this, ctx, sh); } finally { ctx.restore(); }
   };
-  Object.assign(VTS.comedy, { normSpeaker, normFx, setupCast, direct, cameraAt, fxAt, chunkWords, AUTO_STICKER });
+  Object.assign(VTS.comedy, { normSpeaker, normFx, setupCast, direct, cameraAt, fxAt, chunkWords, AUTO_STICKER, stickerFits });
 
   // ======================= overlays (drawn in world units, above the scene, below captions) =======================
   function inWorld(r, fn) {

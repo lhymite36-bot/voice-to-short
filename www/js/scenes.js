@@ -127,6 +127,8 @@
     mono: { tint: '#777777', amt: 0, sat: 0, accent: '#e9e9e9', accent2: '#a0a0a0' },
     neon: { tint: '#5b21b6', amt: 0.18, sat: 1.15, accent: '#ec4899', accent2: '#22d3ee' },
     sage: { tint: '#4a7c59', amt: 0.14, sat: 0.86, accent: '#e9b872', accent2: '#8fb996' },
+    // v1.9 Kurzgesagt-style flat look: rich saturated colours over deep dark-blue, soft glows (Quiet Brain default)
+    kurz: { tint: '#14205e', amt: 0.3, sat: 1.35, accent: '#ffb02e', accent2: '#2ee6d6', deep: 0.95 },
   };
   function hexRgb(h) { h = String(h).replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function rgbHex(r) { return '#' + r.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
@@ -167,6 +169,13 @@
 
   // ======================= poses =======================
   // Rig coordinates: origin at the hips, +y down, ~1 unit = 1 px at scale 1. Standing height ≈ 580.
+  // v1.9 anatomy: a human elbow points down/out (gravity + shoulder range), never up-and-inwards.
+  // Try both IK solutions and keep the one whose elbow sits lower and further out from the body.
+  function naturalElbow(sx, sy, tx, ty, side) {
+    const a = ik(sx, sy, tx, ty, ARM[0], ARM[1], 1); const b = ik(sx, sy, tx, ty, ARM[0], ARM[1], -1);
+    const score = (e) => side * (e[0] - sx) * 0.8 + (e[1] - sy) * 1.0 + (side * (e[0] - tx) > 0 ? 25 : 0);
+    return score(a) >= score(b) ? a : b;
+  }
   const SH = { x: 66, y: -176 }; const HIP = { x: 36, y: 6 }; const ARM = [98, 94]; const LEG = [93, 93];
   function poseSpec(pose, t, o) {
     const sp = {
@@ -287,6 +296,10 @@
       const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
       c = [l + (c[0] - l) * a.sat, l + (c[1] - l) * a.sat, l + (c[2] - l) * a.sat];
       if (this.pid === 'mono') c = c.map((v) => 128 + (v - 128) * 1.12);
+      if (a.deep) { // push pale/neutral surfaces (walls, floors, shelves) toward deep blue; keep saturated colours bright
+        const mx = Math.max(c[0], c[1], c[2]); const mn = Math.min(c[0], c[1], c[2]); const chroma = (mx - mn) / 255; const k = (1 - Math.min(1, chroma * 3.5)) * a.deep;
+        const L = (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]) / 255; c = mixRgb(c, [14 + 40 * L, 24 + 56 * L, 70 + 110 * L], k * 0.9);
+      }
       return c;
     }
     // Lit colour (scene ambient + grade) and emissive colour (grade only).
@@ -297,6 +310,15 @@
     get OL() { return this.c('#1d2034'); }
     // fill + outline helper for the current path
     fs(ctx, fill, lw) { ctx.fillStyle = fill; ctx.fill(); if (lw !== 0) { ctx.lineWidth = lw || this.lw; ctx.strokeStyle = this.OL; ctx.lineJoin = 'round'; ctx.stroke(); } }
+    // v1.9 mitten hand aligned with the forearm (wrist follows the arm, thumb on the inner/up side) instead of a bare ball.
+    hand(ctx, el, A, side, pal) {
+      const ang = Math.atan2(A.y - el[1], A.x - el[0]);
+      ctx.save(); ctx.translate(A.x, A.y); ctx.rotate(ang);
+      ctx.beginPath(); ctx.ellipse(6, 0, 24, 20, 0, 0, TAU); this.fs(ctx, pal.skin);
+      const th = -side * (Math.cos(ang) >= 0 ? 1 : -1); // thumb toward the body midline
+      ctx.beginPath(); ctx.ellipse(2, th * 17, 11, 7, th * -0.5, 0, TAU); this.fs(ctx, pal.skin);
+      ctx.restore();
+    }
     limb(ctx, pts, w, color) {
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
@@ -509,9 +531,9 @@
       ctx.rotate(sp.tilt);
       const arm = (A, side) => {
         const sx = side * SH.x * tw; const sy = SH.y * br;
-        const el = A.el ? [A.el.x, A.el.y] : ik(sx, sy, A.x, A.y, ARM[0], ARM[1], A.bend);
+        const el = A.el ? [A.el.x, A.el.y] : naturalElbow(sx, sy, A.x, A.y, side);
         this.limb(ctx, [sx, sy, el[0], el[1], A.x, A.y], 40, pal.top);
-        ctx.beginPath(); ctx.arc(A.x, A.y, 21, 0, TAU); this.fs(ctx, pal.skin);
+        this.hand(ctx, el, A, side, pal);
       };
       const phoneInHand = () => {
         if (sp.holding !== 'phone' && !o.phone) return;

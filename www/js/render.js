@@ -32,6 +32,8 @@
   const LEAD = 0.3; const TAIL = 0.8;
 
   const PRESETS = {
+    kurz: { name: 'Kurzgesagt Deep Blue', bg: '#0b1033', blobs: ['#1b2a6b', '#2b1d6e', '#0f6f8f', '#ff9f1c', '#2ee6d6'], hi: '#ffd166', text: '#ffffff',
+      filter: 'contrast(1.06) saturate(1.22)', shadowTint: '#0b1a5c', shadowAmt: 0.4, highTint: '#ffd27a', highAmt: 0.08, lift: 0, grain: 0.03, vignette: 0.55, particles: '#9be7ff', glow: 0.35 },
     teal: { name: 'Teal & Orange', bg: '#04161b', blobs: ['#0d7377', '#0a3d4a', '#ff7b39', '#ffb45e', '#0e5560'], hi: '#ffb347', text: '#ffffff',
       filter: 'contrast(1.12) saturate(1.18)', shadowTint: '#00424d', shadowAmt: 0.35, highTint: '#ff9b4a', highAmt: 0.10, lift: 0, grain: 0.07, vignette: 0.62, particles: '#ffd2a1' },
     moody: { name: 'Moody Film', bg: '#0f110d', blobs: ['#2b3a2d', '#50482f', '#8b6a44', '#1d2b2f', '#3e4a3a'], hi: '#e9c27a', text: '#f3eee4',
@@ -246,6 +248,11 @@
         const g = v.createRadialGradient(fw / 2, fh * 0.48, fw * 0.25, fw / 2, fh * 0.5, fh * 0.72);
         g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.6, 'rgba(0,0,0,' + (this.preset.vignette * 0.35) + ')'); g.addColorStop(1, 'rgba(0,0,0,' + this.preset.vignette + ')');
         v.fillStyle = g; v.fillRect(0, 0, fw, fh);
+        if (this.preset.glow) { // soft halo behind the subject (Kurzgesagt-style glow)
+          const gl = v.createRadialGradient(fw / 2, fh * 0.52, 0, fw / 2, fh * 0.52, fw * 0.62);
+          gl.addColorStop(0, 'rgba(155,231,255,' + (this.preset.glow * 0.32) + ')'); gl.addColorStop(1, 'rgba(155,231,255,0)');
+          v.fillStyle = gl; v.fillRect(0, 0, fw, fh);
+        }
         if (this.preset.grain > 0) {
           const img = v.getImageData(0, 0, fw, fh); const d = img.data; const amt = this.preset.grain * 255 * 1.1;
           for (let i = 0; i < d.length; i += 4) {
