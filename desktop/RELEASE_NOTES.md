@@ -12,6 +12,6 @@
 - Pipeline scripts are path-independent (work dir under app data) and auto-generate choice pills from your script.
 
 ## Notes
-- Uses your Gemini key from Settings for voices. Render time ~5–20 min depending on PC.
+- Uses your Gemini key from Settings for voices. Render time ~20–40 min depending on PC (Blender ~1–2 min per shot).
 - 3D sets are the WESTGATE set library (desk, corridor, food court, staff door, break room); your script's scenes map to the closest set.
 - Quiet Brain Autopilot / Buffer unchanged. Not merged to main / Latest.
