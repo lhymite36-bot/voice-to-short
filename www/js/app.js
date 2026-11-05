@@ -1865,6 +1865,47 @@
   // ---------- boot ----------
   // The preview host is the preview wrapper (render canvas is overlaid there while rendering).
   document.querySelector('.preview-wrap').id = 'preview-wrap-host';
+  // ---------- autopilot: make one Short with no UI (used by js/autopilot.js) ----------
+  // Same pipeline as the Create tab (Gemini script with the story-order rules -> Gemini voice -> 2D Kurzgesagt render, 9:16),
+  // but on its own project object so it never touches the project the user has open. The result is saved to the Library.
+  async function makeShortHeadless(it, hooks) {
+    const h = hooks || {}; const step = (t) => { if (h.onStep) h.onStep(t); };
+    if (!getKey()) throw Object.assign(new Error('No Gemini API key saved (Settings).'), { fatal: true });
+    if (!R.canRender()) throw Object.assign(new Error('This device cannot record video.'), { fatal: true });
+    const tone = load(K.tone, 'sarcastic'); const length = it.length === '30' ? '30' : '60';
+    const Q = blankProject(); Object.assign(Q, { idea: it.text, tone, template: it.format || 'classic', length, humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, autopilot: true });
+    Q.look = Object.assign({}, Q.look, { aspect: '9:16', preset: 'kurz', visual: 'scenes', aiImages: false, anim: '2d', quality: 'auto' });
+    step('script');
+    const pkg = await S.generatePackage(Q.idea, { tone, format: Q.template, humour: Q.humour, platform: 'youtube', language: load(K.language, 'English'), handle: handle(), length, signal: h.signal,
+      onProgress: (q) => { if (q.phase === 'wait' && h.onWait) h.onWait(q.ms, q.attempt); } });
+    Q.pkg = pkg; if (pkg.beats.some((b) => !b.scene || !b.scene.setting)) S.attachScenes(pkg.beats);
+    step('voice');
+    const st = TTS_STYLES[tone] || TTS_STYLES.calm; const voice = ttsVoice();
+    let r = null; const dlg = dialogueLines(pkg); const v2 = dlg ? voice2For(voice) : '';
+    if (dlg && v2) {
+      try { r = await G.generateDialogueSpeech(dlg.lines, { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, timeout: 60000 }); }
+      catch (e) { if (e && (e.quota || e.status === 429)) throw e; r = null; }
+    }
+    if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix });
+    const buf = R.trimBuffer(await R.decodeBlob(r.blob), 60);
+    Q.voice = { blob: r.blob, source: 'gemini', duration: buf.duration, mime: r.blob.type, createdAt: new Date().toISOString(), ttsVoice: voice, ttsModel: r.model };
+    step('render');
+    const lk = Object.assign({}, Q.look, { aspect: '9:16', handle: handle(), textHook: pkg.textHook || '', ctaSticker: pkg.cta || CTAS[0], template: Q.template, humour: Q.humour, stepLabel: (S.FORMATS[Q.template] || {}).badge || 'STEP', safeZones: false });
+    const [cw, ch] = R.frameSize('9:16', 1); const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+    canvas.style.cssText = 'position:fixed;left:-99999px;top:0;width:270px;height:480px;pointer-events:none'; document.body.appendChild(canvas);
+    N.keepAwake(true);
+    let res;
+    try { res = await R.renderVideo({ canvas, buffer: buf, beats: pkg.beats, look: lk, format: 'auto', signal: h.signal, maxSeconds: 60, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } }); }
+    finally { canvas.remove(); N.keepAwake(false); }
+    if (!res || !res.blob.size) throw new Error('Render produced no video.');
+    Q.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect: '9:16', createdAt: new Date().toISOString(), visual: 'scenes' };
+    try { const P2 = R.plan(buf, 60); const keep = P; P = Q; try { Q.thumb = thumbFrame(lk, P2.total, null, P2); } finally { P = keep; } } catch (_) { Q.thumb = ''; }
+    Q.step = 'render'; Q.updatedAt = new Date().toISOString();
+    try { await DB.put(Q); } catch (_) { /* library save is best-effort */ }
+    return { project: Q, pkg, blob: res.blob, mime: res.type || 'video/webm' };
+  }
+  VTS.makeShortHeadless = makeShortHeadless;
+
   (async function boot() {
     P = blankProject();
     const last = load(K.last, null);
