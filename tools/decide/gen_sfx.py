@@ -3,8 +3,8 @@
 import math, struct, wave, os
 from pathlib import Path
 
-OUT = Path('/workspace/decide/audio')
-OUT.mkdir(exist_ok=True)
+OUT = Path(os.environ.get('DECIDE_WORK', '/workspace/decide'))/'audio'
+OUT.mkdir(parents=True, exist_ok=True)
 SR = 44100
 
 def write_wav(path, samples, sr=SR):

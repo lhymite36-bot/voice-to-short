@@ -97,7 +97,7 @@
             <div id="comic-status" class="status" role="status"></div>
           </div>
           <div class="decide-only" id="decide-idea">
-            <div class="hero"><h1>Decide</h1><p class="muted">Choose-your-own-adventure horror Shorts: A/B choices on screen, rewind through both paths, multi-voice cast, cliffhanger ending. 3D scenes render on desktop (Blender). Phone can write the branching script and voice it.</p></div>
+            <div class="hero"><h1>Decide</h1><p class="muted">Choose-your-own-adventure horror Shorts: A/B choices on screen, rewind through both paths, multi-voice cast, cliffhanger ending. On the Windows app, tap <b>Render Decide 3D</b> to make the full dark 3D Blender look right here. On phone you get a quick 2D draft.</p></div>
             <label class="field"><span class="label-row"><span>Premise</span></span><textarea id="decide-premise" rows="3" maxlength="800" placeholder="e.g. Night security at an empty mall — the food-court sensor blinks once at 2:17 AM"></textarea></label>
             <div class="b-row">
               <label class="field" style="flex:1"><span>Series title</span><input id="decide-series" type="text" maxlength="40" placeholder="WESTGATE"></label>
@@ -107,7 +107,7 @@
               <div class="seg" id="decide-len-seg" role="radiogroup"><button type="button" data-v="60">60 s</button><button type="button" data-v="90">90 s</button><button type="button" data-v="120">2 min</button></div></div>
             <button type="button" class="btn primary big" id="decide-generate"><span>✨ Write the Decide script</span></button>
             <div id="decide-status" class="status" role="status"></div>
-            <p class="small muted">On your phone: write the script, voice it, and render a draft Short. For the advanced dark 3D look (A/B pills, rewind, LEDs), export <code>script.json</code> on desktop and run <code>tools/decide</code> with Blender — see the Decide README in the Windows app resources.</p>
+            <p class="small muted">Windows app: Write script → Voice → <b>Render Decide 3D</b> (needs free Blender from blender.org). Phone: script, voice and a quick 2D draft.</p>
           </div>
 
         </div>
@@ -296,6 +296,14 @@
                 <select id="opt-quality"><option value="auto">Auto (1080p · 720p for videos over 3 min)</option><option value="1080">1080p</option><option value="720">720p (faster, safer on older phones)</option></select>
               </label>
             </div>
+          </div>
+          <div class="card decide-only hidden" id="decide3d-card">
+            <div class="card-head"><h2>👁 Decide 3D</h2><span class="badge" id="decide3d-badge">PC</span></div>
+            <p class="small muted">Dark 3D Blender EEVEE look: A/B choice pills, rewind, multi-voice cast, captions, horror SFX. Runs on this PC (about 5–20 min).</p>
+            <button type="button" class="btn primary big" id="decide3d-render"><span>🎬 Render Decide 3D</span></button>
+            <div id="decide3d-progress" class="progress hidden"><div class="bar"><i id="decide3d-bar"></i></div><div class="row-between small"><span id="decide3d-label">Starting…</span><button type="button" class="link-btn" id="decide3d-cancel">Cancel</button></div></div>
+            <div id="decide3d-status" class="status" role="status"></div>
+            <button type="button" class="link-btn small" id="decide3d-check">Check Blender / tools again</button>
           </div>
           <button type="button" class="btn primary big" id="render"><span>🎬 Render 1080×1920 video</span></button>
           <div id="render-progress" class="progress hidden"><div class="bar"><i id="render-bar"></i></div><div class="row-between small"><span id="render-label">Rendering…</span><button type="button" class="link-btn" id="render-cancel">Cancel</button></div><p class="small muted" id="render-note">Rendering happens in real time on your phone. Keep the app open and the screen on.</p></div>

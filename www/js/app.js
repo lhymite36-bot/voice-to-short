@@ -1231,6 +1231,7 @@
     } catch (err) { setStatus('render-status', 'Preview failed: ' + (err && err.message || err), 'err'); }
   }
   function renderRenderPane() {
+    paintDecide3d();
     if (!P || !P.pkg) return;
     const grades = $('grades'); grades.innerHTML = '';
     Object.entries(R.PRESETS).forEach(([id, p]) => {
@@ -1782,12 +1783,72 @@
       P.pkg = DM.makePkg(out.script, { title: out.script.title, description: out.description, hashtags: out.hashtags, tiktokCaption: out.tiktokCaption }, null);
       P.idea = D.premise;
       persist(true); renderDecideScript(); renderScript(); renderAll(); showStep('script');
-      toast('Decide script ready — voice it, then render (desktop 3D via tools/decide)');
+      toast(VD ? 'Decide script ready — voice it, then tap Render Decide 3D' : 'Decide script ready — voice it, then render');
     } catch (err) {
       console.error(err); toast('Could not write Decide script: ' + (err && err.message || err), true);
     } finally { generating = false; if (st) st.textContent = ''; }
   }
+  // ---- Decide 3D on the Windows app: Electron runs tools/decide (Blender EEVEE) ----
+  const VD = window.vtsDesktop && window.vtsDesktop.decide3dRender ? window.vtsDesktop : null;
+  let d3Status = null; let d3Running = false;
+  async function d3Check(force) {
+    if (!VD) return null;
+    try { d3Status = await VD.decide3dStatus(!!force); } catch (e) { d3Status = { ready: false, missing: ['tools'], err: String(e && e.message || e) }; }
+    paintDecide3d(); return d3Status;
+  }
+  function paintDecide3d() {
+    const card = $('decide3d-card'); if (!card) return;
+    const show = !!VD && isDecide();
+    card.classList.toggle('hidden', !show);
+    const rb = $('render'); if (rb) { rb.classList.toggle('ghost', show); rb.classList.toggle('primary', !show); const sp = rb.querySelector('span'); if (sp) sp.textContent = show ? '⚡ Quick 2D draft' : '🎬 Render 1080×1920 video'; }
+    if (!show) return;
+    const btn = $('decide3d-render'); btn.disabled = d3Running || !(P.decide && P.decide.script);
+    if (d3Running) return;
+    const st = d3Status;
+    if (!st) { setStatus('decide3d-status', 'Checking for Blender…'); return; }
+    if (!st.blender) setStatus('decide3d-status', 'Blender not found. Install free Blender 4 or 5 from blender.org (default install), then tap “Check again”.', 'err');
+    else if (st.missing && st.missing.length) setStatus('decide3d-status', 'Missing on this PC: ' + st.missing.join(', ') + (st.missing.includes('python') ? ' — install Python from python.org.' : '') + (st.missing.includes('node') ? ' — install Node.js LTS from nodejs.org.' : ''), 'err');
+    else setStatus('decide3d-status', 'Ready · Blender ' + (st.blenderVersion || '') + (st.ffmpegAuto ? ' · free ffmpeg (~90 MB) downloads on first render' : '') + (getKey() ? '' : ' · add your Gemini key in Settings for the voices'), getKey() ? 'ok' : 'err');
+    $('decide3d-badge').textContent = st.ready ? 'Ready' : 'Setup';
+  }
+  async function decide3dRender() {
+    if (!VD || d3Running) return;
+    if (!P.decide || !P.decide.script) { toast('Write the Decide script first.', true); return; }
+    if (!getKey()) { toast('Add your Gemini API key in Settings first (voices).', true); showView('settings'); return; }
+    const st = await d3Check(true); if (!st || !st.ready) return;
+    d3Running = true; paintDecide3d();
+    $('decide3d-progress').classList.remove('hidden'); $('decide3d-bar').style.width = '0'; setStatus('decide3d-status', '');
+    const off = VD.onDecide3dProgress((ev) => { if (ev.label) $('decide3d-label').textContent = ev.label; if (typeof ev.pct === 'number') $('decide3d-bar').style.width = Math.max(2, Math.min(100, ev.pct)) + '%'; });
+    const t0 = Date.now(); const proj = P;
+    try { if (window.vtsDesktop.runState) window.vtsDesktop.runState(true); } catch (_) { /* ignore */ }
+    try {
+      const res = await VD.decide3dRender({ script: DM.exportScriptJson(P.decide.script), geminiKey: getKey() });
+      const blob = new Blob([res.bytes], { type: 'video/mp4' });
+      const dur = await new Promise((r) => { const v = document.createElement('video'); v.preload = 'metadata'; v.onloadedmetadata = () => r(v.duration || 0); v.onerror = () => r(0); v.src = URL.createObjectURL(blob); });
+      if (P !== proj) { toast('Decide 3D finished for another project.'); return; }
+      P.video = { blob, mime: 'video/mp4', type: 'video/mp4', duration: dur, size: blob.size, width: 1080, height: 1920, aspect: '9:16', createdAt: new Date().toISOString(), renderMs: Date.now() - t0, visual: 'decide3d', localPath: res.path };
+      persist(true); paintResult(); paintStepper();
+      setStatus('decide3d-status', 'Done! Decide 3D Short ready (' + Math.round(blob.size / 1048576) + ' MB, ' + Math.round((Date.now() - t0) / 60000) + ' min). Save or share below.', 'ok');
+      setTimeout(() => $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    } catch (err) {
+      const m = String(err && err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+      setStatus('decide3d-status', /Cancelled/.test(m) ? 'Cancelled.' : 'Decide 3D failed: ' + m, 'err');
+    } finally {
+      off && off(); d3Running = false; $('decide3d-progress').classList.add('hidden');
+      try { if (window.vtsDesktop.runState) window.vtsDesktop.runState(false); } catch (_) { /* ignore */ }
+      paintDecide3d();
+    }
+  }
+  function wireDecide3d() {
+    if (!$('decide3d-card')) return;
+    $('decide3d-render').addEventListener('click', decide3dRender);
+    $('decide3d-cancel').addEventListener('click', () => { if (VD) VD.decide3dCancel(); });
+    $('decide3d-check').addEventListener('click', () => { d3Status = null; paintDecide3d(); d3Check(true); });
+    if (VD) d3Check(false);
+  }
+
   function wireDecide() {
+    wireDecide3d();
     if (!DM) return;
     const prem = $('decide-premise');
     if (prem) prem.addEventListener('input', () => { if (!P.decide) normalizeDecide(P, true); P.decide.premise = prem.value; persist(); });

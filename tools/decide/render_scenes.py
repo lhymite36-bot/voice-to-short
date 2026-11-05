@@ -3,7 +3,8 @@
 import bpy, math, os, shutil, sys
 from mathutils import Vector, Euler
 
-OUT = "/workspace/decide/scenes"
+OUT = os.path.join(os.environ.get("DECIDE_WORK", "/workspace/decide"), "scenes")
+os.makedirs(OUT, exist_ok=True)
 os.makedirs(OUT, exist_ok=True)
 
 # Higher quality than What-if (540x960/24taa/6f) — still software-renderable

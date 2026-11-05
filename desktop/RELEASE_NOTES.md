@@ -1,20 +1,17 @@
-# Voice to Short 1.11.0-decide-test
+# Voice to Short 1.11.1-decide-3d-test
 
-**TEST / pre-release.** Adds **Decide** mode: choose-your-own-adventure horror Shorts.
+**TEST / pre-release.** Decide now renders the real dark **3D Blender EEVEE** look inside the Windows app.
 
-## What’s in this build
-- Mode picker: Voice Short | Comic Recap | **Decide**
-- Write a premise → Gemini writes a branching A/B script (wrong path → rewind → longer path → cliffhanger)
-- Multi-voice cast labels in the script; export `script.json` for desktop 3D
-- Desktop installs include `tools/decide` (Blender EEVEE pipeline README + scripts)
+## New
+- **Render Decide 3D** button (Windows app, Decide → Render step). Runs the bundled `tools/decide` pipeline:
+  Gemini multi-voice TTS → horror SFX → Blender EEVEE scenes → A/B pills, rewind, captions, audio mix → 1080×1920 MP4.
+- Finished MP4 loads into the project like a normal render, so Save / Share work.
+- Detects Blender (PATH or Program Files\Blender Foundation), Python, Node. If your ffmpeg is missing/too old, a free ffmpeg build (~90 MB, BtbN) downloads once into the app data folder.
+- Clear in-app message if Blender is missing (free from blender.org).
+- **Quick 2D draft** stays available as the secondary button (same as phone).
+- Pipeline scripts are path-independent (work dir under app data) and auto-generate choice pills from your script.
 
-## Phone vs desktop
-- **Phone:** Decide script + AI voice + normal in-app render (captions / 2D path). Good for drafting.
-- **Desktop (PC):** For the advanced 3D horror look (flashlight beams, LED props, A/B UI overlays like the WESTGATE showcase), export the script and run `tools/decide` with Blender 5.x — see `resources/tools/decide/README.md` next to the app.
-
-## Not in this build
-- One-click in-app Blender render button (use tools/decide for now)
-- Merge to main / Latest — Pedro must approve first
-- Autopilot posting Decide Shorts (Quiet Brain Autopilot unchanged)
-
-Install over 1.10.x-test with the same signing key.
+## Notes
+- Uses your Gemini key from Settings for voices. Render time ~5–20 min depending on PC.
+- 3D sets are the WESTGATE set library (desk, corridor, food court, staff door, break room); your script's scenes map to the closest set.
+- Quiet Brain Autopilot / Buffer unchanged. Not merged to main / Latest.

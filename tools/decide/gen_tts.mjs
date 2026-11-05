@@ -1,10 +1,12 @@
 import fs from 'fs';
 import https from 'https';
+import path from 'path';
+const WORK = process.env.DECIDE_WORK || '/workspace/decide';
 
 const KEY = process.env.GEMINI_API_KEY;
 if (!KEY) { console.error('NO_KEY'); process.exit(1); }
-const script = JSON.parse(fs.readFileSync('/workspace/decide/script.json', 'utf8'));
-const outDir = '/workspace/decide/audio';
+const script = JSON.parse(fs.readFileSync(path.join(WORK, 'script.json'), 'utf8'));
+const outDir = path.join(WORK, 'audio');
 fs.mkdirSync(outDir, { recursive: true });
 
 const MODELS = [
