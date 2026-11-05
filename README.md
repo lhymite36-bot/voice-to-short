@@ -2,9 +2,9 @@
 
 Talk an idea into your phone and get a finished YouTube video: a hook, clear steps, captions, keyword-accurate 2D animated scenes, a colour-graded video and the publishing text. Make a 30–60 s Short or a long video up to 20 minutes, in 9:16, 16:9, 1:1 or 4:5. It's free and runs on your own phone.
 
-It's built for faceless psychology and self-help channels like Quiet Brain Club, with voiceover over animated scenes. Since 1.4 it makes funny, meme-style Shorts for TikTok and YouTube too.
+It's built for faceless psychology and self-help channels like Quiet Brain Club, with voiceover over animated scenes. Since 1.4 it makes funny, meme-style Shorts for TikTok and YouTube too, and since 1.7 it turns your own comic panels into narrated **Comic Recaps**.
 
-- **Android app:** download `VoiceToShort-1.4.2.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
+- **Android app:** download `VoiceToShort-1.7.0.apk` from [Releases](https://github.com/lhymite36-bot/voice-to-short/releases/latest)
 - **Web version:** https://lhymite36-bot.github.io/voice-to-short/ (works best in Chrome)
 
 ## How it works
@@ -36,6 +36,18 @@ It's built for faceless psychology and self-help channels like Quiet Brain Club,
    - Channel handle, default tone, script language and default grade.
    - Dictation language and teleprompter speed.
    - Export and import a backup, and delete all.
+
+## New in 1.7.0 — Comic Recap mode
+
+A second mode next to Voice Short: tap **💥 Comic Recap** at the top of Create.
+
+1. **Panels.** Pick your comic panels from the gallery (multi-select; numbered file names keep their order). Reorder with ◀ ▶, remove with ✕. Add an optional title/topic and notes (names, who is who) and pick 30, 60 or 90 s. Use panels you own or have the right to share: the app has no downloader of any kind.
+2. **Script.** **✨ Write the recap** sends the panels to a free vision-capable Gemini model (the app's normal model fallback). It tells the story *scene by scene in panel order*, one narration beat per panel (setup → conflict → twist → payoff), with a hook as the first line and only a few narrator reactions. Every line belongs to one panel, so each panel is on screen exactly while its scene is narrated. Edit any line per panel, mark key words with `*stars*` (yellow captions), and tick 💥 Impact / type SFX lettering per panel. **✍️ Write my own script** skips Gemini.
+3. **Voice.** Same options as Shorts. The AI voice defaults to a new **Dramatic narrator** style and a recap is usually one TTS request. If the voice quota is used up, the app says so and you can record your own voice (teleprompter), use the device voice or import audio instead.
+4. **Render.** 9:16 MP4 (WebM fallback), 30 s to 3 min, saved to the library and shared like any Short. Each panel gets a Ken Burns move (zoom in/out, pans toward the focus point Gemini or the app found) with a cover fit or a blurred background for panels that aren't 9:16. You also get snappy transitions (flash, slide, zoom punch), shake and a white flash on impacts, an energy glow / colour tint (green by default, 7 colours), light speed lines, and comic SFX lettering (KRAK!, BOOM!) with matching sounds. Each effect can be switched off in the **💥 Comic effects** card.
+5. **Captions.** New **Comic Bold** style: word by word, centred mid-screen, uppercase, heavy black stroke, white with yellow key words, pop-in. Timed with the same audio loudness/pause alignment as Shorts (see `docs/caption-sync.md`). All other caption styles work too.
+
+Tests: `node tests/comic-recap.js` (offline), `node tests/comic-ui.js` (headless Chrome, mocked Gemini). Box tools: `node tests/live/comic-live.js` (live script/voice), `node tests/live/comic-offline.js` (frame-exact render) and `tools/fa-check.py` (caption sync against forced alignment). The original test panels in `tests/fixtures/comic-panels/` come from `tools/make-comic-panels.py`.
 
 ## New in 1.6.0 — bigger 2D scene library, weather, caption styles
 
