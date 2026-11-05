@@ -1,0 +1,54 @@
+{
+  "mode": "decide",
+  "title": "WESTGATE — NIGHT SHIFT",
+  "series": "WESTGATE",
+  "part": 1,
+  "scenario": "mall-night-shift",
+  "hook": "You're alone on night shift at Westgate Mall.",
+  "question": "So… what would you do?",
+  "target_seconds": 105,
+  "cast": {
+    "narrator": {"voice": "Charon", "role": "cold cinematic narrator"},
+    "you": {"voice": "Leda", "role": "anxious night guard, whispering"},
+    "radio": {"voice": "Orus", "role": "tinny radio / dispatch, distorted"},
+    "thing": {"voice": "Puck", "role": "wrong, cheerful, too-close whisper"}
+  },
+  "choices": {
+    "c1": {
+      "id": "c1",
+      "prompt": "Motion in the food court.",
+      "options": [
+        {"key": "A", "label": "CHECK THE FOOD COURT", "color": "#E23D28", "targetHint": "corridor"},
+        {"key": "B", "label": "STAY AND RADIO IT IN", "color": "#2ECC71", "targetHint": "desk_radio"}
+      ]
+    },
+    "c2": {
+      "id": "c2",
+      "prompt": "The staff door is open.",
+      "options": [
+        {"key": "A", "label": "OPEN THE STAFF DOOR", "color": "#E23D28", "targetHint": "staff_door"},
+        {"key": "B", "label": "TAKE THE EMERGENCY EXIT", "color": "#2ECC71", "targetHint": "exit_sign"}
+      ]
+    }
+  },
+  "lines": [
+    {"id":"hook", "speaker":"narrator", "voice":"Charon", "style":"Calm, cold, cinematic horror narrator. Soft and clear.", "text":"You're alone on night shift… at Westgate Mall.", "caption":"You're alone on night shift at Westgate Mall.", "highlight":["alone","Westgate"], "scene":"black_hook", "ui":null, "dur":4.8},
+    {"id":"s1", "speaker":"narrator", "voice":"Charon", "style":"Quiet, tense, observational.", "text":"Two seventeen A.M. The food-court motion sensor just blinked once.", "caption":"2:17 AM. The food-court sensor blinked.", "highlight":["2:17 AM"], "scene":"desk_monitor", "ui":null, "dur":5.0},
+    {"id":"s2", "speaker":"you", "voice":"Leda", "style":"Anxious whisper into a radio mic, trying to sound professional.", "text":"Dispatch… anyone copy? I've got movement in the food court.", "caption":"Dispatch… anyone copy?", "highlight":["Dispatch"], "scene":"desk_radio", "ui":null, "dur":4.2},
+    {"id":"s3", "speaker":"narrator", "voice":"Charon", "style":"Calm, presenting a choice.", "text":"No answer. So what do you do?", "caption":"No answer. So what do you do?", "highlight":["what do you do"], "scene":"desk_choice", "ui":"choice", "choiceId":"c1", "dur":3.6},
+    {"id":"a1", "speaker":"narrator", "voice":"Charon", "style":"Decisive, slightly faster.", "text":"You take the corridor. Flashlight up. Every shuttered store feels like it's watching.", "caption":"You take the corridor. Flashlight up.", "highlight":["Flashlight"], "scene":"corridor_walk", "ui":"choice_lock", "choiceId":"c1", "choiceKey":"A", "dur":5.2},
+    {"id":"a2", "speaker":"narrator", "voice":"Charon", "style":"Quiet dread.", "text":"The food court is empty. Then a tray scrapes… by itself.", "caption":"A tray scrapes… by itself.", "highlight":["by itself"], "scene":"foodcourt_empty", "ui":"choice_lock", "choiceId":"c1", "choiceKey":"A", "dur":4.6},
+    {"id":"a3", "speaker":"thing", "voice":"Puck", "style":"Wrong cheerful whisper, too close to the mic, smiling.", "text":"Ready for your break?", "caption":"Ready for your break?", "highlight":["break"], "scene":"foodcourt_smile", "ui":"choice_lock", "choiceId":"c1", "choiceKey":"A", "dur":2.8},
+    {"id":"a4", "speaker":"narrator", "voice":"Charon", "style":"Sharp, fatal.", "text":"Three smiling staff stand where the cameras said nothing was. Your radio dies.", "caption":"Your radio dies.", "highlight":["radio dies"], "scene":"foodcourt_fail", "ui":"choice_lock", "choiceId":"c1", "choiceKey":"A", "dur":4.4},
+    {"id":"rw", "speaker":"narrator", "voice":"Charon", "style":"Neutral reset, like a game rewind.", "text":"Rewind.", "caption":"REWIND", "highlight":["REWIND"], "scene":"black_rewind", "ui":"rewind", "dur":2.2},
+    {"id":"b1", "speaker":"narrator", "voice":"Charon", "style":"Calm, second chance.", "text":"You stay at the desk. You radio it in. Still nothing.", "caption":"You stay. You radio it in.", "highlight":["stay"], "scene":"desk_radio", "ui":"choice_lock", "choiceId":"c1", "choiceKey":"B", "dur":4.0},
+    {"id":"b2", "speaker":"radio", "voice":"Orus", "style":"Broken tinny radio, glitching, half-human.", "text":"…guard… you're… already… downstairs…", "caption":"…you're already downstairs…", "highlight":["already downstairs"], "scene":"desk_monitor_glitch", "ui":"choice_lock", "choiceId":"c1", "choiceKey":"B", "dur":4.2},
+    {"id":"b3", "speaker":"narrator", "voice":"Charon", "style":"Uneasy realization.", "text":"Cameras show your chair empty… while you're still sitting in it.", "caption":"Cameras show your chair empty.", "highlight":["empty"], "scene":"desk_monitor_empty", "ui":"choice_lock", "choiceId":"c1", "choiceKey":"B", "dur":5.0},
+    {"id":"b4", "speaker":"you", "voice":"Leda", "style":"Whispering to yourself, scared, breathy.", "text":"That's not possible.", "caption":"That's not possible.", "highlight":["not possible"], "scene":"desk_stand", "ui":null, "dur":2.4},
+    {"id":"b5", "speaker":"narrator", "voice":"Charon", "style":"Building dread, slow.", "text":"Footsteps in the dark corridor. You follow your own flashlight beam.", "caption":"You follow your own flashlight beam.", "highlight":["flashlight"], "scene":"corridor_beam", "ui":null, "dur":5.0},
+    {"id":"b6", "speaker":"narrator", "voice":"Charon", "style":"Detail-focused, ominous.", "text":"Staff-only door ajar. The LED panel flips from ALL CLEAR… to SEE YOU.", "caption":"ALL CLEAR… becomes SEE YOU.", "highlight":["SEE YOU"], "scene":"staff_door", "ui":null, "dur":5.2},
+    {"id":"b7", "speaker":"narrator", "voice":"Charon", "style":"Quiet horror, close.", "text":"Inside: name tags, a safety card, and faces that weren't hired for this mall.", "caption":"Faces that weren't hired for this mall.", "highlight":["weren't hired"], "scene":"breakroom_faces", "ui":null, "dur":5.0},
+    {"id":"b8", "speaker":"thing", "voice":"Puck", "style":"Soft, smiling, intimate, wrong.", "text":"Clock in.", "caption":"Clock in.", "highlight":["Clock in"], "scene":"breakroom_close", "ui":null, "dur":2.2},
+    {"id":"endq", "speaker":"narrator", "voice":"Charon", "style":"Soft, inviting a comment, cold smile in the voice.", "text":"So… what would you do?", "caption":"So… what would you do?", "highlight":["what would you do"], "scene":"cliff_choice", "ui":"cliffhanger", "choiceId":"c2", "dur":4.5}
+  ]
+}

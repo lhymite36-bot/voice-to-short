@@ -10,6 +10,7 @@
   const LONG_RENDER_SEC = 150; // above this the render is done in segments saved to disk
   const SG = VTS.segments;
   const CM = VTS.comic; // v1.7 Comic Recap
+  const DM = VTS.decide; // Decide CYOA horror
   const COMIC_MAX_SEC = 180; // comic recaps: up to 3 min (YouTube Shorts / TikTok limit)
 
   const SPEECH_LANGS = [
@@ -138,7 +139,7 @@
     const tone = load(K.tone, 'sarcastic');
     return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone, length: defLength(aspect),
       template: 'classic', humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, platform: load('vts.platform', 'both'),
-      pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null, mode: 'short', comic: null,
+      pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null, mode: 'short', comic: null, decide: null,
       look: Object.assign({ aspect, quality: 'auto', preset: load(K.grade, 'kurz'), captionCase: 'upper', watermark: !!load(K.watermark, false), format: 'auto',
         visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) }, defaultLook()) };
   }
@@ -155,6 +156,7 @@
   }
   const lengthId = () => (P && P.length) || '60';
   const isComic = () => !!(P && P.mode === 'comic');
+  const isDecide = () => !!(P && P.mode === 'decide');
   const isShortLen = () => !isComic() && (lengthId() === '60' || lengthId() === '30');
   const maxVoice = () => (isComic() ? COMIC_MAX_SEC - R.LEAD - R.TAIL : isShortLen() ? MAX_VOICE_SEC : MAX_LONG_VOICE);
   const maxSecFor = () => (isComic() ? COMIC_MAX_SEC : isShortLen() ? undefined : R.MAX_LONG); // renderer cap (undefined = 60 s Short)
@@ -178,7 +180,7 @@
       a.src = url; setTimeout(() => fin(0), 10000);
     });
   }
-  function projectTitle(p) { if (p.mode === 'comic') return (p.pkg && p.pkg.title) || (p.comic && p.comic.title) || 'Comic Recap'; return (p.pkg && p.pkg.title) || (p.idea ? p.idea.trim().split(/\s+/).slice(0, 8).join(' ') + (S.wordCount(p.idea) > 8 ? '…' : '') : 'New Short'); }
+  function projectTitle(p) { if (p.mode === 'comic') return (p.pkg && p.pkg.title) || (p.comic && p.comic.title) || 'Comic Recap'; if (p.mode === 'decide') return (p.pkg && p.pkg.title) || (p.decide && p.decide.script && p.decide.script.title) || (p.decide && p.decide.series) || 'Decide Short'; return (p.pkg && p.pkg.title) || (p.idea ? p.idea.trim().split(/\s+/).slice(0, 8).join(' ') + (S.wordCount(p.idea) > 8 ? '…' : '') : 'New Short'); }
   async function openProject(id, step) {
     const p = await DB.get(id);
     if (!p) { toast('That project was not found.', true); return; }
@@ -190,6 +192,7 @@
     if (!p.look || !p.look.aspect) P.look.aspect = '9:16'; // projects from v1.2 were vertical
     if (!p.length) P.length = p.pkg && p.pkg.long ? String((p.pkg.lengthSec || 600)) : '60';
     if (P.mode === 'comic') normalizeComic(P);
+    if (P.mode === 'decide') normalizeDecide(P);
     voiceBuffer = null; save(K.last, P.id);
     renderAll();
     showView('create');
@@ -198,13 +201,15 @@
   function newProject(mode) {
     stopAll();
     persist(true);
-    const keep = mode === 'comic' || (mode == null && isComic()); // “New” keeps the current mode
+    const keepComic = mode === 'comic' || (mode == null && isComic());
+    const keepDecide = mode === 'decide' || (mode == null && isDecide());
     P = blankProject(); voiceBuffer = null;
-    if (keep) { P.mode = 'comic'; normalizeComic(P, true); }
+    if (keepComic) { P.mode = 'comic'; normalizeComic(P, true); }
+    else if (keepDecide) { P.mode = 'decide'; normalizeDecide(P, true); }
     localStorage.removeItem(K.last);
     renderAll(); showView('create'); showStep('idea');
   }
-  function renderAll() { paintMode(); renderIdea(); renderComicIdea(); renderScript(); renderVoice(); renderRenderPane(); $('project-name').textContent = projectTitle(P); }
+  function renderAll() { paintMode(); renderIdea(); renderComicIdea(); renderDecideIdea(); renderScript(); renderVoice(); renderRenderPane(); $('project-name').textContent = projectTitle(P); }
 
   // ---------- navigation ----------
   const views = { create: $('view-create'), library: $('view-library'), settings: $('view-settings') };
@@ -222,13 +227,14 @@
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => showView(tab.dataset.view)));
   $('new-project').addEventListener('click', () => {
     if (rendering) { toast('Wait for the render to finish (or cancel it).', true); return; }
-    newProject(); toast(isComic() ? 'New Comic Recap started' : 'New Short started');
+    newProject(); toast(isComic() ? 'New Comic Recap started' : isDecide() ? 'New Decide Short started' : 'New Short started');
   });
 
   const STEPS = ['idea', 'script', 'voice', 'render'];
   function stepAllowed(s) {
     if (s === 'idea' || s === 'script') return true;
     if (isComic()) return !!P.pkg && CM.wordCount(P.pkg.script) > 0;
+    if (isDecide()) return !!P.pkg && DM.wordCount(P.pkg.script) > 0;
     if (s === 'voice') return !!P.pkg;
     return !!P.pkg;
   }
@@ -245,7 +251,7 @@
     window.scrollTo(0, 0);
   }
   function paintStepper() {
-    const done = { idea: isComic() ? !!(P.comic && P.comic.panels.length) && !!P.pkg : !!P.idea.trim() && !!P.pkg, script: !!P.pkg, voice: !!P.voice, render: !!P.video };
+    const done = { idea: isComic() ? !!(P.comic && P.comic.panels.length) && !!P.pkg : isDecide() ? !!(P.decide && P.decide.script) && !!P.pkg : !!P.idea.trim() && !!P.pkg, script: !!P.pkg, voice: !!P.voice, render: !!P.video };
     document.querySelectorAll('.step').forEach((b) => {
       const s = b.dataset.step;
       b.classList.toggle('active', s === P.step);
@@ -488,6 +494,7 @@
     if (!has) return;
     const pkg = P.pkg;
     if (isComic()) { renderComicScript(); renderKit(pkg); return; }
+    if (isDecide()) { renderDecideScript(); renderKit(pkg); return; }
     const hooks = $('hooks'); hooks.innerHTML = '';
     pkg.hooks.forEach((h, i) => {
       const row = document.createElement('div');
@@ -1716,6 +1723,93 @@
   // ---------- v1.7 Comic Recap mode ----------
   // A project with mode 'comic' keeps its panels (image blobs + the lines narrated over each) in P.comic; P.pkg is derived
   // from them (CM.makePkg), so voice, render, share, save and the library work exactly like a normal Short.
+
+  function normalizeDecide(p, fresh) {
+    if (!DM) return;
+    DM.normalizeDecide(p, fresh);
+  }
+  function renderDecideIdea() {
+    if (!isDecide() || !P.decide) return;
+    const D = P.decide;
+    const prem = $('decide-premise'); if (prem && prem.value !== D.premise) prem.value = D.premise || '';
+    const ser = $('decide-series'); if (ser && ser.value !== (D.series || '')) ser.value = D.series || '';
+    const part = $('decide-part'); if (part) part.value = String(D.part || 1);
+    document.querySelectorAll('#decide-len-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === String(D.length || '90')));
+    const L = DM.lengthOf(D.length); const note = $('decide-len-note');
+    if (note) note.textContent = '≈ ' + L.words[0] + '–' + L.words[1] + ' words · A/B + rewind + cliffhanger';
+  }
+  function renderDecideScript() {
+    const ol = $('decide-lines'); if (!ol) return;
+    ol.innerHTML = '';
+    const script = P.decide && P.decide.script;
+    const badge = $('decide-word-badge');
+    const est = $('decide-script-est');
+    if (!script || !script.lines) {
+      if (badge) badge.textContent = '0 words';
+      if (est) est.textContent = 'Write a premise and tap “Write the Decide script”.';
+      return;
+    }
+    const n = DM.wordCount(DM.linesText(script));
+    if (badge) badge.textContent = n + ' words';
+    if (est) est.textContent = (script.title || '') + ' · ' + (script.lines.length) + ' lines · export for desktop 3D when ready';
+    script.lines.forEach((ln) => {
+      const li = document.createElement('li');
+      if (ln.ui) li.dataset.ui = ln.ui;
+      if (ln.choiceKey) li.dataset.key = ln.choiceKey;
+      const tag = document.createElement('span'); tag.className = 'decide-badge';
+      tag.textContent = (ln.ui ? ln.ui : ln.speaker) + (ln.choiceKey ? ' ' + ln.choiceKey : '');
+      li.appendChild(tag);
+      const tx = document.createElement('span'); tx.textContent = ln.caption || ln.text || '';
+      li.appendChild(tx);
+      ol.appendChild(li);
+    });
+  }
+  async function decideGenerate() {
+    if (!DM) { toast('Decide module missing', true); return; }
+    if (generating || rendering) { toast('Wait for the current job to finish first.', true); return; }
+    const D = P.decide || (normalizeDecide(P, true), P.decide);
+    D.premise = ($('decide-premise') && $('decide-premise').value || '').trim();
+    D.series = ($('decide-series') && $('decide-series').value || '').trim();
+    D.part = Math.max(1, parseInt($('decide-part') && $('decide-part').value, 10) || 1);
+    if (!D.premise) { toast('Add a premise first.', true); return; }
+    generating = true; const st = $('decide-status'); if (st) st.textContent = 'Writing branching A/B script…';
+    try {
+      const out = await DM.writeScript({
+        premise: D.premise, series: D.series, part: D.part, length: D.length,
+        tone: D.tone || 'horror', language: load(K.language, 'English'),
+      });
+      D.script = out.script;
+      P.pkg = DM.makePkg(out.script, { title: out.script.title, description: out.description, hashtags: out.hashtags, tiktokCaption: out.tiktokCaption }, null);
+      P.idea = D.premise;
+      persist(true); renderDecideScript(); renderScript(); renderAll(); showStep('script');
+      toast('Decide script ready — voice it, then render (desktop 3D via tools/decide)');
+    } catch (err) {
+      console.error(err); toast('Could not write Decide script: ' + (err && err.message || err), true);
+    } finally { generating = false; if (st) st.textContent = ''; }
+  }
+  function wireDecide() {
+    if (!DM) return;
+    const prem = $('decide-premise');
+    if (prem) prem.addEventListener('input', () => { if (!P.decide) normalizeDecide(P, true); P.decide.premise = prem.value; persist(); });
+    const ser = $('decide-series');
+    if (ser) ser.addEventListener('input', () => { if (!P.decide) normalizeDecide(P, true); P.decide.series = ser.value; persist(); });
+    const part = $('decide-part');
+    if (part) part.addEventListener('change', () => { if (!P.decide) normalizeDecide(P, true); P.decide.part = Math.max(1, parseInt(part.value, 10) || 1); persist(); });
+    document.querySelectorAll('#decide-len-seg button').forEach((b) => b.addEventListener('click', () => {
+      if (!P.decide) normalizeDecide(P, true); P.decide.length = b.dataset.v; renderDecideIdea(); persist();
+    }));
+    const gen = $('decide-generate'); if (gen) gen.addEventListener('click', decideGenerate);
+    const exp = $('decide-export');
+    if (exp) exp.addEventListener('click', () => {
+      if (!P.decide || !P.decide.script) { toast('Write the Decide script first.', true); return; }
+      const blob = new Blob([DM.exportScriptJson(P.decide.script)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = (P.decide.script.title || 'decide-script').replace(/[^a-z0-9]+/gi, '-').slice(0, 40) + '.json';
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast('Exported script.json — drop into tools/decide on desktop for 3D');
+    });
+  }
+
   function normalizeComic(p, fresh) {
     const c = p.comic && typeof p.comic === 'object' ? p.comic : {};
     p.comic = { panels: Array.isArray(c.panels) ? c.panels.filter((pn) => pn && pn.blob) : [], title: String(c.title || ''), notes: String(c.notes || ''), length: CM.LENGTHS.some((l) => l.id === c.length) ? c.length : '60', fx: CM.fxOf(c.fx) };
@@ -1724,23 +1818,29 @@
     return p.comic;
   }
   function paintMode() {
-    const comic = isComic();
+    const comic = isComic(); const decide = isDecide();
+    const mode = comic ? 'comic' : decide ? 'decide' : 'short';
     $('view-create').classList.toggle('mode-comic', comic);
-    document.querySelectorAll('#mode-seg button').forEach((b) => { const on = b.dataset.v === (comic ? 'comic' : 'short'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
-    const st = document.querySelector('.step[data-step=idea] span'); if (st) st.textContent = comic ? 'Panels' : 'Idea';
-    $('new-project').setAttribute('aria-label', comic ? 'New Comic Recap' : 'New Short'); $('new-project').title = comic ? 'New Comic Recap' : 'New Short';
+    $('view-create').classList.toggle('mode-decide', decide);
+    document.querySelectorAll('#mode-seg button').forEach((b) => { const on = b.dataset.v === mode; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    const st = document.querySelector('.step[data-step=idea] span');
+    if (st) st.textContent = comic ? 'Panels' : decide ? 'Premise' : 'Idea';
+    const lab = comic ? 'New Comic Recap' : decide ? 'New Decide Short' : 'New Short';
+    $('new-project').setAttribute('aria-label', lab); $('new-project').title = lab;
   }
-  function hasContent(p) { return !!(p && (p.idea.trim() || p.pkg || p.voice || (p.comic && p.comic.panels && p.comic.panels.length))); }
+  function hasContent(p) { return !!(p && (p.idea.trim() || p.pkg || p.voice || (p.comic && p.comic.panels && p.comic.panels.length) || (p.decide && (p.decide.premise || p.decide.script)))); }
   function setMode(m) {
-    m = m === 'comic' ? 'comic' : 'short';
-    if ((isComic() ? 'comic' : 'short') === m) return;
+    m = m === 'comic' ? 'comic' : m === 'decide' ? 'decide' : 'short';
+    const cur = isComic() ? 'comic' : isDecide() ? 'decide' : 'short';
+    if (cur === m) return;
     if (rendering || generating) { toast('Wait for the current job to finish first.', true); return; }
     stopAll();
-    if (hasContent(P)) { persist(true); P = blankProject(); voiceBuffer = null; localStorage.removeItem(K.last); toast('Started a new ' + (m === 'comic' ? 'Comic Recap' : 'Short') + ' — your other project is saved in the Library.'); }
-    P.mode = m; if (m === 'comic') normalizeComic(P, true);
+    if (hasContent(P)) { persist(true); P = blankProject(); voiceBuffer = null; localStorage.removeItem(K.last); toast('Started a new ' + (m === 'comic' ? 'Comic Recap' : m === 'decide' ? 'Decide Short' : 'Short') + ' — your other project is saved in the Library.'); }
+    P.mode = m; if (m === 'comic') normalizeComic(P, true); if (m === 'decide') normalizeDecide(P, true);
     renderAll(); showStep('idea');
   }
   document.querySelectorAll('#mode-seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.v)));
+  wireDecide();
   const panelUrls = new WeakMap();
   function panelUrl(pn) { if (!pn || !pn.blob) return ''; let u = panelUrls.get(pn.blob); if (!u) { u = URL.createObjectURL(pn.blob); panelUrls.set(pn.blob, u); } return u; }
   function comicChanged(rebuildPkg) {
@@ -1920,7 +2020,7 @@
   (async function boot() {
     P = blankProject();
     const last = load(K.last, null);
-    if (last) { try { const p = await DB.get(last); if (p) { P = Object.assign(blankProject(), p); P.look = Object.assign(blankProject().look, p.look || {}); if (P.mode === 'comic') normalizeComic(P); } } catch (_) { /* ignore */ } }
+    if (last) { try { const p = await DB.get(last); if (p) { P = Object.assign(blankProject(), p); P.look = Object.assign(blankProject().look, p.look || {}); if (P.mode === 'comic') normalizeComic(P); if (P.mode === 'decide') normalizeDecide(P); } } catch (_) { /* ignore */ } }
     renderAll();
     const hash = location.hash.replace('#', '');
     showView(['library', 'settings'].includes(hash) ? hash : 'create');
