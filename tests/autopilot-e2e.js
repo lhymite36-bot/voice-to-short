@@ -17,6 +17,7 @@ const srv = http.createServer((req, res) => { let p = decodeURIComponent(new URL
     const u = new URL(req.url()); const j = (st, b, h) => req.respond({ status: st, contentType: 'application/json', headers: Object.assign({ 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-expose-headers': 'Location, Range' }, h || {}), body: JSON.stringify(b) });
     if (req.method() === 'OPTIONS' && !/127\.0\.0\.1/.test(u.host)) return req.respond({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
     if (u.hostname === 'api.buffer.com') { const b = JSON.parse(req.postData()); seen.push('buffer:' + (b.query.match(/createPost|posts\(|channels\(|account/) || ['?'])[0]);
+      if (/createPost/.test(b.query) && global.bufFail > 0) { global.bufFail--; seen.push('buffer:createPost-fail'); return j(200, { data: { createPost: { message: 'Something went wrong scheduling' } } }); }
       if (/createPost/.test(b.query)) { seen.push(JSON.stringify(b.variables.input)); return j(200, { data: { createPost: { post: { id: 'P1', dueAt: b.variables.input.dueAt, status: 'scheduled' } } } }); }
       if (/posts\(/.test(b.query)) return j(200, { data: { posts: { edges: Array(global.queueN || 3).fill({ node: { id: 'x' } }) } } });
       if (/channels\(/.test(b.query)) return j(200, { data: { channels: [{ id: 'a'.repeat(24), name: 'Quiet Brain', displayName: 'Quiet Brain', service: 'youtube' }] } });
@@ -69,12 +70,38 @@ const srv = http.createServer((req, res) => { let p = decodeURIComponent(new URL
   ok('quota display counts the upload', await page.evaluate(() => VTS.apcore.quotaLeft(Date.now(), VTS.autopilot.getLog()).uploads === 5));
   // failure path: Gemini 503 is retried by withRetry then logged as retrying
   const r4 = await page.evaluate(async () => {
-    VTS.shortgen.generatePackage = async () => { const e = new Error('The model is overloaded'); e.status = 503; throw e; };
+    window.__gp = VTS.shortgen.generatePackage; VTS.shortgen.generatePackage = async () => { const e = new Error('The model is overloaded'); e.status = 503; throw e; };
     const orig = VTS.apcore.backoffMs; VTS.apcore.backoffMs = () => 5;
     await VTS.autopilot.runSlot({ id: '2026-11-05T16:00', time: '16:00', at: Date.now(), runAt: Date.now() }, 'test'); VTS.apcore.backoffMs = orig;
     return VTS.autopilot.getLog().find((e) => e.slot === '2026-11-05T16:00');
   });
   ok('Gemini 503 -> retrying with nextRetryAt', r4.status === 'retrying' && !!r4.nextRetryAt, { status: r4.status, error: r4.error });
+
+  // hang protection: a render that never finishes is aborted by the timeout and logged (not stuck on "running (render)")
+  const r5 = await page.evaluate(async () => {
+    localStorage.setItem('vts.ap.settings', JSON.stringify({ enabled: false, method: 'buffer', leadMin: 40 }));
+    const L = VTS.apcore.LIMITS; const keep = [L.renderMs, L.scriptMs]; L.renderMs = 1500; L.scriptMs = 0; const mk = VTS.makeShortHeadless; let sig = null;
+    VTS.makeShortHeadless = (it, h) => { sig = h.signal; h.onStep('render'); return new Promise(() => {}); };
+    await VTS.autopilot.runSlot({ id: '2026-11-05T19:00', time: '19:00', at: Date.now(), runAt: Date.now() }, 'test');
+    VTS.makeShortHeadless = mk; L.renderMs = keep[0]; L.scriptMs = keep[1];
+    return Object.assign({ aborted: !!(sig && sig.aborted) }, VTS.autopilot.getLog().find((e) => e.slot === '2026-11-05T19:00'));
+  });
+  ok('hung render -> timed out, aborted, retrying (not running)', r5.status === 'retrying' && /timed out/.test(r5.error) && /render/.test(r5.error) && r5.aborted, { status: r5.status, error: r5.error });
+  // stale "running" rows left by a killed app are recovered on the next check
+  const r6 = await page.evaluate(async () => {
+    const log = VTS.autopilot.getLog(); const old = new Date(Date.now() - 3 * 3600000).toISOString();
+    log.unshift({ slot: '2026-11-04T19:00', status: 'running', step: 'render', time: old, attempts: 1 }); localStorage.setItem('vts.ap.log', JSON.stringify(log));
+    VTS.autopilot.recover(); return VTS.autopilot.getLog().find((e) => e.slot === '2026-11-04T19:00');
+  });
+  ok('stale running(render) row -> failed with clear reason', r6.status === 'failed' && /no progress/.test(r6.error), { status: r6.status, error: r6.error });
+  // Buffer fails after the GitHub upload -> next try re-uses the uploaded video, no re-render / re-upload
+  global.bufFail = 3; seen.length = 0;
+  const r7 = await page.evaluate(async () => { VTS.shortgen.generatePackage = window.__gp; const o = VTS.apcore.backoffMs; VTS.apcore.backoffMs = () => 10; await VTS.autopilot.runSlot({ id: '2026-11-05T21:00', time: '21:00', at: Date.now() + 2400000, runAt: Date.now() }, 'test'); VTS.apcore.backoffMs = o; return VTS.autopilot.getLog().find((e) => e.slot === '2026-11-05T21:00'); });
+  const ups1 = seen.filter((x) => /^ghup:/.test(x)).length;
+  ok('Buffer failure after upload -> retrying with videoUrl kept', r7.status === 'retrying' && !!r7.videoUrl && ups1 === 1, { status: r7.status, error: r7.error, ups1 });
+  global.bufFail = 0; seen.length = 0;
+  const r8 = await page.evaluate(async () => { await VTS.autopilot.runSlot({ id: '2026-11-05T21:00', time: '21:00', at: Date.now() + 2400000, runAt: Date.now() }, 'test'); return VTS.autopilot.getLog().find((e) => e.slot === '2026-11-05T21:00'); });
+  ok('retry schedules in Buffer without re-rendering or re-uploading', r8.status === 'scheduled' && !seen.some((x) => /^ghup:/.test(x)) && seen.includes('buffer:createPost'), { status: r8.status, seen });
   ok('log UI renders entries', await page.evaluate(() => document.querySelectorAll('#ap-log .ap-row').length >= 4));
   ok('no page errors', errors.length === 0, errors);
   await browser.close(); srv.close();

@@ -48,7 +48,8 @@
   // Only the newest missed slot is caught up (never a burst of several videos at once).
   function dueSlots(now, settings, log) {
     const s = normSettings(settings); if (!s.enabled) return [];
-    const done = new Set((log || []).filter((e) => e.status === 'posted' || e.status === 'scheduled' || e.status === 'failed' || e.status === 'skipped').map((e) => e.slot));
+    // 'running' counts as busy unless it is stale (app killed / render hung) — recoverStale() turns those into retrying/failed.
+    const done = new Set((log || []).filter((e) => e.status === 'posted' || e.status === 'scheduled' || e.status === 'failed' || e.status === 'skipped' || (e.status === 'running' && !isStale(e, now))).map((e) => e.slot));
     const waiting = new Map((log || []).filter((e) => e.nextRetryAt && (e.status === 'retrying' || e.status === 'deferred')).map((e) => [e.slot, Date.parse(e.nextRetryAt)]));
     const win = Math.max(s.catchUpHours * 3600000, 10 * 60000);
     const cands = [];
@@ -56,6 +57,36 @@
     cands.sort((a, b) => b.at - a.at);
     return cands.slice(0, 1);
   }
+
+  // ---------- hang protection ----------
+  // A whole slot (script + voice + render + upload + Buffer) normally takes 2–8 min. Anything still 'running'
+  // with no progress beat for STALE_MS was killed (app closed, WebView frozen in the background) or hung.
+  const LIMITS = { scriptMs: 4 * 60000, renderMs: 15 * 60000, uploadMs: 10 * 60000, bufferMs: 2 * 60000, slotMs: 30 * 60000, staleMs: 20 * 60000, maxShortSec: 70, bufferMaxSec: 179 };
+  function lastBeat(e) { return Math.max(Date.parse(e && e.beat || '') || 0, Date.parse(e && e.time || '') || 0); }
+  function isStale(e, now, ms) { return !!e && e.status === 'running' && (now - lastBeat(e)) > (ms || LIMITS.staleMs); }
+  // Decide what to do with each stale 'running' row: retry once (re-using an uploaded video if there is one) or give up with a clear reason.
+  // Returns patches for putLog; skip = the slot currently running in this process.
+  function recoverStale(now, log, settings, skip) {
+    const s = normSettings(settings); const win = Math.max(s.catchUpHours * 3600000, 10 * 60000); const out = [];
+    (log || []).forEach((e) => {
+      if (!isStale(e, now) || e.slot === skip) return;
+      const at = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(e.slot) ? istSlotMs(e.slot.slice(0, 10), e.slot.slice(11)) : lastBeat(e);
+      const stuckAt = e.step ? ' at step "' + e.step + '"' : '';
+      const mins = Math.round((now - lastBeat(e)) / 60000);
+      if ((e.attempts || 1) < 2 && now - at <= win) out.push({ slot: e.slot, status: 'retrying', step: '', error: 'Previous try stopped' + stuckAt + ' with no progress for ' + mins + ' min (app closed or render stalled). Retrying once' + (e.videoUrl ? ' with the already-uploaded video.' : '.'), nextRetryAt: new Date(now).toISOString() });
+      else out.push({ slot: e.slot, status: 'failed', step: '', error: 'Stopped' + stuckAt + ' with no progress for ' + mins + ' min (app closed or render stalled) and the slot is past its catch-up window. Marked failed so the next slots can run.', nextRetryAt: null });
+    });
+    return out;
+  }
+  class TimeoutError extends Error { constructor(what, ms) { super(what + ' timed out after ' + Math.round(ms / 60000) + ' min'); this.timeout = true; } }
+  // Race a promise against a timer; on timeout call abort() (if given) and reject with a clear message (not retriable by withRetry).
+  function withTimeout(p, ms, what, abort) {
+    let t; const timer = new Promise((_, rej) => { t = setTimeout(() => { try { if (abort) abort(); } catch (_) { /* ignore */ } rej(new TimeoutError(what, ms)); }, ms); });
+    return Promise.race([Promise.resolve(p), timer]).finally(() => clearTimeout(t));
+  }
+  // Buffer rejects YouTube Shorts over 3 min; we target ~40–70 s. Unknown / infinite durations (broken webm header) are also refused.
+  function shortDurationProblem(sec, max) { const m = max || LIMITS.maxShortSec; if (!(sec > 0) || !isFinite(sec)) return 'video length unknown (' + sec + ')'; if (sec > m) return 'video is ' + Math.round(sec) + ' s, over the ' + m + ' s Short limit'; return ''; }
+  function dayTag(ms) { return 'vts-autopilot-media-' + new Date(ms).toISOString().slice(0, 10).replace(/-/g, ''); }
 
   // ---------- quota ----------
   // YouTube quota resets at midnight Pacific Time.
@@ -263,16 +294,27 @@
               if (put.status >= 300 && put.status !== 422) throw Object.assign(new Error('The GitHub repo ' + o.repo + ' looks empty and adding a README failed (HTTP ' + put.status + ').'), { status: put.status });
               created = await mk();
               if (created.status === 422) created = await getRel();
+              if (created.status === 422 && !o.tag && !o.noFallback) return HOSTS.github.upload(http, uploadFile, Object.assign({}, o, { tag: dayTag(o.now || Date.now()), noFallback: true }));
               if (created.status >= 300) throw Object.assign(new Error('GitHub would not create the media release in ' + o.repo + ' (HTTP ' + created.status + '), even after trying to add a README to the empty repo. Check the repo exists, is public, and the token has Contents: Read and write.'), { status: created.status, fatal: true });
             }
           }
           rel = created;
         }
         if (rel.status === 401 || rel.status === 403) throw Object.assign(new Error('GitHub rejected the token (it needs Contents: read and write on ' + o.repo + ').'), { status: rel.status, fatal: true });
-        if (rel.status >= 300) throw Object.assign(new Error('GitHub release: HTTP ' + rel.status), { status: rel.status });
+        if (rel.status >= 300) {
+          if (rel.status === 422 && !o.tag && !o.noFallback) return HOSTS.github.upload(http, uploadFile, Object.assign({}, o, { tag: dayTag(o.now || Date.now()), noFallback: true }));
+          throw Object.assign(new Error('GitHub release ' + tag + ': HTTP ' + rel.status), { status: rel.status });
+        }
         const r = await rel.json();
-        const up = await uploadFile({ url: 'https://uploads.github.com/repos/' + o.repo + '/releases/' + r.id + '/assets?name=' + encodeURIComponent(o.name), method: 'POST', headers: Object.assign({ 'Content-Type': o.mime || 'video/mp4' }, H), blob: o.blob, path: o.path, size: o.size });
-        if (up.status === 422) throw Object.assign(new Error('A file named ' + o.name + ' already exists in the media release.'), { status: 422, exists: true, url: 'https://github.com/' + o.repo + '/releases/download/' + tag + '/' + encodeURIComponent(o.name) });
+        const send = (nm) => uploadFile({ url: 'https://uploads.github.com/repos/' + o.repo + '/releases/' + r.id + '/assets?name=' + encodeURIComponent(nm), method: 'POST', headers: Object.assign({ 'Content-Type': o.mime || 'video/mp4' }, H), blob: o.blob, path: o.path, size: o.size });
+        let up = await send(o.name);
+        // 422 = name already used (or release full / invalid). Try once more with a unique suffix in the same release.
+        if (up.status === 422) { const nm2 = o.name.replace(/(\.\w+)$/, '-' + Math.random().toString(36).slice(2, 8) + '$1'); up = await send(nm2); }
+        if (up.status === 422) {
+          // This release will not take more assets: switch to a dated release (vts-autopilot-media-YYYYMMDD) instead of failing the job.
+          if (!o.tag && !o.noFallback) return HOSTS.github.upload(http, uploadFile, Object.assign({}, o, { tag: dayTag(o.now || Date.now()), noFallback: true }));
+          throw Object.assign(new Error('GitHub upload: HTTP 422 on release ' + tag + ' (asset rejected even with a unique name).'), { status: 422 });
+        }
         if (up.status >= 300) throw Object.assign(new Error('GitHub upload: HTTP ' + up.status), { status: up.status });
         const a = await up.json(); return a.browser_download_url;
       },
@@ -280,7 +322,7 @@
   };
   const videoUrl = (id) => 'https://youtube.com/shorts/' + id;
 
-  return { IST_OFFSET_MIN, DEFAULTS, DEFAULT_TIMES, QUOTA, SCOPES, AUTH_URL, TOKEN_URL, UPLOAD_URL, CHANNEL_URL,
+  return { LIMITS, lastBeat, isStale, recoverStale, withTimeout, TimeoutError, shortDurationProblem, dayTag, IST_OFFSET_MIN, DEFAULTS, DEFAULT_TIMES, QUOTA, SCOPES, AUTH_URL, TOKEN_URL, UPLOAD_URL, CHANNEL_URL,
     parseTime, normTimes, normSettings, istDay, istSlotMs, slotsForDay, nextSlot, dueSlots,
     ptDay, quotaUsed, quotaLeft, nextPtMidnight, quotaExceeded, isRetriable, backoffMs, withRetry,
     ideaKey, pickIdea, buildMetadata, b64url, pkcePair, randomState, validClientId, buildAuthUrl, form, tokenRequest, refreshRequest,

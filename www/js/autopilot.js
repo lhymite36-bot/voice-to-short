@@ -49,7 +49,7 @@
 
   // ---------- post log ----------
   const getLog = () => load(LS.log, []);
-  function putLog(entry) { const log = getLog(); const i = log.findIndex((e) => e.slot === entry.slot); if (i >= 0) log[i] = Object.assign(log[i], entry); else log.unshift(entry); save(LS.log, log.slice(0, 300)); paint(); return entry; }
+  function putLog(entry) { if (entry.status === 'running' || (current && entry.slot === current)) entry.beat = new Date().toISOString(); const log = getLog(); const i = log.findIndex((e) => e.slot === entry.slot); if (i >= 0) log[i] = Object.assign(log[i], entry); else log.unshift(entry); save(LS.log, log.slice(0, 300)); paint(); return entry; }
 
   // ---------- YouTube OAuth ----------
   async function connectYouTube() {
@@ -84,11 +84,15 @@
   function pickIdea() { const ideas = (VTS.ideas && VTS.ideas.IDEAS) || []; const used = load(LS.used, []); const it = C.pickIdea(ideas, used); if (it) save(LS.used, used.filter((k) => k !== C.ideaKey(it)).concat([C.ideaKey(it)]).slice(-1000)); return it; }
   const stamp = (slot) => slot.id.replace(/[^0-9T]/g, '').replace('T', '-');
 
+  // Abort controller of the run in progress, so a watchdog (or a timeout) can stop a hung render.
+  let ctl = null; let runStartedAt = 0;
   async function runSlot(slot, why) {
     const s = settings(); const prev = getLog().find((e) => e.slot === slot.id) || {};
     const attempt = (prev.attempts || 0) + 1;
+    const L = C.LIMITS;
+    running = true; current = slot.id; runStartedAt = Date.now(); ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const entry = putLog({ slot: slot.id, time: new Date().toISOString(), method: s.method, status: 'running', attempts: attempt, title: prev.title || '', why });
-    running = true; current = slot.id;
+    const abort = () => { try { if (ctl) ctl.abort(); } catch (_) { /* ignore */ } };
     try { if (NP) await NP.runStart({ text: 'Making the ' + slot.time + ' IST Short…' }); if (D) D.runState(true); } catch (_) { /* ignore */ }
     try {
       // Buffer: check the queue before spending Gemini quota on a render.
@@ -96,11 +100,20 @@
       if (s.method === 'buffer') {
         bufKey = await secure.get('bufferKey'); bch = load(LS.buffer, null);
         if (!bufKey || !bch) throw Object.assign(new Error('Buffer is not set up (API key + channel in Settings).'), { fatal: true });
-        const n = await C.bufferQueueCount(nhttp, bufKey, bch.organizationId, bch.id);
+        const n = await C.withTimeout(C.bufferQueueCount(nhttp, bufKey, bch.organizationId, bch.id), L.bufferMs, 'Buffer queue check');
         if (!C.bufferCanQueue(n, s.bufferLimit)) {
           const late = Date.now() - slot.at > s.catchUpHours * 3600000;
           putLog({ slot: slot.id, status: late ? 'skipped' : 'deferred', error: 'Buffer queue is full (' + n + ' scheduled; free plan allows 10). Will try again in 30 min.', nextRetryAt: new Date(Date.now() + 30 * 60000).toISOString() });
           if (late) notify('Autopilot skipped a Short', 'Buffer queue stayed full for the ' + slot.time + ' IST slot.');
+          return;
+        }
+        // Video already on GitHub from an earlier try (Buffer step failed): only retry Buffer, never re-render.
+        if (prev.videoUrl && prev.pkg) {
+          putLog({ slot: slot.id, step: 'buffer (re-using uploaded video)' });
+          const dueAt = Math.max(slot.at, Date.now() + 10 * 60000);
+          const post = await C.withTimeout(C.withRetry(() => C.bufferCreatePost(nhttp, bufKey, C.bufferPostInput({ channelId: bch.id, pkg: prev.pkg, videoUrl: prev.videoUrl, dueAt, handle: (localStorage.getItem('vts.handle') || '').replace(/"/g, '') })), { tries: 3 }), L.bufferMs * 3, 'Buffer scheduling');
+          putLog({ slot: slot.id, status: 'scheduled', step: '', error: '', bufferPostId: post.id, dueAt: new Date(dueAt).toISOString(), nextRetryAt: null });
+          notify('Short scheduled in Buffer', '“' + (prev.title || '') + '” goes out at ' + slot.time + ' IST.');
           return;
         }
       } else {
@@ -109,39 +122,58 @@
       }
       const it = prev.idea ? prev.idea : pickIdea(); if (!it) throw Object.assign(new Error('Idea bank is empty.'), { fatal: true });
       putLog({ slot: slot.id, idea: it, title: it.text.slice(0, 80), step: 'script' });
-      const made = await C.withRetry(() => VTS.makeShortHeadless(it, { onStep: (st) => putLog({ slot: slot.id, step: st }) }), { tries: 4, onWait: (ms) => putLog({ slot: slot.id, step: 'waiting ' + Math.round(ms / 1000) + ' s (Gemini busy)' }) });
-      const title = C.buildMetadata(made.pkg).snippet.title; putLog({ slot: slot.id, title, step: 'upload', duration: made.duration ? Math.round(made.duration * 10) / 10 : null, renderer: made.how });
+      // Script + voice + render must finish in renderMs + scriptMs, or the run is aborted and marked failed/retrying (no more endless "running (render)").
+      const made = await C.withTimeout(C.withRetry(() => VTS.makeShortHeadless(it, { signal: ctl ? ctl.signal : undefined, onStep: (st) => putLog({ slot: slot.id, step: st }), onProgress: (p) => { if (Date.now() - (lastBeatAt || 0) > 15000) { lastBeatAt = Date.now(); putLog({ slot: slot.id, step: 'render ' + Math.round(p * 100) + '%' }); } } }), { tries: 3, onWait: (ms) => putLog({ slot: slot.id, step: 'waiting ' + Math.round(ms / 1000) + ' s (Gemini busy)' }) }), L.renderMs + L.scriptMs, 'Making the Short (script/voice/render)', abort);
+      const durProblem = C.shortDurationProblem(made.duration, L.maxShortSec);
+      if (durProblem) throw Object.assign(new Error('Not uploaded: ' + durProblem + ' (Buffer rejects YouTube Shorts over 3 min). Renderer: ' + (made.how || '?') + '.'), { fatal: true });
+      const title = C.buildMetadata(made.pkg).snippet.title; putLog({ slot: slot.id, title, step: 'upload', duration: Math.round(made.duration * 10) / 10, renderer: made.how });
       if (s.method === 'buffer') {
         const host = C.HOSTS[load(LS.host, 'github')] || C.HOSTS.github;
-        const ext = /webm/.test(made.mime) ? 'webm' : 'mp4'; const name = 'short-' + stamp(slot) + '-' + Date.now().toString(36) + '.' + ext;
+        const ext = /webm/.test(made.mime) ? 'webm' : 'mp4'; const name = 'short-' + stamp(slot) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6) + '.' + ext;
         const ghToken = await secure.get('githubToken'); if (!ghToken) throw Object.assign(new Error('Add a GitHub token for the video host (Settings).'), { fatal: true });
-        const videoUrl = await C.withRetry(() => host.upload(nhttp, nupload, { token: ghToken, repo: load(LS.ghRepo, ''), name, blob: made.blob, size: made.blob.size, mime: made.mime }), { tries: 4 });
+        const videoUrl = await C.withTimeout(C.withRetry(() => host.upload(nhttp, nupload, { token: ghToken, repo: load(LS.ghRepo, ''), name, blob: made.blob, size: made.blob.size, mime: made.mime }), { tries: 3 }), L.uploadMs, 'GitHub video upload');
+        // Remember the upload (and the package) right away so a Buffer failure retries only Buffer.
+        putLog({ slot: slot.id, videoUrl, pkg: made.pkg, step: 'buffer' });
         const dueAt = Math.max(slot.at, Date.now() + 10 * 60000);
-        const post = await C.withRetry(() => C.bufferCreatePost(nhttp, bufKey, C.bufferPostInput({ channelId: bch.id, pkg: made.pkg, videoUrl, dueAt, handle: (localStorage.getItem('vts.handle') || '').replace(/"/g, '') })), { tries: 4 });
+        const post = await C.withTimeout(C.withRetry(() => C.bufferCreatePost(nhttp, bufKey, C.bufferPostInput({ channelId: bch.id, pkg: made.pkg, videoUrl, dueAt, handle: (localStorage.getItem('vts.handle') || '').replace(/"/g, '') })), { tries: 3 }), L.bufferMs * 3, 'Buffer scheduling');
         putLog({ slot: slot.id, status: 'scheduled', step: '', error: '', videoUrl, bufferPostId: post.id, dueAt: new Date(dueAt).toISOString(), nextRetryAt: null });
         notify('Short scheduled in Buffer', '“' + title + '” goes out at ' + slot.time + ' IST.');
       } else {
         const tokenNow = await accessToken();
         putLog({ slot: slot.id, uploadAttempted: true, uploadAttempts: (prev.uploadAttempts || 0) + 1 });
-        const v = await C.uploadVideo(fetch.bind(window), { accessToken: tokenNow, blob: made.blob, mime: made.mime, metadata: C.buildMetadata(made.pkg, { handle: (localStorage.getItem('vts.handle') || '').replace(/"/g, '') }), onProgress: (p) => putLog({ slot: slot.id, step: 'upload ' + Math.round(p * 100) + '%' }) });
+        const v = await C.withTimeout(C.uploadVideo(fetch.bind(window), { accessToken: tokenNow, blob: made.blob, mime: made.mime, metadata: C.buildMetadata(made.pkg, { handle: (localStorage.getItem('vts.handle') || '').replace(/"/g, '') }), onProgress: (p) => putLog({ slot: slot.id, step: 'upload ' + Math.round(p * 100) + '%' }) }), L.uploadMs, 'YouTube upload');
         const priv = v.status && v.status.privacyStatus;
         putLog({ slot: slot.id, status: 'posted', step: '', error: priv && priv !== 'public' ? 'YouTube set this video to ' + priv + ' (unverified app — see the audit guide).' : '', videoUrl: C.videoUrl(v.id), videoId: v.id, nextRetryAt: null });
         notify('Short posted to YouTube', '“' + title + '”' + (priv && priv !== 'public' ? ' (locked ' + priv + ' by YouTube)' : ''));
       }
     } catch (e) {
-      const retriable = !e.fatal && (C.isRetriable(e) || e.queueFull) && attempt < 4;
-      const msg = (VTS.gemini && VTS.gemini.friendlyError ? VTS.gemini.friendlyError(e) : '') || e.message || String(e);
+      const cur = getLog().find((x) => x.slot === slot.id) || {};
+      // A timeout counts as one retriable try; uploaded-but-not-scheduled videos always get Buffer retries (cheap, no re-render).
+      const retriable = !e.fatal && (C.isRetriable(e) || e.queueFull || e.timeout || !!cur.videoUrl) && attempt < (cur.videoUrl ? 5 : 3);
+      const where = cur.step ? ' [at ' + cur.step + ']' : '';
+      const msg = ((e.timeout ? e.message : '') || (VTS.gemini && VTS.gemini.friendlyError ? VTS.gemini.friendlyError(e) : '') || e.message || String(e)) + where;
       putLog({ slot: slot.id, status: retriable ? 'retrying' : 'failed', step: '', error: msg, nextRetryAt: retriable ? new Date(Date.now() + C.backoffMs(attempt + 1)).toISOString() : null });
       if (!retriable) notify('Autopilot could not post a Short', msg.slice(0, 180));
     } finally {
-      running = false; current = '';
+      running = false; current = ''; ctl = null; runStartedAt = 0;
       try { if (D) D.runState(false); } catch (_) { /* ignore */ }
       void entry;
     }
   }
+  let lastBeatAt = 0;
+  // Turn stale "running" rows (app was killed mid-render, or a hung run) into retrying/failed; and unstick this process if its own run hung.
+  function recover() {
+    if (running && runStartedAt && Date.now() - runStartedAt > C.LIMITS.slotMs) {
+      const slotId = current; try { if (ctl) ctl.abort(); } catch (_) { /* ignore */ }
+      putLog({ slot: slotId, status: 'failed', step: '', error: 'Watchdog: this run was still going after ' + Math.round(C.LIMITS.slotMs / 60000) + ' min and was stopped.', nextRetryAt: null });
+      running = false; current = ''; ctl = null; runStartedAt = 0;
+    }
+    C.recoverStale(Date.now(), getLog(), settings(), running ? current : null).forEach((p) => putLog(p));
+  }
 
   // ---------- scheduler ----------
   async function check(why) {
+    try { recover(); } catch (_) { /* ignore */ }
     if (running) return;
     const s = settings(); if (!s.enabled) { await endRun(); return; }
     const due = C.dueSlots(Date.now(), s, getLog());
@@ -261,5 +293,5 @@
     if (PLATFORM !== 'web') setInterval(() => check('timer'), 60000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
-  VTS.autopilot = { check, runSlot, settings, getLog, connectYouTube, PLATFORM };
+  VTS.autopilot = { check, runSlot, recover, settings, getLog, connectYouTube, PLATFORM };
 }());

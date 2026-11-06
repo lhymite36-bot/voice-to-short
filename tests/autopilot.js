@@ -237,6 +237,46 @@ test('MP4 check: the real phone upload (fragmented, 0 header duration, 1770 s vi
   assert.ok(info.fragmented && info.mvhdDuration === 0 && info.duration > 1000); const c = E.checkShort(info); assert.ok(!c.ok && c.problems.includes('fragmented MP4'));
 });
 
+test('stale running rows: fresh run blocks, stale run is recovered (retry once, then fail)', () => {
+  const now = IST('2026-11-06T19:30:00');
+  const fresh = [{ slot: '2026-11-06T19:00', status: 'running', time: new Date(now - 5 * 60000).toISOString(), attempts: 1 }];
+  assert.deepStrictEqual(C.dueSlots(now, S, fresh), []);
+  assert.deepStrictEqual(C.recoverStale(now, fresh, S), []);
+  const stale = [{ slot: '2026-11-06T19:00', status: 'running', step: 'render', time: new Date(now - 60 * 60000).toISOString(), attempts: 1 },
+    { slot: '2026-11-06T11:00', status: 'running', step: 'render', time: IST('2026-11-06T10:25:00') && new Date(IST('2026-11-06T10:25:00')).toISOString(), attempts: 1 },
+    { slot: '2026-11-06T13:00', status: 'running', time: new Date(now - 70 * 60000).toISOString(), attempts: 2 }];
+  const p = C.recoverStale(now, stale, S);
+  assert.strictEqual(p.find((x) => x.slot === '2026-11-06T19:00').status, 'retrying');
+  assert.strictEqual(p.find((x) => x.slot === '2026-11-06T11:00').status, 'failed');
+  assert.strictEqual(p.find((x) => x.slot === '2026-11-06T13:00').status, 'failed');
+  assert.ok(/render/.test(p[0].error));
+  assert.deepStrictEqual(C.recoverStale(now, stale, S, '2026-11-06T19:00').map((x) => x.slot).includes('2026-11-06T19:00'), false);
+  assert.strictEqual(C.dueSlots(now, S, stale)[0].id, '2026-11-06T19:00');
+});
+test('withTimeout rejects a hung promise and calls abort', async () => {
+  let aborted = false;
+  await assert.rejects(C.withTimeout(new Promise(() => {}), 30, 'Render', () => { aborted = true; }), (e) => e.timeout && /Render timed out/.test(e.message));
+  assert.ok(aborted);
+  assert.strictEqual(await C.withTimeout(Promise.resolve(7), 1000, 'x'), 7);
+});
+test('shortDurationProblem: 40–70 s ok, >70 s / unknown refused', () => {
+  assert.strictEqual(C.shortDurationProblem(55), ''); assert.ok(C.shortDurationProblem(200)); assert.ok(C.shortDurationProblem(Infinity)); assert.ok(C.shortDurationProblem(0));
+});
+test('GitHub host: asset 422 -> unique name, then dated release fallback', async () => {
+  const calls = []; let rels = 0;
+  const http = async (r) => { calls.push(r.method + ' ' + r.url); if (r.method === 'GET') return { status: 200, ok: true, json: async () => ({ id: /media-2026/.test(r.url) ? 2 : 1 }) }; rels++; return { status: 201, ok: true, json: async () => ({ id: 2 }) }; };
+  const up = async (r) => { calls.push('UP ' + r.url); return /releases\/1\//.test(r.url) ? { status: 422, json: async () => ({}) } : { status: 201, json: async () => ({ browser_download_url: 'https://x/' + r.url.split('name=')[1] }) }; };
+  const url = await C.HOSTS.github.upload(http, up, { token: 't', repo: 'p/qb-media', name: 'a.mp4', blob: {}, size: 1, now: Date.parse('2026-11-06T10:00:00Z') });
+  assert.ok(/^https:\/\/x\//.test(url));
+  assert.strictEqual(calls.filter((c) => /^UP .*releases\/1\//.test(c)).length, 2);
+  assert.ok(calls.some((c) => /releases\/tags\/vts-autopilot-media-20261106/.test(c)));
+});
+test('GitHub host: release lookup 422 falls back to dated release', async () => {
+  const http = async (r) => /tags\/vts-autopilot-media$/.test(r.url) ? { status: 422, ok: false, json: async () => ({}) } : { status: 200, ok: true, json: async () => ({ id: 5 }) };
+  const up = async () => ({ status: 201, json: async () => ({ browser_download_url: 'ok' }) });
+  assert.strictEqual(await C.HOSTS.github.upload(http, up, { token: 't', repo: 'p/qb', name: 'a.mp4', blob: {}, size: 1 }), 'ok');
+});
+
 (async () => {
   let fail = 0;
   for (const [name, fn] of tests) { try { await fn(); n++; console.log('ok  ' + name); } catch (e) { fail++; console.log('FAIL ' + name + '\n   ' + (e && e.stack || e)); } }
