@@ -121,12 +121,14 @@
 
   // ======================= palette =======================
   const ART = {
-    teal: { tint: '#0e6a73', amt: 0.1, sat: 1.04, accent: '#ff8a4c', accent2: '#2ec4b6' },
+    teal: { tint: '#0e6a73', amt: 0.07, sat: 1.22, accent: '#ff8a4c', accent2: '#2ec4b6' },
     moody: { tint: '#4a4330', amt: 0.2, sat: 0.72, accent: '#cf8a4f', accent2: '#7c9a86' },
-    warm: { tint: '#e0707a', amt: 0.1, sat: 1.0, accent: '#ef6f6c', accent2: '#f6bd60' },
+    warm: { tint: '#e0707a', amt: 0.07, sat: 1.15, accent: '#ef6f6c', accent2: '#f6bd60' },
     mono: { tint: '#777777', amt: 0, sat: 0, accent: '#e9e9e9', accent2: '#a0a0a0' },
-    neon: { tint: '#5b21b6', amt: 0.18, sat: 1.15, accent: '#ec4899', accent2: '#22d3ee' },
+    neon: { tint: '#7c3aed', amt: 0.08, sat: 1.6, accent: '#ff2bd6', accent2: '#00e5ff', deep: 0.35, deepCol: [40, 14, 90] },
     sage: { tint: '#4a7c59', amt: 0.14, sat: 0.86, accent: '#e9b872', accent2: '#8fb996' },
+    // v1.9 Kurzgesagt-style flat look: rich saturated colours over deep dark-blue, soft glows (Quiet Brain default)
+    kurz: { tint: '#14205e', amt: 0.12, sat: 1.62, accent: '#ffb000', accent2: '#00f0e0', deep: 0.42 },
   };
   function hexRgb(h) { h = String(h).replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function rgbHex(r) { return '#' + r.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
@@ -136,11 +138,11 @@
 
   // Per-setting ambient light (baked into every colour of the shot; much cheaper than full-frame blend passes).
   const AMBIENT = {
-    'bedroom-night': ['#2b3f86', 0.34], 'bedroom-day': ['#ffd9a8', 0.06], office: ['#cfe3ff', 0.04], classroom: ['#fff1c9', 0.05], street: ['#ffb27a', 0.08],
-    cafe: ['#ffb46b', 0.12], park: ['#fff4c2', 0.04], 'abstract-mind-space': ['#5c4bd6', 0.18], 'phone-screen': ['#233a7a', 0.2], void: ['#000000', 0],
+    'bedroom-night': ['#3b4fd6', 0.2], 'bedroom-day': ['#ffd9a8', 0.06], office: ['#cfe3ff', 0.04], classroom: ['#fff1c9', 0.05], street: ['#ffb27a', 0.08],
+    cafe: ['#ffb46b', 0.12], park: ['#fff4c2', 0.04], 'abstract-mind-space': ['#7c4dff', 0.1], 'phone-screen': ['#2f56d6', 0.12], void: ['#000000', 0],
     // v1.6 settings
-    hallway: ['#fff1d6', 0.05], 'car-interior': ['#ffd9a8', 0.06], beach: ['#fff2c4', 0.05], 'rooftop-night': ['#2b3f86', 0.3], 'bus-stop': ['#ffcf9e', 0.07], supermarket: ['#e8f4ff', 0.04],
-    'mountain-trail': ['#fff4c2', 0.04], 'rainy-street': ['#3a4f7a', 0.22], 'school-yard': ['#fff4c2', 0.04], 'train-platform': ['#d9e4ff', 0.06],
+    hallway: ['#fff1d6', 0.05], 'car-interior': ['#ffd9a8', 0.06], beach: ['#fff2c4', 0.05], 'rooftop-night': ['#3b4fd6', 0.18], 'bus-stop': ['#ffcf9e', 0.07], supermarket: ['#e8f4ff', 0.04],
+    'mountain-trail': ['#fff4c2', 0.04], party: ['#b026ff', 0.12], bar: ['#ffb46b', 0.1], restaurant: ['#ffb46b', 0.08], hospital: ['#e8fff8', 0.04], airport: ['#ffb27a', 0.06], airplane: ['#e8ecff', 0.04], therapist: ['#fff1c9', 0.05], bank: ['#fff1c9', 0.05], concert: ['#7c4dff', 0.12], garage: ['#cfe3ff', 0.05], 'rainy-street': ['#3a5fc0', 0.14], 'school-yard': ['#fff4c2', 0.04], 'train-platform': ['#d9e4ff', 0.06],
   };
 
   // ======================= small math / easing =======================
@@ -167,7 +169,22 @@
 
   // ======================= poses =======================
   // Rig coordinates: origin at the hips, +y down, ~1 unit = 1 px at scale 1. Standing height ≈ 580.
+  // v1.9 anatomy: a human elbow points down/out (gravity + shoulder range), never up-and-inwards.
+  // Try both IK solutions and keep the one whose elbow sits lower and further out from the body.
+  function naturalElbow(sx, sy, tx, ty, side) {
+    const a = ik(sx, sy, tx, ty, ARM[0], ARM[1], 1); const b = ik(sx, sy, tx, ty, ARM[0], ARM[1], -1);
+    const score = (e) => side * (e[0] - sx) * 0.8 + (e[1] - sy) * 1.0 + (side * (e[0] - tx) > 0 ? 25 : 0);
+    return score(a) >= score(b) ? a : b;
+  }
   const SH = { x: 66, y: -176 }; const HIP = { x: 36, y: 6 }; const ARM = [98, 94]; const LEG = [93, 93];
+  // v1.9 natural blinks: every 2.2-5.6 s (irregular), 70 ms close + 110 ms open, ~1 in 5 is a double blink.
+  function blinkAt(t) {
+    const hs = (n) => { const x = Math.sin(n * 91.7 + 17.3) * 43758.5453; return x - Math.floor(x); };
+    let at = 0.8; let k = 0; while (at + 6 < t && k < 4000) { at += 2.2 + hs(k) * 3.4; k++; }
+    for (let j = 0; j < 3; j++) { const st = at; const dbl = hs(k + 500) < 0.2; const one = (d) => (d < 0 ? 1 : d < 0.07 ? 1 - d / 0.07 : d < 0.18 ? (d - 0.07) / 0.11 : 1);
+      const v = Math.min(one(t - st), dbl ? one(t - st - 0.24) : 1); if (v < 1) return Math.max(0.05, v); at += 2.2 + hs(k) * 3.4; k++; }
+    return 1;
+  }
   function poseSpec(pose, t, o) {
     const sp = {
       hipY: 0, tilt: 0, headTilt: 0, headDx: 0, headDy: 0, facing: 0,
@@ -215,18 +232,19 @@
         sp.look = { x: 0.1, y: 0.75 }; sp.holding = 'phone'; break;
       }
       case 'walking': case 'running': {
-        const run = pose === 'running'; const p = t * TAU * (run ? 2.3 : 1.5); const amp = run ? 92 : 58;
-        sp.facing = o && o.facing ? o.facing : 1; sp.tilt = run ? 0.14 * sp.facing : 0.03 * sp.facing; sp.hipY = -Math.abs(Math.sin(p)) * (run ? 20 : 9);
-        sp.legL = { x: Math.sin(p) * amp * sp.facing, y: 190 - Math.max(0, Math.cos(p)) * (run ? 60 : 22), bend: -sp.facing };
-        sp.legR = { x: Math.sin(p + Math.PI) * amp * sp.facing, y: 190 - Math.max(0, Math.cos(p + Math.PI)) * (run ? 60 : 22), bend: -sp.facing };
-        if (run) {
-          sp.armL = { x: 10 + Math.sin(p + Math.PI) * 70 * sp.facing, y: -96 - Math.max(0, Math.sin(p + Math.PI) * sp.facing) * 30, bend: sp.facing };
-          sp.armR = { x: -10 + Math.sin(p) * 70 * sp.facing, y: -96 - Math.max(0, Math.sin(p) * sp.facing) * 30, bend: sp.facing };
-        } else {
-          sp.armL = { x: -14 + Math.sin(p + Math.PI) * 60 * sp.facing, y: -12, bend: sp.facing };
-          sp.armR = { x: 14 + Math.sin(p) * 60 * sp.facing, y: -12, bend: sp.facing };
-        }
-        sp.look = { x: 0.8 * sp.facing, y: 0 }; break;
+        // v1.9 gait: planted stance foot travels back at constant speed (no foot sliding), swing foot arcs forward with ease,
+        // hips dip at each contact (2 bobs per cycle), arms swing opposite the legs with a soft elbow, slight forward lean.
+        const run = pose === 'running'; const u = (t * (run ? 2.3 : 1.15)) % 1; const amp = run ? 88 : 56; const lift = run ? 64 : 30; const duty = run ? 0.42 : 0.6;
+        sp.facing = o && o.facing ? o.facing : 1; const fc = sp.facing;
+        const foot = (ph) => { ph = ((ph % 1) + 1) % 1; if (ph < duty) { const k = ph / duty; return { x: (1 - 2 * k) * amp, y: 190 }; } const k = (ph - duty) / (1 - duty); const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; return { x: (-1 + 2 * e) * amp, y: 190 - Math.sin(k * Math.PI) * lift }; };
+        const fL = foot(u); const fR = foot(u + 0.5);
+        sp.legL = { x: fL.x * fc, y: fL.y, bend: -fc }; sp.legR = { x: fR.x * fc, y: fR.y, bend: -fc };
+        sp.hipY = -(0.5 - 0.5 * Math.cos(u * TAU * 2)) * (run ? 18 : 8); sp.tilt = (run ? 0.13 : 0.045) * fc + Math.sin(u * TAU * 2) * 0.008;
+        const swing = (ph) => Math.cos(ph * TAU); const aa = run ? 62 : 46;
+        sp.armL = { x: (-30 + swing(u + 0.5) * aa) * fc - 14, y: run ? -110 + Math.max(0, swing(u + 0.5)) * -26 : -18 - Math.max(0, swing(u + 0.5)) * 14, bend: fc };
+        sp.armR = { x: (30 + swing(u) * aa) * fc + 14, y: run ? -110 + Math.max(0, swing(u)) * -26 : -18 - Math.max(0, swing(u)) * 14, bend: fc };
+        if (!run) [[sp.armL, -1], [sp.armR, 1]].forEach(([A, sd]) => { A.el = { x: (A.x + sd * 60) / 2 + sd * 6, y: -96 }; }); // elbows hang under the shoulders, slightly bent
+        sp.headDy = Math.sin(u * TAU * 2) * 2; sp.look = { x: 0.8 * fc, y: 0 }; break;
       }
       case 'meditating': {
         sp.lotus = true; sp.hipY = -16 + Math.sin(t * 1.3) * 12; sp.breathe = 2.2;
@@ -235,6 +253,8 @@
       }
       default: if (VTS.sceneExt && VTS.sceneExt.pose) VTS.sceneExt.pose(pose, sp, t, o); break;
     }
+    // v1.9 idle life: slow head drift + tiny weight shift so nobody stands frozen between gestures
+    if (!['sleeping', 'lying-awake'].includes(pose)) { sp.headTilt += Math.sin(t * 0.83 + 1.1) * 0.022 + Math.sin(t * 1.97) * 0.008; sp.headDx += Math.sin(t * 0.61) * 3; sp.headDy += Math.sin(t * 1.7 + 0.4) * 1.5; }
     return sp;
   }
 
@@ -277,6 +297,24 @@
     return f;
   }
 
+  // v1.11.2: more people - the second character dresses for the place / who the line is about
+  const CAST = [
+    { skin: '#e8b996', skinS: '#cc9a76', hair: '#5a5a66', top: '#2b3a67', pants: '#1f2433', shoe: '#1b1b22', long: false }, // 10 boss (suit, grey hair)
+    { skin: '#c68b62', skinS: '#a86f4b', hair: '#1b1416', top: '#f4f7ff', pants: '#3a6fd8', shoe: '#ffffff', long: true }, // 11 doctor (white coat)
+    { skin: '#f1c7a3', skinS: '#d8a683', hair: '#e8b04a', top: '#ff2bd6', pants: '#2a1a5e', shoe: '#ffffff', long: true }, // 12 party friend
+    { skin: '#8d5a3b', skinS: '#734429', hair: '#120c0e', top: '#1f1f2e', pants: '#1f1f2e', shoe: '#2b2b33', long: false }, // 13 bartender (black)
+    { skin: '#f3c6a0', skinS: '#dea27c', hair: '#8a3b1c', top: '#e63946', pants: '#2f3e57', shoe: '#f6f2ea', long: true }, // 14 date (red)
+    { skin: '#d9a47e', skinS: '#bb8560', hair: '#b8b8c2', top: '#7c9a5c', pants: '#5a4a3a', shoe: '#3b2f28', long: true }, // 15 parent (cardigan, greying)
+    { skin: '#b37a52', skinS: '#94603c', hair: '#2a1d14', top: '#22c55e', pants: '#2f3e57', shoe: '#ffffff', long: false }, // 16 cashier (green apron)
+    { skin: '#f0c19c', skinS: '#d4a07a', hair: '#2b1d3a', top: '#00b4d8', pants: '#3b2f6b', shoe: '#ffd000', long: false }, // 17 friend (cyan hoodie)
+    { skin: '#7a4a2e', skinS: '#603620', hair: '#0f0a0c', top: '#ffaa00', pants: '#24305e', shoe: '#ffffff', long: true }, // 18 classmate (gold)
+    { skin: '#e9b48e', skinS: '#cf9670', hair: '#3a2a20', top: '#6c4cff', pants: '#1f2433', shoe: '#ffffff', long: false }, // 19 therapist (purple)
+  ];
+  const ROLES = { boss: 10, doctor: 11, 'party-friend': 12, bartender: 13, date: 14, parent: 15, cashier: 16, friend: 17, classmate: 18, therapist: 19 };
+  const SET_ROLE = { office: 'boss', hospital: 'doctor', party: 'party-friend', concert: 'party-friend', bar: 'bartender', restaurant: 'date', cafe: 'date', 'living-room': 'parent', kitchen: 'parent', shop: 'cashier', supermarket: 'cashier', bank: 'cashier', classroom: 'classmate', 'school-yard': 'classmate', therapist: 'therapist', street: 'friend', park: 'friend' };
+  const WORD_ROLE = [[/\b(boss|manager|ceo|coworker|colleague)\b/i, 'boss'], [/\b(doctor|nurse|dentist)\b/i, 'doctor'], [/\b(mom|mum|dad|mother|father|parents?)\b/i, 'parent'], [/\b(date|crush|girlfriend|boyfriend|partner|ex)\b/i, 'date'], [/\b(cashier|clerk)\b/i, 'cashier'], [/\b(bartender)\b/i, 'bartender'], [/\b(therapist|counsell?or)\b/i, 'therapist'], [/\b(friend|bestie|buddy)\b/i, 'friend']];
+  VTS.castRole = (scene, text) => { if (scene && scene.role) return scene.role; for (const [re, r] of WORD_ROLE) if (re.test(String(text || ''))) return r; return (scene && SET_ROLE[scene.setting]) || ''; };
+
   // ======================= stage (drawing) =======================
   class Stage {
     constructor() { this.colCache = new Map(); this.bgCache = new Map(); this.setPreset('teal'); this.amb = null; this.lw = 7; }
@@ -287,6 +325,10 @@
       const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
       c = [l + (c[0] - l) * a.sat, l + (c[1] - l) * a.sat, l + (c[2] - l) * a.sat];
       if (this.pid === 'mono') c = c.map((v) => 128 + (v - 128) * 1.12);
+      if (a.deep) { // push pale/neutral surfaces (walls, floors, shelves) toward deep blue; keep saturated colours bright
+        const mx = Math.max(c[0], c[1], c[2]); const mn = Math.min(c[0], c[1], c[2]); const chroma = (mx - mn) / 255; const k = (1 - Math.min(1, chroma * 6)) * a.deep; const dc = a.deepCol || [14, 24, 70];
+        const L = (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]) / 255; c = mixRgb(c, [dc[0] + 40 * L, dc[1] + 56 * L, dc[2] + 110 * L], k * 0.9);
+      }
       return c;
     }
     // Lit colour (scene ambient + grade) and emissive colour (grade only).
@@ -297,6 +339,15 @@
     get OL() { return this.c('#1d2034'); }
     // fill + outline helper for the current path
     fs(ctx, fill, lw) { ctx.fillStyle = fill; ctx.fill(); if (lw !== 0) { ctx.lineWidth = lw || this.lw; ctx.strokeStyle = this.OL; ctx.lineJoin = 'round'; ctx.stroke(); } }
+    // v1.9 mitten hand aligned with the forearm (wrist follows the arm, thumb on the inner/up side) instead of a bare ball.
+    hand(ctx, el, A, side, pal) {
+      const ang = Math.atan2(A.y - el[1], A.x - el[0]);
+      ctx.save(); ctx.translate(A.x, A.y); ctx.rotate(ang);
+      ctx.beginPath(); ctx.ellipse(6, 0, 24, 20, 0, 0, TAU); this.fs(ctx, pal.skin);
+      const th = -side * (Math.cos(ang) >= 0 ? 1 : -1); // thumb toward the body midline
+      ctx.beginPath(); ctx.ellipse(2, th * 17, 11, 7, th * -0.5, 0, TAU); this.fs(ctx, pal.skin);
+      ctx.restore();
+    }
     limb(ctx, pts, w, color) {
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
@@ -308,7 +359,8 @@
       try { return this.pal2(variant, a); } finally { this.amb = amb0; }
     }
     pal2(variant, a) {
-      const v = variant === 1
+      if (variant === 1 && this.role && ROLES[this.role]) variant = ROLES[this.role];
+      const v = variant >= 10 && CAST[variant - 10] ? CAST[variant - 10] : variant === 1
         ? { skin: '#c68b62', skinS: '#a86f4b', hair: '#231a1c', top: a.accent2, pants: '#4a3d63', shoe: '#2b2b33', long: true }
         : variant === 6 ? { skin: '#e9b48e', skinS: '#cf9670', hair: '#c4682b', top: '#6fbf73', pants: '#3b4a5c', shoe: '#f6f2ea', long: false } // v1.6 background extra
         : variant === 7 ? { skin: '#8d5a3b', skinS: '#734429', hair: '#1b1416', top: '#f2a541', pants: '#2f3e57', shoe: '#ffffff', long: true }
@@ -320,7 +372,7 @@
     head(ctx, pal, face, t, o) {
       const f = o.facing || 0; const fx = f * 24; const lw = this.lw; const OL = this.OL;
       if (pal.headBehind) pal.headBehind(ctx, this, face, t, f);
-      const blinkT = (t + (o.seed || 0) * 1.7) % 3.6; const blink = face.eyes === 'closed' || face.eyes === 'happy' ? 1 : (blinkT < 0.14 ? Math.abs(Math.cos(blinkT / 0.14 * Math.PI)) : 1);
+      const blink = face.eyes === 'closed' || face.eyes === 'happy' ? 1 : blinkAt(t + (o.seed || 0) * 1.7);
       if (pal.headShape) pal.headShape(ctx, this, face, t, f); else {
       if (pal.long) { ctx.beginPath(); ctx.moveTo(-104, -20); ctx.bezierCurveTo(-112, 60, -100, 118, -70, 126); ctx.lineTo(70, 126); ctx.bezierCurveTo(100, 118, 112, 60, 104, -20); ctx.closePath(); this.fs(ctx, pal.hair); }
       // ears
@@ -407,8 +459,8 @@
       const dark = this.c('#6d2430');
       ctx.lineWidth = 5.5; ctx.strokeStyle = OL; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       if (m === 'talk') {
-        const open = this._mouthOpen != null ? this._mouthOpen : 4 + 13 * Math.abs(noise(t * 7, 2)); const happy = face.mouth === 'grin' || face.mouth === 'smile';
-        ctx.beginPath(); if (happy) { ctx.moveTo(-18, -4); ctx.quadraticCurveTo(0, open * 2.2, 18, -4); ctx.closePath(); } else ctx.ellipse(0, 2, 15, open, 0, 0, TAU);
+        const open = this._mouthOpen != null ? this._mouthOpen : 4 + 13 * Math.abs(noise(t * 7, 2)); const happy = face.mouth === 'grin' || face.mouth === 'smile'; const mw = this._mouthWide || 1;
+        ctx.beginPath(); if (happy) { ctx.moveTo(-18, -4); ctx.quadraticCurveTo(0, open * 2.2, 18, -4); ctx.closePath(); } else if (open < 2.2) { ctx.moveTo(-14 * mw, 2); ctx.quadraticCurveTo(0, 4, 14 * mw, 2); } else ctx.ellipse(0, 2, 15 * mw, open, 0, 0, TAU);
         ctx.fillStyle = dark; ctx.fill(); ctx.stroke();
       } else if (m === 'grin') {
         ctx.beginPath(); ctx.moveTo(-27, -6); ctx.quadraticCurveTo(0, 42, 27, -6); ctx.closePath(); ctx.fillStyle = dark; ctx.fill();
@@ -509,9 +561,9 @@
       ctx.rotate(sp.tilt);
       const arm = (A, side) => {
         const sx = side * SH.x * tw; const sy = SH.y * br;
-        const el = A.el ? [A.el.x, A.el.y] : ik(sx, sy, A.x, A.y, ARM[0], ARM[1], A.bend);
+        const el = A.el ? [A.el.x, A.el.y] : naturalElbow(sx, sy, A.x, A.y, side);
         this.limb(ctx, [sx, sy, el[0], el[1], A.x, A.y], 40, pal.top);
-        ctx.beginPath(); ctx.arc(A.x, A.y, 21, 0, TAU); this.fs(ctx, pal.skin);
+        this.hand(ctx, el, A, side, pal);
       };
       const phoneInHand = () => {
         if (sp.holding !== 'phone' && !o.phone) return;
@@ -1248,7 +1300,7 @@
     // Draw one moment of a shot. sh: { scene, lt, t, dur, s, propAge(name), poseAge, calloutAge, img }
     drawShot(ctx, sh) {
       if (this.draw3d) return this.draw3d(ctx, sh); // v1.5: 3D style (three3d.js)
-      const scene = sh.scene; const setting = scene.setting; this.s = sh.s || 1;
+      const scene = sh.scene; const setting = scene.setting; this.s = sh.s || 1; this.role = VTS.castRole(scene, sh.text || (sh.beat && sh.beat.text) || scene.text);
       this.amb = AMBIENT[setting] || null;
       const kind = this.kindFor(setting, scene.pose); const L = this.layout(setting, kind, scene);
       const t = sh.t; const lt = sh.lt;
@@ -1357,5 +1409,5 @@
     return who + ', pose: ' + lab(POSES, scene.pose) + ', feeling ' + scene.emotion + ', setting: ' + lab(SETTINGS, scene.setting) + (scene.props.length ? ', with ' + scene.props.map((p) => lab(PROPS, p)).join(', ') : '');
   }
 
-  VTS.scenes = { SETTINGS, POSES, EMOTIONS, PROPS, CAMERAS, TRANSITIONS, SET_IDS, POSE_IDS, EMO_IDS, PROP_IDS, CAM_IDS, normalizeScene, inferScene, sceneKey, Stage, drawPreview, describe, ART, easeInOut, easeOut };
+  VTS.scenes = { SETTINGS, POSES, EMOTIONS, PROPS, CAMERAS, TRANSITIONS, SET_IDS, POSE_IDS, EMO_IDS, PROP_IDS, CAM_IDS, normalizeScene, inferScene, sceneKey, Stage, drawPreview, describe, ART, easeInOut, easeOut, poseSpec, blinkAt };
 }());

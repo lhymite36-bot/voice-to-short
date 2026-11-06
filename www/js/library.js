@@ -79,6 +79,8 @@
   addProps('sports', 'football:American football:1f3c8:spin; baseball:Baseball:26be:spin; ping-pong:Ping pong:1f3d3:bounce; goal:Goal net:1f945:bob; gamepad:Game controller:1f3ae:shake; joystick:Joystick:1f579:tilt; chess:Chess:265f:bob; dart:Bullseye:1f3af:pulse; flag:Chequered flag:1f3c1:swing; mountain-top:Summit flag:1f6a9:swing');
   // v1.4 hand-drawn psychology topic props (drawn in comedy.js)
   addProps('psych', 'social-battery:Social battery::pulse; anxiety-meter:Anxiety meter::shake; overthink-yarn:Overthinking tangle::spin0; dopamine-meter:Dopamine meter::pulse; burnout-match:Burnt-out match::bob; people-pleaser:People-pleaser sign::bounce; red-flag:Red flag::swing; green-flag:Green flag::swing; attachment-hearts:Attachment hearts::pulse; habit-tracker:Habit tracker::bob; motivation-fuel:Motivation fuel gauge::bob; discipline-streak:Streak flame::pulse; self-care:Self-care kit::bob; exam-f:Failed exam::tilt; sleep-debt:Sleep debt::bob; screen-time:Screen time::bob; notif-badge:Notification badge::bounce; brain-loading:Brain loading::bob; tomorrow-calendar:"Tomorrow" calendar::bob; money-burn:Burning money::bob; boundary-wall:Boundary wall::bob; therapy-couch:Therapy couch::bob; inner-critic:Inner critic::shake; comfort-zone:Comfort zone::pulse; confidence-meter:Confidence meter::pulse; cortisol-alarm:Cortisol alarm::shake');
+  // v1.11.2: everyday-life / social / nightlife / travel pack
+  addProps('v112', 'lipstick:Lipstick:1f484:tilt; mirror:Mirror:1fa9e:bob; beer:Beer:1f37a:tilt; cocktail:Cocktail:1f378:tilt; champagne:Champagne:1f37e:pop; cigarette:Cigarette:1f6ac:bob; alarm-clock:Alarm clock:23f0:shake; battery-full:Full battery:1f50b:pulse; low-battery:Low battery:1faab:shake; wifi:Wi-Fi:1f6dc:pulse; diploma:Diploma:1f4dc:bob; old-key:House key:1f5dd:swing; baby-bottle:Baby bottle:1f37c:tilt; hoodie:Coat / hoodie:1f9e5:bob; handbag:Handbag:1f45c:swing; high-heel:High heel:1f460:bob; megaphone:Megaphone:1f4e3:shake; newspaper:Newspaper:1f4f0:bob; popcorn:Popcorn:1f37f:bounce; clapper:Movie clapper:1f3ac:pop; disco-ball:Disco ball:1faa9:spin; confetti-ball:Confetti ball:1f38a:pop; bouquet:Bouquet:1f490:tilt; like-heart:Like heart:2764:pulse; comment:Comment bubble:1f4ac:bounce; incoming-text:Incoming message:1f4f2:shake; ambulance:Ambulance:1f691:bob; face-mask:Face mask:1f637:bob; sushi:Sushi:1f363:bob; taco:Taco:1f32e:bob; hotel:Hotel:1f3e8:bob; takeoff:Plane taking off:1f6eb:fly; bomb:Bomb:1f4a3:shake; ghost:Ghost:1f47b:float; skull:Skull:1f480:bob; clown:Clown:1f921:bounce; justice-scale:Scales:2696:tilt; t-shirt:T-shirt:1f455:swing');
   // v1.6: car radio (hand-drawn, turns down), more vehicles, outdoor bits
   addProps('v16', 'car-radio:Car radio (volume knob)::bob; scooter:Scooter:1f6f5:bob; motorbike:Motorbike:1f3cd:bob; umbrella:Umbrella:2602:swing; traffic-light:Traffic light:1f6a6:blink; bus-stop-sign:Bus stop sign:1f68f:bob; beach-umbrella:Beach umbrella:1f3d6:bob; sunglasses:Sunglasses:1f576:bob');
   // legacy (hand-drawn in scenes.js) props get a category + label here too
@@ -95,6 +97,8 @@
     // v1.6
     ['hallway', 'Hallway / corridor'], ['car-interior', 'Car (inside, driving)'], ['beach', 'Beach'], ['rooftop-night', 'City rooftop · night'], ['bus-stop', 'Bus stop'], ['supermarket', 'Supermarket aisle'],
     ['mountain-trail', 'Mountain trail'], ['rainy-street', 'Rainy city street'], ['school-yard', 'School yard'], ['train-platform', 'Train / subway platform'],
+    // v1.11.2
+    ['party', 'House party / club'], ['bar', 'Bar / pub'], ['restaurant', 'Restaurant booth'], ['hospital', 'Hospital waiting room'], ['airport', 'Airport gate'], ['airplane', 'Airplane cabin'], ['therapist', 'Therapist office'], ['bank', 'Bank counter'], ['concert', 'Concert / crowd'], ['garage', 'Garage / driveway'],
     ['keyword-card', 'Keyword icon card']];
   NEW_SETTINGS.forEach(([id, l]) => { if (!S.SET_IDS.includes(id)) { S.SETTINGS.push([id, l]); S.SET_IDS.push(id); } });
   const DESKY = { office: 1352, classroom: 1375, cafe: 1392, library: 1380, 'art-studio': 1380, kitchen: 1360, shop: 1370 };
@@ -234,6 +238,29 @@
 wave,waving,waved,wave back,waved back|a=waving|p=wave-hand|w=3.2
 steps away,walking toward,walk toward,coming toward,someone you know,bump into,run into|a=walking-toward|s=hallway|w=3.3
 hallway,corridor,hall,locker,lockers|s=hallway|w=2.8
+bar,pub,drinks,drinking,beer,cocktail,bartender,hangover,tipsy,drunk|p=beer,cocktail|s=bar|w=3
+date,first date,dinner date,restaurant,dinner,waiter,menu,booth|p=bouquet,fork-knife|s=restaurant|w=3
+airport,flight,gate,boarding,departure,layover,passport|p=takeoff,luggage,ticket|s=airport|w=3.1
+plane,airplane,on a plane,flying,turbulence,window seat|p=airplane|s=airplane|w=3
+concert,festival,gig,crowd,stage fright,band,live music|p=music-notes,megaphone|s=concert|w=3
+garage,driveway,car keys,mechanic,repair,fixing|p=old-key,wrench|s=garage|w=2.9
+alarm,snooze,wake up,woke up,alarm clock|p=alarm-clock|w=2.8
+phone battery,battery,charging,charger,dead phone|p=low-battery,plug|w=2.8
+wifi,wi-fi,internet,signal,offline|p=wifi|w=2.7
+mirror,reflection,makeup,lipstick,looks,appearance,self-image|p=mirror,lipstick|s=bathroom|w=3
+smoke,smoking,cigarette,cigarettes,vape,vaping,nicotine|p=cigarette|w=3
+baby,newborn,parenting,parent,toddler|p=baby-bottle,teddy|s=living-room|w=2.8
+movie,movies,netflix,film,binge,binge-watch|p=popcorn,clapper,tv|s=living-room|w=2.8
+news,newspaper,headline,headlines|p=newspaper|w=2.6
+fear,scary,haunted,ghosting,ghosted|p=ghost|w=2.7
+fake,clown,embarrass,embarrassing,cringe|p=clown|w=2.6
+explode,exploded,blow up,blew up,meltdown|p=bomb|w=2.7
+fashion,clothes,outfit,shirt,dress|p=t-shirt,handbag,high-heel|s=shop|w=2.7
+hotel,vacation,holiday,trip|p=hotel,luggage|w=2.6
+sushi,japanese food|p=sushi|w=3
+taco,tacos,mexican food|p=taco|w=3
+champagne,celebrate,celebration,cheers,toast|p=champagne,confetti-ball|w=2.7
+boss,manager,promotion,fired,performance review|s=office|w=2.6
 car music,car radio,music down,turn the music down,turned the music down|a=driving|p=car-radio|s=car-interior|w=3.3
 drive,driving,drove,driver,steering,steering wheel,windshield,dashboard|a=driving|s=car-interior|w=3.1
 radio,volume,turn down,turned down,turn the music down|p=car-radio|s=car-interior|w=2.9
@@ -279,8 +306,9 @@ screen time,screentime,phone addiction,addicted,addiction|p=screen-time|w=3
 notification,notifications,unread,texts,texting|p=notif-badge|w=2.6
 procrastinate,procrastinating,procrastination,procrastinator,tomorrow,putting off|p=tomorrow-calendar|w=3.2
 impulse buy,impulse buying,spending,broke,online shopping|p=money-burn|w=2.8
+impulse buy,impulse buying,shopping spree,add to cart,checkout,bought it|a=shopping|p=shopping-bags,credit-card,receipt|s=shop|w=3.4
 boundary,boundaries|p=boundary-wall|w=3.2
-therapy,therapist,therapists,counsellor,counselor|p=therapy-couch|w=3
+therapy,therapist,therapists,counsellor,counselor,psychologist|p=therapy-couch,diploma|s=therapist|w=3.2
 inner critic,self-talk,negative self-talk,imposter,impostor|p=inner-critic|w=3
 comfort zone|p=comfort-zone|w=3.2
 confidence,confident,insecure,insecurity,self-esteem|p=confidence-meter|w=2.8
@@ -303,7 +331,7 @@ eat,eating,food,snack,hungry,diet,nutrition|a=eating|p=plate,fork-knife|s=kitche
 water,hydrate,hydration,thirsty,drink|a=drinking-water|p=glass-water,water-drop|w=2.5
 coffee,caffeine,espresso,latte,tea|a=drinking-coffee|p=coffee|s=cafe|w=2.5
 exercise,workout,fitness,training,cardio,sweat|a=exercising|p=sneaker,stopwatch|s=gym|w=2.5
-gym,lift,weight,weights,dumbbell,strength,muscle,strong|a=lifting|p=dumbbell,biceps|s=gym|w=2.5
+gym,lift,weight,weights,dumbbell,strength,muscle,strong,workout,gym rat|a=lifting|p=dumbbell,biceps,water-bottle|s=gym|w=2.8
 run,running,jog,jogging,marathon,sprint|a=running|p=sneaker|s=park|w=2.5
 yoga|a=yoga|p=yoga-mat|w=3
 stretch,stretching,flexible,posture|a=stretching|w=2.5
@@ -327,6 +355,8 @@ invest,investing,investment,stock,stocks,compound|p=chart-up,money-bag|s=office|
 debt,loan,broke|p=money-wings,chains|w=2.5
 phone,call,calling,ring|a=talking-phone|p=phone|w=2
 text,texting,message,chat,dm,reply|a=texting|p=speech-bubbles|w=2.5
+anxiety texting,left on read,double text,no reply,texted back,typing bubble|a=texting|p=incoming-text,comment|s=bedroom-night|w=3.5
+likes,like,liked,followers,comments,instagram,tiktok,posted|p=like-heart,comment,notif-badge|w=2.6
 scroll,scrolling,social,instagram,tiktok,feed,notification,screen,doomscroll|a=scrolling-phone|p=phone|s=phone-screen|w=2.5
 hug,hugging,embrace,cuddle|a=hugging|p=heart|w=3
 argue,arguing,argument,fight,conflict|a=arguing|p=anger,speech-bubbles|w=3
@@ -358,6 +388,7 @@ fear,scared,afraid|p=scared-face|w=2
 angry,anger,mad,frustrated|p=anger|w=2
 heart,kind,kindness,care,compassion|p=heart|w=1.5
 doctor,health,healthy,medicine,sick,ill,hospital|p=stethoscope,pill|w=2
+hospital,clinic,emergency room,er,waiting room,appointment,diagnosis,nurse|p=stethoscope,ambulance,face-mask|s=hospital|w=3.1
 pill,medication,vitamin,supplement|p=pill|w=2.5
 teeth,tooth,dentist,brush-teeth|p=toothbrush,tooth|w=2.5
 home,house,room,apartment|p=house|s=living-room|w=1.5
@@ -371,7 +402,8 @@ rocket,launch,grow,growth,progress,improve,better|p=chart-up,rocket|w=1.2
 fail,failure,mistake,wrong|p=cross,chart-down|w=1.5
 check,correct,right,done,finish,complete|p=check|w=1
 gift,present,birthday|p=gift|w=1.5
-party|p=party-popper,confetti|w=2
+party,parties,club,clubbing,nightclub,dance floor,rave|p=party-popper,disco-ball,confetti-ball|s=party|w=3
+social battery,introvert,introverts,drained after|p=social-battery,low-battery|s=party|w=3.4
 movie,film,tv,television,netflix,watch|p=tv|s=living-room|w=2
 ball,soccer,football|p=soccer|w=2.5
 basketball|p=basketball|w=3
@@ -386,7 +418,7 @@ sugar,candy,sweet,dessert|p=candy,donut|w=2.5
 cake|p=cake|w=3
 bread|p=bread|w=3
 coin,coins|p=coin|w=2.5
-bank|p=bank|w=2.5
+bank,loan,bank account,overdraft,debt|p=bank,justice-scale|s=bank|w=2.9
 calculator,calculate,math,maths,numbers|p=calculator,abacus|w=2.5
 lock,secure,security,password,privacy|p=lock,key|w=2
 key,unlock|p=key|w=2
@@ -1077,7 +1109,8 @@ alarm|p=alarm|w=3
 
   // ======================= v1.6 scene pack: new places, multi-character staging, vehicles, car interior, weather =======================
   const OUT16 = new Set(['street', 'park', 'beach', 'rooftop-night', 'bus-stop', 'mountain-trail', 'rainy-street', 'school-yard', 'train-platform']);
-  const V16SET = new Set(['hallway', 'car-interior', 'beach', 'rooftop-night', 'bus-stop', 'supermarket', 'mountain-trail', 'rainy-street', 'school-yard', 'train-platform']);
+  const V112SET = new Set(['party', 'bar', 'restaurant', 'hospital', 'airport', 'airplane', 'therapist', 'bank', 'concert', 'garage']);
+  const V16SET = new Set(['party', 'bar', 'restaurant', 'hospital', 'airport', 'airplane', 'therapist', 'bank', 'concert', 'garage', 'hallway', 'car-interior', 'beach', 'rooftop-night', 'bus-stop', 'supermarket', 'mountain-trail', 'rainy-street', 'school-yard', 'train-platform']);
   const VEH16 = new Set(['car', 'taxi', 'bus', 'bicycle', 'scooter', 'motorbike', 'train']);
   const WEATHER = [['', 'Auto (matches the mood)'], ['none', 'None'], ['rain', 'Rain'], ['storm', 'Storm + lightning'], ['sun', 'Bright sun'], ['snow', 'Snow'], ['fog', 'Fog'], ['wind', 'Wind + leaves'], ['overcast', 'Overcast clouds'], ['sunset', 'Sunset · golden hour'], ['stars', 'Night stars']];
   const WEATHER_IDS = WEATHER.map((x) => x[0]).filter(Boolean);
@@ -1321,6 +1354,88 @@ alarm|p=alarm|w=3
         ground(1460, '#cfd4dc', '#b8bec9'); ctx.fillStyle = e('#ffd23f'); ctx.fillRect(0, 1480, W, 26);
         break;
       }
+
+      // ---------- v1.11.2 places ----------
+      case 'party': case 'concert': {
+        const club = setting === 'party';
+        ctx.fillStyle = vg(ctx, 0, 1300, [[0, e(club ? '#2a0a5e' : '#0b0a3a')], [1, e(club ? '#5b1196' : '#3a0f6e')]]); ctx.fillRect(0, 0, W, 1300);
+        if (club) { for (let k = 0; k < 14; k++) { ctx.beginPath(); ctx.arc(40 + k * 78, 200 + Math.sin(k * 0.9) * 40, 13, 0, TAU); fs(e(['#ffd000', '#ff2bd6', '#00e5ff', '#7cff5a'][k % 4]), 3); }
+          ctx.beginPath(); ctx.arc(540, 360, 90, 0, TAU); fs(e('#d9dcff'), 6); ctx.strokeStyle = st.ca('#4a4f80', 0.6); ctx.lineWidth = 3; for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(450, 360 + k * 34); ctx.lineTo(630, 360 + k * 34); ctx.stroke(); ctx.beginPath(); ctx.moveTo(540 + k * 34, 270); ctx.lineTo(540 + k * 34, 450); ctx.stroke(); }
+          ctx.beginPath(); ctx.rect(536, 0, 8, 270); fs(c('#20203a'), 0);
+          [[60, 760], [900, 760]].forEach(([x, y]) => { rr(ctx, x, y, 140, 520, 16); fs(c('#1c1830'), 6); [y + 120, y + 340].forEach((yy) => { ctx.beginPath(); ctx.arc(x + 70, yy, 52, 0, TAU); fs(c('#3a3358'), 5); ctx.beginPath(); ctx.arc(x + 70, yy, 20, 0, TAU); fs(e('#ff2bd6'), 4); }); });
+          ground(1300, '#2b1050', '#14082c'); for (let x = 0; x < W; x += 180) for (let y = 1320; y < 1920; y += 150) { ctx.fillStyle = st.ea(['#ff2bd6', '#00e5ff', '#ffd000'][((x / 180) + (y / 150)) % 3 | 0], 0.18); ctx.fillRect(x + 6, y, 168, 140); }
+        } else { rr(ctx, 60, 300, 960, 620, 20); fs(c('#120c2e'), 6); ctx.fillStyle = c('#2c2350'); ctx.fillRect(0, 920, W, 90); for (let k = 0; k < 8; k++) { ctx.beginPath(); ctx.arc(110 + k * 123, 250, 26, 0, TAU); fs(e(['#ffd000', '#ff2bd6', '#00e5ff'][k % 3]), 5); }
+          ground(1010, '#1b1240', '#0d0a24');
+          for (let r = 0; r < 3; r++) for (let k = 0; k < 9; k++) { const x = k * 130 + (r % 2) * 60 - 20; const y = 1720 + r * 90; ctx.beginPath(); ctx.arc(x, y - 70, 46, 0, TAU); ctx.rect(x - 60, y - 30, 120, 200); fs(c(['#1d1840', '#26205a', '#151236'][r]), 0); } }
+        break;
+      }
+      case 'bar': {
+        ctx.fillStyle = vg(ctx, 0, 1300, [[0, c('#3a1f2e')], [1, c('#6a2f2a')]]); ctx.fillRect(0, 0, W, 1300);
+        [360, 560, 760].forEach((y) => { ctx.beginPath(); ctx.rect(60, y, 960, 22); fs(c('#8a5a34'), 5); for (let k = 0; k < 11; k++) { const x = 90 + k * 86; const h = 90 + hashN(k + y) * 60; rr(ctx, x, y - h, 44, h, 10); fs(e(['#2ee6a8', '#ffb000', '#ff4d6d', '#5ad1ff', '#b26bff'][(k + y / 200) % 5 | 0]), 4); } });
+        rr(ctx, 330, 120, 420, 130, 24); fs(c('#1b0f1a'), 6); ctx.font = '900 84px Montserrat, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = e('#ff2bd6'); ctx.fillText('OPEN', 540, 215);
+        ctx.beginPath(); ctx.rect(0, 1240, W, 70); fs(c('#a8673a'), 6); ctx.beginPath(); ctx.rect(0, 1310, W, 260); fs(c('#5a2e1c'), 6);
+        ground(1570, '#3a2018', '#24130e');
+        break;
+      }
+      case 'restaurant': {
+        ctx.fillStyle = vg(ctx, 0, 1300, [[0, c('#ffcf8a')], [1, c('#f0905a')]]); ctx.fillRect(0, 0, W, 1300);
+        [[120, 260], [640, 260]].forEach(([x, y]) => { rr(ctx, x, y, 320, 420, 160); fs(e('#3a2f7a'), 7); ctx.beginPath(); ctx.arc(x + 240, y + 120, 34, 0, TAU); fs(e('#fff2b0'), 0); for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.arc(x + 40 + k * 50, y + 360 - (k % 3) * 60, 6, 0, TAU); fs(e('#ffd000'), 0); } });
+        [270, 810].forEach((x) => { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 110); ctx.strokeStyle = OL; ctx.lineWidth = 6; ctx.stroke(); ctx.beginPath(); ctx.moveTo(x - 70, 190); ctx.quadraticCurveTo(x, 80, x + 70, 190); ctx.closePath(); fs(c('#1f8a70'), 6); });
+        rr(ctx, 40, 820, 1000, 380, 60); fs(c('#d7263d'), 7); ctx.strokeStyle = st.ca('#7a0f1f', 0.4); ctx.lineWidth = 5; for (let x = 140; x < 1000; x += 120) { ctx.beginPath(); ctx.moveTo(x, 860); ctx.lineTo(x, 1160); ctx.stroke(); }
+        ground(1300, '#7a3b26', '#4a2216');
+        break;
+      }
+      case 'hospital': {
+        ctx.fillStyle = vg(ctx, 0, 1300, [[0, c('#bff3e6')], [1, c('#7fd6c8')]]); ctx.fillRect(0, 0, W, 1300); ctx.fillStyle = c('#2fb7a6'); ctx.fillRect(0, 900, W, 40);
+        rr(ctx, 300, 160, 480, 130, 18); fs(c('#ffffff'), 6); ctx.font = '900 68px Montserrat, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = c('#0f6fbf'); ctx.fillText('WAITING', 540, 250);
+        ctx.beginPath(); ctx.rect(110, 340, 60, 180); ctx.rect(50, 400, 180, 60); fs(e('#ff3b5c'), 6);
+        ctx.beginPath(); ctx.arc(900, 440, 80, 0, TAU); fs(c('#ffffff'), 7); ctx.strokeStyle = OL; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(900, 440); ctx.lineTo(900, 385); ctx.moveTo(900, 440); ctx.lineTo(940, 460); ctx.stroke();
+        for (let k = 0; k < 6; k++) { rr(ctx, 40 + k * 172, 1020, 150, 150, 20); fs(c(k % 2 ? '#1e88e5' : '#ff8a00'), 6); rr(ctx, 40 + k * 172, 1150, 150, 50, 10); fs(c('#3b4a6b'), 5); }
+        ground(1300, '#e8f4f8', '#c4dce6');
+        break;
+      }
+      case 'airport': {
+        ctx.fillStyle = c('#3b4f8a'); ctx.fillRect(0, 0, W, 1300); rr(ctx, 40, 120, 1000, 760, 20); fs(vg(ctx, 120, 880, [[0, e('#ff9a3c')], [0.6, e('#ff4d8d')], [1, e('#6a3cff')]]), 7);
+        ctx.strokeStyle = OL; ctx.lineWidth = 8; [290, 540, 790].forEach((x) => { ctx.beginPath(); ctx.moveTo(x, 120); ctx.lineTo(x, 880); ctx.stroke(); });
+        ctx.fillStyle = c('#1d2040'); ctx.beginPath(); ctx.ellipse(560, 700, 260, 34, -0.12, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.moveTo(560, 700); ctx.lineTo(430, 600); ctx.lineTo(480, 600); ctx.lineTo(640, 690); ctx.fill(); ctx.beginPath(); ctx.moveTo(780, 670); ctx.lineTo(820, 590); ctx.lineTo(850, 600); ctx.lineTo(820, 680); ctx.fill();
+        rr(ctx, 620, 940, 400, 220, 14); fs(c('#111428'), 6); ctx.font = '800 36px Montserrat, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = e('#ffd000'); ctx.fillText('GATE 12  BOARDING', 640, 1010); ctx.fillStyle = e('#00e5ff'); ctx.fillText('GATE 14  DELAYED', 640, 1070); ctx.fillStyle = e('#7cff5a'); ctx.fillText('GATE 15  ON TIME', 640, 1130);
+        ground(1300, '#2f6fd6', '#1c3f8a'); for (let k = 0; k < 4; k++) { rr(ctx, 40 + k * 140, 1180, 120, 120, 16); fs(c('#e6e9f5'), 5); }
+        break;
+      }
+      case 'airplane': {
+        ctx.fillStyle = vg(ctx, 0, 1920, [[0, c('#eef0fb')], [1, c('#c9cde8')]]); ctx.fillRect(0, 0, W, 1920);
+        rr(ctx, 0, 120, W, 260, 40); fs(c('#d9dcef'), 6); for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.rect(30 + k * 270, 360, 240, 14); fs(c('#a3a8c8'), 3); }
+        [[80, 520], [880, 520]].forEach(([x, y]) => { ctx.beginPath(); ctx.ellipse(x + 60, y + 110, 70, 110, 0, 0, TAU); fs(vg(ctx, y, y + 220, [[0, e('#3ab0ff')], [1, e('#ffd27a')]]), 8); });
+        for (let r = 0; r < 2; r++) for (let k = 0; k < 2; k++) { const x = k ? 640 : 60; const y = 1040 + r * 260; rr(ctx, x, y, 380, 300, 50); fs(c(r ? '#1e3a8a' : '#2648b8'), 6); rr(ctx, x + 60, y - 30, 260, 70, 20); fs(c('#e8ecff'), 5); }
+        ctx.fillStyle = c('#5a3a7a'); ctx.fillRect(440, 1100, 200, 820);
+        break;
+      }
+      case 'therapist': {
+        ctx.fillStyle = vg(ctx, 0, 1300, [[0, c('#c9e4ff')], [1, c('#9fc6f0')]]); ctx.fillRect(0, 0, W, 1300);
+        ctx.beginPath(); ctx.rect(700, 200, 300, 700); fs(c('#8a5a34'), 6); for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.rect(700, 330 + k * 160, 300, 14); fs(c('#6a4024'), 3); for (let b = 0; b < 6; b++) { ctx.beginPath(); ctx.rect(716 + b * 46, 230 + k * 160 + (b % 2) * 14, 36, 100 - (b % 2) * 14); fs(c(['#ff6b6b', '#ffd000', '#2ec4b6', '#7c5cff'][(b + k) % 4]), 3); } }
+        rr(ctx, 160, 220, 300, 220, 10); fs(c('#ffd27a'), 7); rr(ctx, 190, 250, 240, 160, 6); fs(c('#fff8e1'), 4); ctx.font = '900 34px Montserrat, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = c('#7a4a1a'); ctx.fillText('Dr. PhD', 310, 340);
+        ctx.beginPath(); ctx.moveTo(80, 1240); ctx.lineTo(120, 1080); ctx.lineTo(180, 1240); fs(c('#c2410c'), 5); [[130, 980, 80], [90, 1040, 60], [170, 1030, 64]].forEach(([x, y, r]) => { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); fs(c('#22a35a'), 5); });
+        ground(1300, '#b07a52', '#8a5a3a'); ctx.beginPath(); ctx.ellipse(540, 1560, 420, 120, 0, 0, TAU); fs(c('#7c5cff'), 0);
+        break;
+      }
+      case 'bank': {
+        ctx.fillStyle = vg(ctx, 0, 1300, [[0, c('#f3ead2')], [1, c('#d6c39a')]]); ctx.fillRect(0, 0, W, 1300);
+        [120, 960].forEach((x) => { ctx.beginPath(); ctx.rect(x - 50, 200, 100, 1100); fs(c('#efe4c8'), 6); ctx.beginPath(); ctx.rect(x - 70, 170, 140, 40); fs(c('#d8c79c'), 5); });
+        rr(ctx, 280, 160, 520, 140, 16); fs(c('#0f5132'), 6); ctx.font = '900 92px Montserrat, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = e('#ffd000'); ctx.fillText('BANK', 540, 265);
+        for (let k = 0; k < 3; k++) { rr(ctx, 230 + k * 210, 420, 180, 420, 10); fs(e('#bfe8ff'), 6); }
+        ctx.beginPath(); ctx.rect(0, 860, W, 420); fs(c('#2f6b4f'), 7); ctx.beginPath(); ctx.rect(0, 860, W, 40); fs(c('#ffd000'), 5);
+        ground(1280, '#c9b48a', '#a8916a');
+        break;
+      }
+      case 'garage': {
+        ctx.fillStyle = vg(ctx, 0, 1300, [[0, c('#9fb3c8')], [1, c('#6f8299')]]); ctx.fillRect(0, 0, W, 1300);
+        rr(ctx, 80, 160, 520, 720, 10); fs(c('#e0e6ee'), 6); ctx.strokeStyle = st.ca('#7a8699', 0.7); ctx.lineWidth = 5; for (let y = 240; y < 880; y += 80) { ctx.beginPath(); ctx.moveTo(80, y); ctx.lineTo(600, y); ctx.stroke(); }
+        ctx.beginPath(); ctx.rect(660, 260, 360, 420); fs(c('#c98d5a'), 6); ctx.fillStyle = OL; for (let r = 0; r < 4; r++) for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.arc(690 + k * 60, 290 + r * 100, 5, 0, TAU); ctx.fill(); }
+        [[700, 300, '#ff3b30'], [800, 400, '#ffd000'], [900, 320, '#1e88e5'], [960, 500, '#22c55e']].forEach(([x, y, col]) => { rr(ctx, x, y, 34, 130, 8); fs(c(col), 4); });
+        ground(1300, '#5b6475', '#3e4554'); ctx.fillStyle = e('#ffd000'); for (let x = 0; x < W; x += 160) ctx.fillRect(x, 1600, 90, 18);
+        rr(ctx, -120, 960, 520, 300, 120); fs(c('#e63946'), 7); ctx.beginPath(); ctx.arc(80, 1270, 70, 0, TAU); fs(c('#1d1b2e'), 6);
+        break;
+      }
       default: break;
     }
   }
@@ -1342,11 +1457,12 @@ alarm|p=alarm|w=3
       ctx.beginPath(); ctx.moveTo(0, 1250 + Math.sin(lt * 1.3) * 10); for (let x = 0; x <= W; x += 60) ctx.lineTo(x, 1250 + Math.sin(lt * 1.3 + x * 0.01) * 12); ctx.lineTo(W, 1235); ctx.lineTo(0, 1235); ctx.closePath(); ctx.fillStyle = st.ea('#ffffff', 0.7); ctx.fill();
       ctx.strokeStyle = st.OL; ctx.lineWidth = 6; for (let k = 0; k < 3; k++) { const x = ((lt * 60 + k * 330) % 1300) - 100; const y = 520 + k * 70 + Math.sin(lt * 2 + k) * 20; const f = Math.sin(lt * 8 + k) * 12; ctx.beginPath(); ctx.moveTo(x - 30, y - f); ctx.quadraticCurveTo(x - 14, y - 16, x, y); ctx.quadraticCurveTo(x + 14, y - 16, x + 30, y - f); ctx.stroke(); } }
     else if (setting === 'rooftop-night') { for (let k = 0; k < 12; k++) { const x = 40 + k * 90; const y = 1180 + Math.sin(k * 0.6) * 30; ctx.beginPath(); ctx.arc(x, y, 12, 0, TAU); ctx.fillStyle = st.ea(['#ffd166', '#ff8fb3', '#7ef0c8'][k % 3], 0.5 + 0.5 * Math.abs(Math.sin(t * 2 + k))); ctx.fill(); } ctx.strokeStyle = st.ca('#1d2034', 0.6); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 1170); for (let k = 0; k < 12; k++) ctx.quadraticCurveTo(40 + k * 90 - 45, 1200, 40 + k * 90, 1180 + Math.sin(k * 0.6) * 30); ctx.stroke(); }
+    else if (setting === 'party' || setting === 'concert') { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ['#ff2bd6', '#00e5ff', '#ffd000'].forEach((col, k) => { const a = Math.sin(lt * 0.9 + k * 2.1) * 0.5; const x0 = 200 + k * 340; ctx.beginPath(); ctx.moveTo(x0, setting === 'party' ? 0 : 250); ctx.lineTo(x0 + Math.sin(a) * 900 - 140, 1500); ctx.lineTo(x0 + Math.sin(a) * 900 + 140, 1500); ctx.closePath(); ctx.fillStyle = st.ea(col, 0.16 + 0.06 * Math.sin(lt * 3 + k)); ctx.fill(); }); ctx.restore(); }
     else if (setting === 'mountain-trail') { for (let k = 0; k < 3; k++) { const x = ((lt * 14 + k * 420) % 1500) - 200; const y = 220 + k * 110; ctx.fillStyle = st.ea('#ffffff', 0.92); ctx.beginPath(); ctx.ellipse(x, y, 120, 44, 0, 0, TAU); ctx.ellipse(x + 70, y - 26, 80, 44, 0, 0, TAU); ctx.fill(); } }
     else if (setting === 'school-yard') { ctx.beginPath(); ctx.rect(70, 380, 10, 560); st.fs(ctx, st.c('#9aa0ad'), 3); ctx.beginPath(); ctx.moveTo(80, 390); for (let k = 0; k <= 6; k++) ctx.lineTo(80 + k * 24, 390 + Math.sin(t * 5 + k * 0.8) * 10); for (let k = 6; k >= 0; k--) ctx.lineTo(80 + k * 24, 480 + Math.sin(t * 5 + k * 0.8) * 10); ctx.closePath(); st.fs(ctx, st.c(st.art.accent || '#2fa38f'), 4); }
   }
   const prevKind16 = ST.kindFor; const prevLayout16 = ST.layout; const prevStatic16 = ST.staticBg; const prevDyn16 = ST.dynamicBg; const prevBack16 = ST.furnitureBack; const prevFront16 = ST.furnitureFront; const prevPlace16 = ST.placeProps;
-  ST.kindFor = function (setting, pose) { if (setting === 'car-interior') return 'drive'; return prevKind16.call(this, setting, pose); };
+  ST.kindFor = function (setting, pose) { if (setting === 'car-interior') return 'drive'; if (V112SET.has(setting) && pose !== 'lying-awake' && pose !== 'sleeping') return ['talking', 'standing-thinking', 'stressed', 'scrolling-phone', 'sitting-head-in-hands'].includes(pose) ? 'stand' : prevKind16.call(this, 'street', pose); return prevKind16.call(this, setting, pose); };
   ST.layout = function (setting, kind, scene) {
     const L = prevLayout16.call(this, setting, kind, scene);
     const solo = !scene || scene.count !== 2;

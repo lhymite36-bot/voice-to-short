@@ -216,3 +216,18 @@ Font: [Montserrat](https://github.com/google/fonts/tree/main/ofl/montserrat) (SI
 ## License
 
 MIT
+
+## Autopilot (v1.10, test)
+
+Settings → **Autopilot** makes and posts Shorts on its own (Gemini script + voice → on-device render → post).
+Two methods:
+
+- **Buffer (default):** paste a Buffer API key, pick the YouTube channel, and give a public GitHub repo + fine-grained
+  token (Contents: read/write) where the mp4 files are hosted for Buffer to fetch. Posts are scheduled in Buffer at the
+  slot time (category 24, public, not made for kids, not AI-generated). Free plan: 10 queued posts per channel; extra
+  Shorts wait and retry. No Google review.
+- **Direct YouTube:** your own Google OAuth client (Desktop app type) and *Connect YouTube*. Unverified apps get
+  uploads locked private until Google's audit; see [docs/youtube-audit.md](docs/youtube-audit.md).
+
+Android uses AlarmManager (survives reboot) + a foreground service; Windows runs in the tray and catches up after sleep.
+Tests: `node tests/autopilot.js` (unit) and `node tests/autopilot-e2e.js` (headless Chrome, mocked APIs).

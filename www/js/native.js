@@ -117,5 +117,5 @@
     if (isNative && VtsNative) { try { await VtsNative.keepAwake({ on: !!on }); } catch (_) { /* ignore */ } }
   }
 
-  VTS.native = { keepAwake, isNative, saveFile, shareFile, download, speak, stopSpeaking, ttsMode, canTtsToFile, ttsToFile };
+  VTS.native = { writeBlob, keepAwake, isNative, saveFile, shareFile, download, speak, stopSpeaking, ttsMode, canTtsToFile, ttsToFile };
 }());

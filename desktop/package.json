@@ -1,20 +1,47 @@
 {
   "name": "voice-to-short-desktop",
   "productName": "Voice to Short",
-  "version": "1.7.0",
+  "version": "1.11.2",
   "description": "Voice to Short for Windows",
   "author": "lhymite36-bot",
   "license": "MIT",
   "main": "main.js",
-  "scripts": { "start": "electron .", "dist": "electron-builder --win nsis portable --x64 --publish never" },
-  "devDependencies": { "electron": "^33.2.0", "electron-builder": "^25.1.8" },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
   "build": {
     "appId": "com.lhymite36.voicetoshort",
     "productName": "Voice to Short",
-    "files": ["main.js", "package.json"],
-    "extraResources": [{ "from": "../www", "to": "www" }],
-    "win": { "icon": "../www/icons/icon-512.png" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "artifactName": "VoiceToShort-Setup-${version}.exe" },
-    "portable": { "artifactName": "VoiceToShort-Portable-${version}.exe" }
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../www",
+        "to": "www"
+      },
+      {
+        "from": "../tools/decide",
+        "to": "tools/decide"
+      }
+    ],
+    "win": {
+      "icon": "../www/icons/icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "VoiceToShort-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "VoiceToShort-Portable-${version}.exe"
+    }
   }
 }

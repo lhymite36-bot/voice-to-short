@@ -1,11 +1,17 @@
-Windows desktop version of Voice to Short 1.7.0, the same app as the Android build.
+# Voice to Short 1.11.1-decide-3d-test
 
-Downloads:
-- VoiceToShort-Setup-1.7.0.exe is the installer, with Start menu and desktop shortcuts.
-- VoiceToShort-Portable-1.7.0.exe needs no install and runs from anywhere.
+**TEST / pre-release.** Decide now renders the real dark **3D Blender EEVEE** look inside the Windows app.
 
-To set up, open Settings and paste your own free Gemini API key. The key is kept only on your PC.
-Videos are 2D canvas animation, and the AI-content label setting works the same as on Android.
+## New
+- **Render Decide 3D** button (Windows app, Decide → Render step). Runs the bundled `tools/decide` pipeline:
+  Gemini multi-voice TTS → horror SFX → Blender EEVEE scenes → A/B pills, rewind, captions, audio mix → 1080×1920 MP4.
+- Finished MP4 loads into the project like a normal render, so Save / Share work.
+- Detects Blender (PATH or Program Files\Blender Foundation), Python, Node. If your ffmpeg is missing/too old, a free ffmpeg build (~90 MB, BtbN) downloads once into the app data folder.
+- Clear in-app message if Blender is missing (free from blender.org).
+- **Quick 2D draft** stays available as the secondary button (same as phone).
+- Pipeline scripts are path-independent (work dir under app data) and auto-generate choice pills from your script.
 
-The builds are unsigned, so Windows SmartScreen may warn you. Click More info, then Run anyway.
-Check your download against SHA256SUMS.txt.
+## Notes
+- Uses your Gemini key from Settings for voices. Render time ~20–40 min depending on PC (Blender ~1–2 min per shot).
+- 3D sets are the WESTGATE set library (desk, corridor, food court, staff door, break room); your script's scenes map to the closest set.
+- Quiet Brain Autopilot / Buffer unchanged. Not merged to main / Latest.

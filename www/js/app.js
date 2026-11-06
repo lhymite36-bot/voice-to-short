@@ -10,6 +10,7 @@
   const LONG_RENDER_SEC = 150; // above this the render is done in segments saved to disk
   const SG = VTS.segments;
   const CM = VTS.comic; // v1.7 Comic Recap
+  const DM = VTS.decide; // Decide CYOA horror
   const COMIC_MAX_SEC = 180; // comic recaps: up to 3 min (YouTube Shorts / TikTok limit)
 
   const SPEECH_LANGS = [
@@ -138,8 +139,8 @@
     const tone = load(K.tone, 'sarcastic');
     return { id: uuid(), createdAt: now, updatedAt: now, step: 'idea', idea: '', ideaAudio: null, tone, length: defLength(aspect),
       template: 'classic', humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, platform: load('vts.platform', 'both'),
-      pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null, mode: 'short', comic: null,
-      look: Object.assign({ aspect, quality: 'auto', preset: load(K.grade, 'teal'), captionCase: 'upper', watermark: !!load(K.watermark, false), format: 'auto',
+      pkg: null, voice: null, video: null, thumb: '', genPartial: null, renderState: null, mode: 'short', comic: null, decide: null,
+      look: Object.assign({ aspect, quality: 'auto', preset: load(K.grade, 'kurz'), captionCase: 'upper', watermark: !!load(K.watermark, false), format: 'auto',
         visual: load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes', aiImages: !!load(K.aiImages, false) }, defaultLook()) };
   }
   function persist(now) {
@@ -155,6 +156,7 @@
   }
   const lengthId = () => (P && P.length) || '60';
   const isComic = () => !!(P && P.mode === 'comic');
+  const isDecide = () => !!(P && P.mode === 'decide');
   const isShortLen = () => !isComic() && (lengthId() === '60' || lengthId() === '30');
   const maxVoice = () => (isComic() ? COMIC_MAX_SEC - R.LEAD - R.TAIL : isShortLen() ? MAX_VOICE_SEC : MAX_LONG_VOICE);
   const maxSecFor = () => (isComic() ? COMIC_MAX_SEC : isShortLen() ? undefined : R.MAX_LONG); // renderer cap (undefined = 60 s Short)
@@ -178,7 +180,7 @@
       a.src = url; setTimeout(() => fin(0), 10000);
     });
   }
-  function projectTitle(p) { if (p.mode === 'comic') return (p.pkg && p.pkg.title) || (p.comic && p.comic.title) || 'Comic Recap'; return (p.pkg && p.pkg.title) || (p.idea ? p.idea.trim().split(/\s+/).slice(0, 8).join(' ') + (S.wordCount(p.idea) > 8 ? '…' : '') : 'New Short'); }
+  function projectTitle(p) { if (p.mode === 'comic') return (p.pkg && p.pkg.title) || (p.comic && p.comic.title) || 'Comic Recap'; if (p.mode === 'decide') return (p.pkg && p.pkg.title) || (p.decide && p.decide.script && p.decide.script.title) || (p.decide && p.decide.series) || 'Decide Short'; return (p.pkg && p.pkg.title) || (p.idea ? p.idea.trim().split(/\s+/).slice(0, 8).join(' ') + (S.wordCount(p.idea) > 8 ? '…' : '') : 'New Short'); }
   async function openProject(id, step) {
     const p = await DB.get(id);
     if (!p) { toast('That project was not found.', true); return; }
@@ -190,6 +192,7 @@
     if (!p.look || !p.look.aspect) P.look.aspect = '9:16'; // projects from v1.2 were vertical
     if (!p.length) P.length = p.pkg && p.pkg.long ? String((p.pkg.lengthSec || 600)) : '60';
     if (P.mode === 'comic') normalizeComic(P);
+    if (P.mode === 'decide') normalizeDecide(P);
     voiceBuffer = null; save(K.last, P.id);
     renderAll();
     showView('create');
@@ -198,13 +201,15 @@
   function newProject(mode) {
     stopAll();
     persist(true);
-    const keep = mode === 'comic' || (mode == null && isComic()); // “New” keeps the current mode
+    const keepComic = mode === 'comic' || (mode == null && isComic());
+    const keepDecide = mode === 'decide' || (mode == null && isDecide());
     P = blankProject(); voiceBuffer = null;
-    if (keep) { P.mode = 'comic'; normalizeComic(P, true); }
+    if (keepComic) { P.mode = 'comic'; normalizeComic(P, true); }
+    else if (keepDecide) { P.mode = 'decide'; normalizeDecide(P, true); }
     localStorage.removeItem(K.last);
     renderAll(); showView('create'); showStep('idea');
   }
-  function renderAll() { paintMode(); renderIdea(); renderComicIdea(); renderScript(); renderVoice(); renderRenderPane(); $('project-name').textContent = projectTitle(P); }
+  function renderAll() { paintMode(); renderIdea(); renderComicIdea(); renderDecideIdea(); renderScript(); renderVoice(); renderRenderPane(); $('project-name').textContent = projectTitle(P); }
 
   // ---------- navigation ----------
   const views = { create: $('view-create'), library: $('view-library'), settings: $('view-settings') };
@@ -222,13 +227,14 @@
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => showView(tab.dataset.view)));
   $('new-project').addEventListener('click', () => {
     if (rendering) { toast('Wait for the render to finish (or cancel it).', true); return; }
-    newProject(); toast(isComic() ? 'New Comic Recap started' : 'New Short started');
+    newProject(); toast(isComic() ? 'New Comic Recap started' : isDecide() ? 'New Decide Short started' : 'New Short started');
   });
 
   const STEPS = ['idea', 'script', 'voice', 'render'];
   function stepAllowed(s) {
     if (s === 'idea' || s === 'script') return true;
     if (isComic()) return !!P.pkg && CM.wordCount(P.pkg.script) > 0;
+    if (isDecide()) return !!P.pkg && DM.wordCount(P.pkg.script) > 0;
     if (s === 'voice') return !!P.pkg;
     return !!P.pkg;
   }
@@ -245,7 +251,7 @@
     window.scrollTo(0, 0);
   }
   function paintStepper() {
-    const done = { idea: isComic() ? !!(P.comic && P.comic.panels.length) && !!P.pkg : !!P.idea.trim() && !!P.pkg, script: !!P.pkg, voice: !!P.voice, render: !!P.video };
+    const done = { idea: isComic() ? !!(P.comic && P.comic.panels.length) && !!P.pkg : isDecide() ? !!(P.decide && P.decide.script) && !!P.pkg : !!P.idea.trim() && !!P.pkg, script: !!P.pkg, voice: !!P.voice, render: !!P.video };
     document.querySelectorAll('.step').forEach((b) => {
       const s = b.dataset.step;
       b.classList.toggle('active', s === P.step);
@@ -488,6 +494,7 @@
     if (!has) return;
     const pkg = P.pkg;
     if (isComic()) { renderComicScript(); renderKit(pkg); return; }
+    if (isDecide()) { renderDecideScript(); renderKit(pkg); return; }
     const hooks = $('hooks'); hooks.innerHTML = '';
     pkg.hooks.forEach((h, i) => {
       const row = document.createElement('div');
@@ -1224,6 +1231,7 @@
     } catch (err) { setStatus('render-status', 'Preview failed: ' + (err && err.message || err), 'err'); }
   }
   function renderRenderPane() {
+    paintDecide3d();
     if (!P || !P.pkg) return;
     const grades = $('grades'); grades.innerHTML = '';
     Object.entries(R.PRESETS).forEach(([id, p]) => {
@@ -1605,7 +1613,7 @@
     $('s-handle').value = load(K.handle, '');
     fillSelect($('s-tone'), Object.entries(S.TONES).map(([k, t]) => [k, t.label]), load(K.tone, 'sarcastic'));
     fillSelect($('s-language'), S.LANGUAGES.map((l) => [l, l]), load(K.language, 'English'));
-    fillSelect($('s-grade'), Object.entries(R.PRESETS).map(([k, p]) => [k, p.name]), load(K.grade, 'teal'));
+    fillSelect($('s-grade'), Object.entries(R.PRESETS).map(([k, p]) => [k, p.name]), load(K.grade, 'kurz'));
     fillSelect($('s-aspect'), R.ASPECTS ? Object.keys(R.ASPECTS).map((k) => [k, (R.ASPECT_LABELS && R.ASPECT_LABELS[k]) || k]) : [['9:16', '9:16']], defAspect());
     $('s-watermark').checked = !!load(K.watermark, false);
     $('s-visual').value = load(K.visualStyle, 'scenes') === 'classic' ? 'classic' : 'scenes'; $('s-ai-images').checked = !!load(K.aiImages, false);
@@ -1716,6 +1724,153 @@
   // ---------- v1.7 Comic Recap mode ----------
   // A project with mode 'comic' keeps its panels (image blobs + the lines narrated over each) in P.comic; P.pkg is derived
   // from them (CM.makePkg), so voice, render, share, save and the library work exactly like a normal Short.
+
+  function normalizeDecide(p, fresh) {
+    if (!DM) return;
+    DM.normalizeDecide(p, fresh);
+  }
+  function renderDecideIdea() {
+    if (!isDecide() || !P.decide) return;
+    const D = P.decide;
+    const prem = $('decide-premise'); if (prem && prem.value !== D.premise) prem.value = D.premise || '';
+    const ser = $('decide-series'); if (ser && ser.value !== (D.series || '')) ser.value = D.series || '';
+    const part = $('decide-part'); if (part) part.value = String(D.part || 1);
+    document.querySelectorAll('#decide-len-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === String(D.length || '90')));
+    const L = DM.lengthOf(D.length); const note = $('decide-len-note');
+    if (note) note.textContent = '≈ ' + L.words[0] + '–' + L.words[1] + ' words · A/B + rewind + cliffhanger';
+  }
+  function renderDecideScript() {
+    const ol = $('decide-lines'); if (!ol) return;
+    ol.innerHTML = '';
+    const script = P.decide && P.decide.script;
+    const badge = $('decide-word-badge');
+    const est = $('decide-script-est');
+    if (!script || !script.lines) {
+      if (badge) badge.textContent = '0 words';
+      if (est) est.textContent = 'Write a premise and tap “Write the Decide script”.';
+      return;
+    }
+    const n = DM.wordCount(DM.linesText(script));
+    if (badge) badge.textContent = n + ' words';
+    if (est) est.textContent = (script.title || '') + ' · ' + (script.lines.length) + ' lines · export for desktop 3D when ready';
+    script.lines.forEach((ln) => {
+      const li = document.createElement('li');
+      if (ln.ui) li.dataset.ui = ln.ui;
+      if (ln.choiceKey) li.dataset.key = ln.choiceKey;
+      const tag = document.createElement('span'); tag.className = 'decide-badge';
+      tag.textContent = (ln.ui ? ln.ui : ln.speaker) + (ln.choiceKey ? ' ' + ln.choiceKey : '');
+      li.appendChild(tag);
+      const tx = document.createElement('span'); tx.textContent = ln.caption || ln.text || '';
+      li.appendChild(tx);
+      ol.appendChild(li);
+    });
+  }
+  async function decideGenerate() {
+    if (!DM) { toast('Decide module missing', true); return; }
+    if (generating || rendering) { toast('Wait for the current job to finish first.', true); return; }
+    const D = P.decide || (normalizeDecide(P, true), P.decide);
+    D.premise = ($('decide-premise') && $('decide-premise').value || '').trim();
+    D.series = ($('decide-series') && $('decide-series').value || '').trim();
+    D.part = Math.max(1, parseInt($('decide-part') && $('decide-part').value, 10) || 1);
+    if (!D.premise) { toast('Add a premise first.', true); return; }
+    generating = true; const st = $('decide-status'); if (st) st.textContent = 'Writing branching A/B script…';
+    try {
+      const out = await DM.writeScript({
+        premise: D.premise, series: D.series, part: D.part, length: D.length,
+        tone: D.tone || 'horror', language: load(K.language, 'English'),
+      });
+      D.script = out.script;
+      P.pkg = DM.makePkg(out.script, { title: out.script.title, description: out.description, hashtags: out.hashtags, tiktokCaption: out.tiktokCaption }, null);
+      P.idea = D.premise;
+      persist(true); renderDecideScript(); renderScript(); renderAll(); showStep('script');
+      toast(VD ? 'Decide script ready — voice it, then tap Render Decide 3D' : 'Decide script ready — voice it, then render');
+    } catch (err) {
+      console.error(err); toast('Could not write Decide script: ' + (err && err.message || err), true);
+    } finally { generating = false; if (st) st.textContent = ''; }
+  }
+  // ---- Decide 3D on the Windows app: Electron runs tools/decide (Blender EEVEE) ----
+  const VD = window.vtsDesktop && window.vtsDesktop.decide3dRender ? window.vtsDesktop : null;
+  let d3Status = null; let d3Running = false;
+  async function d3Check(force) {
+    if (!VD) return null;
+    try { d3Status = await VD.decide3dStatus(!!force); } catch (e) { d3Status = { ready: false, missing: ['tools'], err: String(e && e.message || e) }; }
+    paintDecide3d(); return d3Status;
+  }
+  function paintDecide3d() {
+    const card = $('decide3d-card'); if (!card) return;
+    const show = !!VD && isDecide();
+    card.classList.toggle('hidden', !show);
+    const rb = $('render'); if (rb) { rb.classList.toggle('ghost', show); rb.classList.toggle('primary', !show); const sp = rb.querySelector('span'); if (sp) sp.textContent = show ? '⚡ Quick 2D draft' : '🎬 Render 1080×1920 video'; }
+    if (!show) return;
+    const btn = $('decide3d-render'); btn.disabled = d3Running || !(P.decide && P.decide.script);
+    if (d3Running) return;
+    const st = d3Status;
+    if (!st) { setStatus('decide3d-status', 'Checking for Blender…'); return; }
+    if (!st.blender) setStatus('decide3d-status', 'Blender not found. Install free Blender 4 or 5 from blender.org (default install), then tap “Check again”.', 'err');
+    else if (st.missing && st.missing.length) setStatus('decide3d-status', 'Missing on this PC: ' + st.missing.join(', ') + (st.missing.includes('python') ? ' — install Python from python.org.' : '') + (st.missing.includes('node') ? ' — install Node.js LTS from nodejs.org.' : ''), 'err');
+    else setStatus('decide3d-status', 'Ready · Blender ' + (st.blenderVersion || '') + (st.ffmpegAuto ? ' · free ffmpeg (~90 MB) downloads on first render' : '') + (getKey() ? '' : ' · add your Gemini key in Settings for the voices'), getKey() ? 'ok' : 'err');
+    $('decide3d-badge').textContent = st.ready ? 'Ready' : 'Setup';
+  }
+  async function decide3dRender() {
+    if (!VD || d3Running) return;
+    if (!P.decide || !P.decide.script) { toast('Write the Decide script first.', true); return; }
+    if (!getKey()) { toast('Add your Gemini API key in Settings first (voices).', true); showView('settings'); return; }
+    const st = await d3Check(true); if (!st || !st.ready) return;
+    d3Running = true; paintDecide3d();
+    $('decide3d-progress').classList.remove('hidden'); $('decide3d-bar').style.width = '0'; setStatus('decide3d-status', '');
+    const off = VD.onDecide3dProgress((ev) => { if (ev.label) $('decide3d-label').textContent = ev.label; if (typeof ev.pct === 'number') $('decide3d-bar').style.width = Math.max(2, Math.min(100, ev.pct)) + '%'; });
+    const t0 = Date.now(); const proj = P;
+    try { if (window.vtsDesktop.runState) window.vtsDesktop.runState(true); } catch (_) { /* ignore */ }
+    try {
+      const res = await VD.decide3dRender({ script: DM.exportScriptJson(P.decide.script), geminiKey: getKey() });
+      const blob = new Blob([res.bytes], { type: 'video/mp4' });
+      const dur = await new Promise((r) => { const v = document.createElement('video'); v.preload = 'metadata'; v.onloadedmetadata = () => r(v.duration || 0); v.onerror = () => r(0); v.src = URL.createObjectURL(blob); });
+      if (P !== proj) { toast('Decide 3D finished for another project.'); return; }
+      P.video = { blob, mime: 'video/mp4', type: 'video/mp4', duration: dur, size: blob.size, width: 1080, height: 1920, aspect: '9:16', createdAt: new Date().toISOString(), renderMs: Date.now() - t0, visual: 'decide3d', localPath: res.path };
+      persist(true); paintResult(); paintStepper();
+      setStatus('decide3d-status', 'Done! Decide 3D Short ready (' + Math.round(blob.size / 1048576) + ' MB, ' + Math.round((Date.now() - t0) / 60000) + ' min). Save or share below.', 'ok');
+      setTimeout(() => $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    } catch (err) {
+      const m = String(err && err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+      setStatus('decide3d-status', /Cancelled/.test(m) ? 'Cancelled.' : 'Decide 3D failed: ' + m, 'err');
+    } finally {
+      off && off(); d3Running = false; $('decide3d-progress').classList.add('hidden');
+      try { if (window.vtsDesktop.runState) window.vtsDesktop.runState(false); } catch (_) { /* ignore */ }
+      paintDecide3d();
+    }
+  }
+  function wireDecide3d() {
+    if (!$('decide3d-card')) return;
+    $('decide3d-render').addEventListener('click', decide3dRender);
+    $('decide3d-cancel').addEventListener('click', () => { if (VD) VD.decide3dCancel(); });
+    $('decide3d-check').addEventListener('click', () => { d3Status = null; paintDecide3d(); d3Check(true); });
+    if (VD) d3Check(false);
+  }
+
+  function wireDecide() {
+    wireDecide3d();
+    if (!DM) return;
+    const prem = $('decide-premise');
+    if (prem) prem.addEventListener('input', () => { if (!P.decide) normalizeDecide(P, true); P.decide.premise = prem.value; persist(); });
+    const ser = $('decide-series');
+    if (ser) ser.addEventListener('input', () => { if (!P.decide) normalizeDecide(P, true); P.decide.series = ser.value; persist(); });
+    const part = $('decide-part');
+    if (part) part.addEventListener('change', () => { if (!P.decide) normalizeDecide(P, true); P.decide.part = Math.max(1, parseInt(part.value, 10) || 1); persist(); });
+    document.querySelectorAll('#decide-len-seg button').forEach((b) => b.addEventListener('click', () => {
+      if (!P.decide) normalizeDecide(P, true); P.decide.length = b.dataset.v; renderDecideIdea(); persist();
+    }));
+    const gen = $('decide-generate'); if (gen) gen.addEventListener('click', decideGenerate);
+    const exp = $('decide-export');
+    if (exp) exp.addEventListener('click', () => {
+      if (!P.decide || !P.decide.script) { toast('Write the Decide script first.', true); return; }
+      const blob = new Blob([DM.exportScriptJson(P.decide.script)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = (P.decide.script.title || 'decide-script').replace(/[^a-z0-9]+/gi, '-').slice(0, 40) + '.json';
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast('Exported script.json — drop into tools/decide on desktop for 3D');
+    });
+  }
+
   function normalizeComic(p, fresh) {
     const c = p.comic && typeof p.comic === 'object' ? p.comic : {};
     p.comic = { panels: Array.isArray(c.panels) ? c.panels.filter((pn) => pn && pn.blob) : [], title: String(c.title || ''), notes: String(c.notes || ''), length: CM.LENGTHS.some((l) => l.id === c.length) ? c.length : '60', fx: CM.fxOf(c.fx) };
@@ -1724,23 +1879,29 @@
     return p.comic;
   }
   function paintMode() {
-    const comic = isComic();
+    const comic = isComic(); const decide = isDecide();
+    const mode = comic ? 'comic' : decide ? 'decide' : 'short';
     $('view-create').classList.toggle('mode-comic', comic);
-    document.querySelectorAll('#mode-seg button').forEach((b) => { const on = b.dataset.v === (comic ? 'comic' : 'short'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
-    const st = document.querySelector('.step[data-step=idea] span'); if (st) st.textContent = comic ? 'Panels' : 'Idea';
-    $('new-project').setAttribute('aria-label', comic ? 'New Comic Recap' : 'New Short'); $('new-project').title = comic ? 'New Comic Recap' : 'New Short';
+    $('view-create').classList.toggle('mode-decide', decide);
+    document.querySelectorAll('#mode-seg button').forEach((b) => { const on = b.dataset.v === mode; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    const st = document.querySelector('.step[data-step=idea] span');
+    if (st) st.textContent = comic ? 'Panels' : decide ? 'Premise' : 'Idea';
+    const lab = comic ? 'New Comic Recap' : decide ? 'New Decide Short' : 'New Short';
+    $('new-project').setAttribute('aria-label', lab); $('new-project').title = lab;
   }
-  function hasContent(p) { return !!(p && (p.idea.trim() || p.pkg || p.voice || (p.comic && p.comic.panels && p.comic.panels.length))); }
+  function hasContent(p) { return !!(p && (p.idea.trim() || p.pkg || p.voice || (p.comic && p.comic.panels && p.comic.panels.length) || (p.decide && (p.decide.premise || p.decide.script)))); }
   function setMode(m) {
-    m = m === 'comic' ? 'comic' : 'short';
-    if ((isComic() ? 'comic' : 'short') === m) return;
+    m = m === 'comic' ? 'comic' : m === 'decide' ? 'decide' : 'short';
+    const cur = isComic() ? 'comic' : isDecide() ? 'decide' : 'short';
+    if (cur === m) return;
     if (rendering || generating) { toast('Wait for the current job to finish first.', true); return; }
     stopAll();
-    if (hasContent(P)) { persist(true); P = blankProject(); voiceBuffer = null; localStorage.removeItem(K.last); toast('Started a new ' + (m === 'comic' ? 'Comic Recap' : 'Short') + ' — your other project is saved in the Library.'); }
-    P.mode = m; if (m === 'comic') normalizeComic(P, true);
+    if (hasContent(P)) { persist(true); P = blankProject(); voiceBuffer = null; localStorage.removeItem(K.last); toast('Started a new ' + (m === 'comic' ? 'Comic Recap' : m === 'decide' ? 'Decide Short' : 'Short') + ' — your other project is saved in the Library.'); }
+    P.mode = m; if (m === 'comic') normalizeComic(P, true); if (m === 'decide') normalizeDecide(P, true);
     renderAll(); showStep('idea');
   }
   document.querySelectorAll('#mode-seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.v)));
+  wireDecide();
   const panelUrls = new WeakMap();
   function panelUrl(pn) { if (!pn || !pn.blob) return ''; let u = panelUrls.get(pn.blob); if (!u) { u = URL.createObjectURL(pn.blob); panelUrls.set(pn.blob, u); } return u; }
   function comicChanged(rebuildPkg) {
@@ -1865,10 +2026,62 @@
   // ---------- boot ----------
   // The preview host is the preview wrapper (render canvas is overlaid there while rendering).
   document.querySelector('.preview-wrap').id = 'preview-wrap-host';
+  // ---------- autopilot: make one Short with no UI (used by js/autopilot.js) ----------
+  // Same pipeline as the Create tab (Gemini script with the story-order rules -> Gemini voice -> 2D Kurzgesagt render, 9:16),
+  // but on its own project object so it never touches the project the user has open. The result is saved to the Library.
+  async function makeShortHeadless(it, hooks) {
+    const h = hooks || {}; const step = (t) => { if (h.onStep) h.onStep(t); };
+    if (!getKey()) throw Object.assign(new Error('No Gemini API key saved (Settings).'), { fatal: true });
+    if (!R.canRender()) throw Object.assign(new Error('This device cannot record video.'), { fatal: true });
+    const tone = load(K.tone, 'sarcastic'); const length = it.length === '30' ? '30' : '60';
+    const Q = blankProject(); Object.assign(Q, { idea: it.text, tone, template: it.format || 'classic', length, humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, autopilot: true });
+    Q.look = Object.assign({}, Q.look, { aspect: '9:16', preset: 'kurz', visual: 'scenes', aiImages: false, anim: '2d', quality: 'auto' });
+    step('script');
+    const pkg = await S.generatePackage(Q.idea, { tone, format: Q.template, humour: Q.humour, platform: 'youtube', language: load(K.language, 'English'), handle: handle(), length, signal: h.signal,
+      onProgress: (q) => { if (q.phase === 'wait' && h.onWait) h.onWait(q.ms, q.attempt); } });
+    Q.pkg = pkg; if (pkg.beats.some((b) => !b.scene || !b.scene.setting)) S.attachScenes(pkg.beats);
+    step('voice');
+    const st = TTS_STYLES[tone] || TTS_STYLES.calm; const voice = ttsVoice();
+    let r = null; const dlg = dialogueLines(pkg); const v2 = dlg ? voice2For(voice) : '';
+    if (dlg && v2) {
+      try { r = await G.generateDialogueSpeech(dlg.lines, { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, timeout: 60000 }); }
+      catch (e) { if (e && (e.quota || e.status === 429)) throw e; r = null; }
+    }
+    if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix });
+    const buf = R.trimBuffer(await R.decodeBlob(r.blob), 56);
+    Q.voice = { blob: r.blob, source: 'gemini', duration: buf.duration, mime: r.blob.type, createdAt: new Date().toISOString(), ttsVoice: voice, ttsModel: r.model };
+    step('render');
+    const lk = Object.assign({}, Q.look, { aspect: '9:16', handle: handle(), textHook: pkg.textHook || '', ctaSticker: pkg.cta || CTAS[0], template: Q.template, humour: Q.humour, stepLabel: (S.FORMATS[Q.template] || {}).badge || 'STEP', safeZones: false });
+    const [cw, ch] = R.frameSize('9:16', 1); const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+    canvas.style.cssText = 'position:fixed;left:-99999px;top:0;width:270px;height:480px;pointer-events:none'; document.body.appendChild(canvas);
+    N.keepAwake(true);
+    let res;
+    const MAXS = 59; const E = VTS.encode; let how = 'webcodecs';
+    try {
+      // Frame-exact WebCodecs encode -> flat MP4 with a real duration (never throttled when the screen is off / app hidden).
+      if (E && E.supported()) { try { res = await E.renderOffline({ canvas, buffer: buf, beats: pkg.beats, look: lk, signal: h.signal, maxSeconds: MAXS, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } }); } catch (e) { if (h.signal && h.signal.aborted) throw e; res = null; how = 'mediarecorder (WebCodecs failed: ' + (e && e.message || e) + ')'; } }
+      else how = 'mediarecorder';
+      if (!res) res = await R.renderVideo({ canvas, buffer: buf, beats: pkg.beats, look: lk, format: 'auto', signal: h.signal, maxSeconds: MAXS, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } });
+    } finally { canvas.remove(); N.keepAwake(false); }
+    if (!res || !res.blob.size) throw new Error('Render produced no video.');
+    if (E && /mp4/.test(res.type || res.mime || '')) {
+      const info = await E.blobInfo(res.blob); const chk = E.checkShort(info, 59.9);
+      if (!chk.ok) throw Object.assign(new Error('The rendered video is not a valid Short (' + chk.problems.join(', ') + '; renderer: ' + how + '). It was not uploaded.'), { fatal: true });
+      res.checkedDuration = info.duration;
+    }
+    res.how = how;
+    Q.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect: '9:16', createdAt: new Date().toISOString(), visual: 'scenes' };
+    try { const P2 = R.plan(buf, 60); const keep = P; P = Q; try { Q.thumb = thumbFrame(lk, P2.total, null, P2); } finally { P = keep; } } catch (_) { Q.thumb = ''; }
+    Q.step = 'render'; Q.updatedAt = new Date().toISOString();
+    try { await DB.put(Q); } catch (_) { /* library save is best-effort */ }
+    return { project: Q, pkg, blob: res.blob, mime: res.type || 'video/webm', duration: res.checkedDuration || res.duration, how: res.how };
+  }
+  VTS.makeShortHeadless = makeShortHeadless;
+
   (async function boot() {
     P = blankProject();
     const last = load(K.last, null);
-    if (last) { try { const p = await DB.get(last); if (p) { P = Object.assign(blankProject(), p); P.look = Object.assign(blankProject().look, p.look || {}); if (P.mode === 'comic') normalizeComic(P); } } catch (_) { /* ignore */ } }
+    if (last) { try { const p = await DB.get(last); if (p) { P = Object.assign(blankProject(), p); P.look = Object.assign(blankProject().look, p.look || {}); if (P.mode === 'comic') normalizeComic(P); if (P.mode === 'decide') normalizeDecide(P); } } catch (_) { /* ignore */ } }
     renderAll();
     const hash = location.hash.replace('#', '');
     showView(['library', 'settings'].includes(hash) ? hash : 'create');
