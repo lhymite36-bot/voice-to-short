@@ -121,14 +121,14 @@
 
   // ======================= palette =======================
   const ART = {
-    teal: { tint: '#0e6a73', amt: 0.1, sat: 1.04, accent: '#ff8a4c', accent2: '#2ec4b6' },
+    teal: { tint: '#0e6a73', amt: 0.07, sat: 1.22, accent: '#ff8a4c', accent2: '#2ec4b6' },
     moody: { tint: '#4a4330', amt: 0.2, sat: 0.72, accent: '#cf8a4f', accent2: '#7c9a86' },
-    warm: { tint: '#e0707a', amt: 0.1, sat: 1.0, accent: '#ef6f6c', accent2: '#f6bd60' },
+    warm: { tint: '#e0707a', amt: 0.07, sat: 1.15, accent: '#ef6f6c', accent2: '#f6bd60' },
     mono: { tint: '#777777', amt: 0, sat: 0, accent: '#e9e9e9', accent2: '#a0a0a0' },
-    neon: { tint: '#5b21b6', amt: 0.18, sat: 1.15, accent: '#ec4899', accent2: '#22d3ee' },
+    neon: { tint: '#7c3aed', amt: 0.08, sat: 1.6, accent: '#ff2bd6', accent2: '#00e5ff', deep: 0.35, deepCol: [40, 14, 90] },
     sage: { tint: '#4a7c59', amt: 0.14, sat: 0.86, accent: '#e9b872', accent2: '#8fb996' },
     // v1.9 Kurzgesagt-style flat look: rich saturated colours over deep dark-blue, soft glows (Quiet Brain default)
-    kurz: { tint: '#14205e', amt: 0.3, sat: 1.35, accent: '#ffb02e', accent2: '#2ee6d6', deep: 0.95 },
+    kurz: { tint: '#14205e', amt: 0.12, sat: 1.62, accent: '#ffb000', accent2: '#00f0e0', deep: 0.42 },
   };
   function hexRgb(h) { h = String(h).replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function rgbHex(r) { return '#' + r.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
@@ -138,11 +138,11 @@
 
   // Per-setting ambient light (baked into every colour of the shot; much cheaper than full-frame blend passes).
   const AMBIENT = {
-    'bedroom-night': ['#2b3f86', 0.34], 'bedroom-day': ['#ffd9a8', 0.06], office: ['#cfe3ff', 0.04], classroom: ['#fff1c9', 0.05], street: ['#ffb27a', 0.08],
-    cafe: ['#ffb46b', 0.12], park: ['#fff4c2', 0.04], 'abstract-mind-space': ['#5c4bd6', 0.18], 'phone-screen': ['#233a7a', 0.2], void: ['#000000', 0],
+    'bedroom-night': ['#3b4fd6', 0.2], 'bedroom-day': ['#ffd9a8', 0.06], office: ['#cfe3ff', 0.04], classroom: ['#fff1c9', 0.05], street: ['#ffb27a', 0.08],
+    cafe: ['#ffb46b', 0.12], park: ['#fff4c2', 0.04], 'abstract-mind-space': ['#7c4dff', 0.1], 'phone-screen': ['#2f56d6', 0.12], void: ['#000000', 0],
     // v1.6 settings
-    hallway: ['#fff1d6', 0.05], 'car-interior': ['#ffd9a8', 0.06], beach: ['#fff2c4', 0.05], 'rooftop-night': ['#2b3f86', 0.3], 'bus-stop': ['#ffcf9e', 0.07], supermarket: ['#e8f4ff', 0.04],
-    'mountain-trail': ['#fff4c2', 0.04], 'rainy-street': ['#3a4f7a', 0.22], 'school-yard': ['#fff4c2', 0.04], 'train-platform': ['#d9e4ff', 0.06],
+    hallway: ['#fff1d6', 0.05], 'car-interior': ['#ffd9a8', 0.06], beach: ['#fff2c4', 0.05], 'rooftop-night': ['#3b4fd6', 0.18], 'bus-stop': ['#ffcf9e', 0.07], supermarket: ['#e8f4ff', 0.04],
+    'mountain-trail': ['#fff4c2', 0.04], 'rainy-street': ['#3a5fc0', 0.14], 'school-yard': ['#fff4c2', 0.04], 'train-platform': ['#d9e4ff', 0.06],
   };
 
   // ======================= small math / easing =======================
@@ -308,8 +308,8 @@
       c = [l + (c[0] - l) * a.sat, l + (c[1] - l) * a.sat, l + (c[2] - l) * a.sat];
       if (this.pid === 'mono') c = c.map((v) => 128 + (v - 128) * 1.12);
       if (a.deep) { // push pale/neutral surfaces (walls, floors, shelves) toward deep blue; keep saturated colours bright
-        const mx = Math.max(c[0], c[1], c[2]); const mn = Math.min(c[0], c[1], c[2]); const chroma = (mx - mn) / 255; const k = (1 - Math.min(1, chroma * 3.5)) * a.deep;
-        const L = (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]) / 255; c = mixRgb(c, [14 + 40 * L, 24 + 56 * L, 70 + 110 * L], k * 0.9);
+        const mx = Math.max(c[0], c[1], c[2]); const mn = Math.min(c[0], c[1], c[2]); const chroma = (mx - mn) / 255; const k = (1 - Math.min(1, chroma * 6)) * a.deep; const dc = a.deepCol || [14, 24, 70];
+        const L = (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]) / 255; c = mixRgb(c, [dc[0] + 40 * L, dc[1] + 56 * L, dc[2] + 110 * L], k * 0.9);
       }
       return c;
     }

@@ -32,18 +32,18 @@
   const LEAD = 0.3; const TAIL = 0.8;
 
   const PRESETS = {
-    kurz: { name: 'Kurzgesagt Deep Blue', bg: '#0b1033', blobs: ['#1b2a6b', '#2b1d6e', '#0f6f8f', '#ff9f1c', '#2ee6d6'], hi: '#ffd166', text: '#ffffff',
-      filter: 'contrast(1.06) saturate(1.22)', shadowTint: '#0b1a5c', shadowAmt: 0.4, highTint: '#ffd27a', highAmt: 0.08, lift: 0, grain: 0.03, vignette: 0.55, particles: '#9be7ff', glow: 0.35 },
+    kurz: { name: 'Kurzgesagt Deep Blue', bg: '#0a1240', blobs: ['#1f3dff', '#c026d3', '#00b4d8', '#ffaa00', '#00f0e0'], hi: '#ffd000', text: '#ffffff',
+      filter: 'contrast(1.1) saturate(1.5)', shadowTint: '#0b1a7a', shadowAmt: 0.28, highTint: '#ffd27a', highAmt: 0.06, lift: 0, grain: 0.02, vignette: 0.4, particles: '#5ff6ff', glow: 0.45 },
     teal: { name: 'Teal & Orange', bg: '#04161b', blobs: ['#0d7377', '#0a3d4a', '#ff7b39', '#ffb45e', '#0e5560'], hi: '#ffb347', text: '#ffffff',
-      filter: 'contrast(1.12) saturate(1.18)', shadowTint: '#00424d', shadowAmt: 0.35, highTint: '#ff9b4a', highAmt: 0.10, lift: 0, grain: 0.07, vignette: 0.62, particles: '#ffd2a1' },
+      filter: 'contrast(1.12) saturate(1.35)', shadowTint: '#00424d', shadowAmt: 0.35, highTint: '#ff9b4a', highAmt: 0.10, lift: 0, grain: 0.07, vignette: 0.62, particles: '#ffd2a1' },
     moody: { name: 'Moody Film', bg: '#0f110d', blobs: ['#2b3a2d', '#50482f', '#8b6a44', '#1d2b2f', '#3e4a3a'], hi: '#e9c27a', text: '#f3eee4',
       filter: 'contrast(0.96) saturate(0.72) sepia(0.12)', shadowTint: '#173c38', shadowAmt: 0.4, highTint: '#d69a5c', highAmt: 0.12, lift: 0.07, grain: 0.13, vignette: 0.78, particles: '#e9c27a' },
     warm: { name: 'Warm Soft', bg: '#2e1622', blobs: ['#f4a582', '#e46f73', '#ffd3a5', '#9b5c8f', '#f7b7a3'], hi: '#fff0a0', text: '#ffffff',
       filter: 'contrast(0.92) saturate(1.06) brightness(1.04)', shadowTint: '#5b2a4a', shadowAmt: 0.25, highTint: '#ffcf9e', highAmt: 0.14, lift: 0.04, grain: 0.05, vignette: 0.42, particles: '#fff3d6' },
     mono: { name: 'Clean Mono', bg: '#070708', blobs: ['#3b3b41', '#18181c', '#8d8d95', '#26262b', '#5a5a61'], hi: '#ffffff', text: '#bdbdc4',
       filter: 'grayscale(1) contrast(1.18)', shadowTint: '#000000', shadowAmt: 0.2, highTint: '#ffffff', highAmt: 0.04, lift: 0.02, grain: 0.08, vignette: 0.6, particles: '#ffffff' },
-    neon: { name: 'Night Neon', bg: '#08051a', blobs: ['#6d28d9', '#db2777', '#0891b2', '#1e1b4b', '#9333ea'], hi: '#67e8f9', text: '#ffffff',
-      filter: 'contrast(1.1) saturate(1.25)', shadowTint: '#1e1068', shadowAmt: 0.3, highTint: '#f0abfc', highAmt: 0.08, lift: 0, grain: 0.06, vignette: 0.6, particles: '#a5f3fc' },
+    neon: { name: 'Night Neon', bg: '#08051a', blobs: ['#8b2cff', '#ff2bd6', '#00d4ff', '#3b1aa8', '#b026ff'], hi: '#3ff0ff', text: '#ffffff',
+      filter: 'contrast(1.12) saturate(1.55)', shadowTint: '#2a0f8a', shadowAmt: 0.22, highTint: '#ff7ae6', highAmt: 0.07, lift: 0, grain: 0.04, vignette: 0.42, particles: '#5ff6ff', glow: 0.45 },
     sage: { name: 'Calm Sage', bg: '#0e1c16', blobs: ['#4a7c59', '#a3b18a', '#dad7cd', '#2f4a3b', '#6b8f71'], hi: '#fef3c7', text: '#ffffff',
       filter: 'contrast(0.98) saturate(0.9)', shadowTint: '#1b3a2c', shadowAmt: 0.3, highTint: '#f5e6c8', highAmt: 0.1, lift: 0.04, grain: 0.07, vignette: 0.55, particles: '#fef3c7' },
   };
