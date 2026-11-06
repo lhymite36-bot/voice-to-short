@@ -142,7 +142,7 @@
     cafe: ['#ffb46b', 0.12], park: ['#fff4c2', 0.04], 'abstract-mind-space': ['#7c4dff', 0.1], 'phone-screen': ['#2f56d6', 0.12], void: ['#000000', 0],
     // v1.6 settings
     hallway: ['#fff1d6', 0.05], 'car-interior': ['#ffd9a8', 0.06], beach: ['#fff2c4', 0.05], 'rooftop-night': ['#3b4fd6', 0.18], 'bus-stop': ['#ffcf9e', 0.07], supermarket: ['#e8f4ff', 0.04],
-    'mountain-trail': ['#fff4c2', 0.04], 'rainy-street': ['#3a5fc0', 0.14], 'school-yard': ['#fff4c2', 0.04], 'train-platform': ['#d9e4ff', 0.06],
+    'mountain-trail': ['#fff4c2', 0.04], party: ['#b026ff', 0.12], bar: ['#ffb46b', 0.1], restaurant: ['#ffb46b', 0.08], hospital: ['#e8fff8', 0.04], airport: ['#ffb27a', 0.06], airplane: ['#e8ecff', 0.04], therapist: ['#fff1c9', 0.05], bank: ['#fff1c9', 0.05], concert: ['#7c4dff', 0.12], garage: ['#cfe3ff', 0.05], 'rainy-street': ['#3a5fc0', 0.14], 'school-yard': ['#fff4c2', 0.04], 'train-platform': ['#d9e4ff', 0.06],
   };
 
   // ======================= small math / easing =======================
@@ -297,6 +297,24 @@
     return f;
   }
 
+  // v1.11.2: more people - the second character dresses for the place / who the line is about
+  const CAST = [
+    { skin: '#e8b996', skinS: '#cc9a76', hair: '#5a5a66', top: '#2b3a67', pants: '#1f2433', shoe: '#1b1b22', long: false }, // 10 boss (suit, grey hair)
+    { skin: '#c68b62', skinS: '#a86f4b', hair: '#1b1416', top: '#f4f7ff', pants: '#3a6fd8', shoe: '#ffffff', long: true }, // 11 doctor (white coat)
+    { skin: '#f1c7a3', skinS: '#d8a683', hair: '#e8b04a', top: '#ff2bd6', pants: '#2a1a5e', shoe: '#ffffff', long: true }, // 12 party friend
+    { skin: '#8d5a3b', skinS: '#734429', hair: '#120c0e', top: '#1f1f2e', pants: '#1f1f2e', shoe: '#2b2b33', long: false }, // 13 bartender (black)
+    { skin: '#f3c6a0', skinS: '#dea27c', hair: '#8a3b1c', top: '#e63946', pants: '#2f3e57', shoe: '#f6f2ea', long: true }, // 14 date (red)
+    { skin: '#d9a47e', skinS: '#bb8560', hair: '#b8b8c2', top: '#7c9a5c', pants: '#5a4a3a', shoe: '#3b2f28', long: true }, // 15 parent (cardigan, greying)
+    { skin: '#b37a52', skinS: '#94603c', hair: '#2a1d14', top: '#22c55e', pants: '#2f3e57', shoe: '#ffffff', long: false }, // 16 cashier (green apron)
+    { skin: '#f0c19c', skinS: '#d4a07a', hair: '#2b1d3a', top: '#00b4d8', pants: '#3b2f6b', shoe: '#ffd000', long: false }, // 17 friend (cyan hoodie)
+    { skin: '#7a4a2e', skinS: '#603620', hair: '#0f0a0c', top: '#ffaa00', pants: '#24305e', shoe: '#ffffff', long: true }, // 18 classmate (gold)
+    { skin: '#e9b48e', skinS: '#cf9670', hair: '#3a2a20', top: '#6c4cff', pants: '#1f2433', shoe: '#ffffff', long: false }, // 19 therapist (purple)
+  ];
+  const ROLES = { boss: 10, doctor: 11, 'party-friend': 12, bartender: 13, date: 14, parent: 15, cashier: 16, friend: 17, classmate: 18, therapist: 19 };
+  const SET_ROLE = { office: 'boss', hospital: 'doctor', party: 'party-friend', concert: 'party-friend', bar: 'bartender', restaurant: 'date', cafe: 'date', 'living-room': 'parent', kitchen: 'parent', shop: 'cashier', supermarket: 'cashier', bank: 'cashier', classroom: 'classmate', 'school-yard': 'classmate', therapist: 'therapist', street: 'friend', park: 'friend' };
+  const WORD_ROLE = [[/\b(boss|manager|ceo|coworker|colleague)\b/i, 'boss'], [/\b(doctor|nurse|dentist)\b/i, 'doctor'], [/\b(mom|mum|dad|mother|father|parents?)\b/i, 'parent'], [/\b(date|crush|girlfriend|boyfriend|partner|ex)\b/i, 'date'], [/\b(cashier|clerk)\b/i, 'cashier'], [/\b(bartender)\b/i, 'bartender'], [/\b(therapist|counsell?or)\b/i, 'therapist'], [/\b(friend|bestie|buddy)\b/i, 'friend']];
+  VTS.castRole = (scene, text) => { if (scene && scene.role) return scene.role; for (const [re, r] of WORD_ROLE) if (re.test(String(text || ''))) return r; return (scene && SET_ROLE[scene.setting]) || ''; };
+
   // ======================= stage (drawing) =======================
   class Stage {
     constructor() { this.colCache = new Map(); this.bgCache = new Map(); this.setPreset('teal'); this.amb = null; this.lw = 7; }
@@ -341,7 +359,8 @@
       try { return this.pal2(variant, a); } finally { this.amb = amb0; }
     }
     pal2(variant, a) {
-      const v = variant === 1
+      if (variant === 1 && this.role && ROLES[this.role]) variant = ROLES[this.role];
+      const v = variant >= 10 && CAST[variant - 10] ? CAST[variant - 10] : variant === 1
         ? { skin: '#c68b62', skinS: '#a86f4b', hair: '#231a1c', top: a.accent2, pants: '#4a3d63', shoe: '#2b2b33', long: true }
         : variant === 6 ? { skin: '#e9b48e', skinS: '#cf9670', hair: '#c4682b', top: '#6fbf73', pants: '#3b4a5c', shoe: '#f6f2ea', long: false } // v1.6 background extra
         : variant === 7 ? { skin: '#8d5a3b', skinS: '#734429', hair: '#1b1416', top: '#f2a541', pants: '#2f3e57', shoe: '#ffffff', long: true }
@@ -1281,7 +1300,7 @@
     // Draw one moment of a shot. sh: { scene, lt, t, dur, s, propAge(name), poseAge, calloutAge, img }
     drawShot(ctx, sh) {
       if (this.draw3d) return this.draw3d(ctx, sh); // v1.5: 3D style (three3d.js)
-      const scene = sh.scene; const setting = scene.setting; this.s = sh.s || 1;
+      const scene = sh.scene; const setting = scene.setting; this.s = sh.s || 1; this.role = VTS.castRole(scene, sh.text || (sh.beat && sh.beat.text) || scene.text);
       this.amb = AMBIENT[setting] || null;
       const kind = this.kindFor(setting, scene.pose); const L = this.layout(setting, kind, scene);
       const t = sh.t; const lt = sh.lt;
