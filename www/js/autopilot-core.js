@@ -121,6 +121,7 @@
   // ---------- retry ----------
   function isRetriable(err) {
     if (!err) return false;
+    if (err.noRetry) return false; // e.g. voice already used its time budget: retry the slot later, not inside this run
     if (quotaExceeded(err)) return false;
     if (err.network || err.name === 'TypeError' || /network|failed to fetch|timeout|ECONN|ETIMEDOUT/i.test(err.message || '')) return true;
     const st = err.status || 0;

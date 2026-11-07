@@ -57,11 +57,15 @@
   }
   function fail(msg) { const e = new Error(msg); e.friendly = msg; return e; }
 
-  async function geminiRequest(path, init, timeoutMs) {
+  async function geminiRequest(path, init, timeoutMs, outerSignal) {
     const key = host.getKey();
     if (!key) throw fail('Add your Gemini API key in Settings first.');
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 90000) : 0;
+    let timedOut = false;
+    const timer = ctrl ? setTimeout(() => { timedOut = true; ctrl.abort(); }, timeoutMs || 90000) : 0;
+    // The caller's cancel (Autopilot stage watchdog) aborts the in-flight request too, instead of letting it run on.
+    const onOuter = () => { try { ctrl && ctrl.abort(); } catch (_) { /* ignore */ } };
+    if (outerSignal) { if (outerSignal.aborted) onOuter(); else outerSignal.addEventListener('abort', onOuter, { once: true }); }
     let res; let data = null; let bodyErr = null;
     try {
       try {
@@ -73,13 +77,14 @@
         // Read the body inside the timer too: on phones a reply can stall or drop half-way (screen off, weak signal).
         try { data = await res.json(); } catch (e) { data = null; bodyErr = e; }
       } catch (err) {
+        if (err && err.name === 'AbortError' && !timedOut && outerSignal && outerSignal.aborted) { const e = new Error('Stopped.'); e.aborted = true; throw e; }
         if (err && err.name === 'AbortError') {
           const e = new Error('Gemini took too long to answer (no reply after ' + Math.round((timeoutMs || 90000) / 1000) + ' s).');
           e.status = 504; e.timeout = true; e.details = 'timeout after ' + Math.round((timeoutMs || 90000) / 1000) + ' s'; throw e;
         }
         throw err;
       }
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); if (outerSignal) outerSignal.removeEventListener('abort', onOuter); }
     if (res.ok && !data && bodyErr) {
       const e = new Error('Gemini’s reply was interrupted before it fully arrived.');
       e.status = 502; e.interrupted = true; e.details = 'HTTP 200 but the body could not be read' + (bodyErr && bodyErr.name === 'AbortError' ? ' (timeout while downloading)' : '');
@@ -387,7 +392,7 @@
     };
     const send = () => geminiRequest('/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    }, o.timeout || 120000);
+    }, o.timeout || 120000, o.signal);
     let data;
     try {
       try { data = await send(); } catch (err) {
@@ -416,7 +421,16 @@
     const first = o.model || (host.getTtsModel ? host.getTtsModel() : '') || TTS_DEFAULT_MODEL;
     const queue = [first].concat(TTS_MODELS);
     const tried = new Set(); let lastErr = null; let discovered = false; let quotaHit = false; let busyHit = false;
+    // Timeouts used to count as "busy, try the next model", so a TTS endpoint that never answers cost
+    // (models x timeout) per chunk — up to ~27 min for one Short. o.maxTimeouts / o.deadline (set by Autopilot) cap that.
+    let timeouts = 0; const attempts = [];
+    const giveUp = (why) => {
+      const e = fail('Gemini voice did not answer: ' + why + ' (' + attempts.map((a) => a.model + ' ' + a.outcome + ' ' + Math.round(a.ms / 1000) + 's').join(', ') + ')' + (typeof navigator !== 'undefined' && navigator.onLine === false ? ' — the phone reports no network' : '') + (typeof document !== 'undefined' && document.hidden ? ' — app was in the background' : '') + '.');
+      e.status = 504; e.timeout = true; e.voiceTimeout = true; e.noRetry = true; e.details = 'tts attempts: ' + JSON.stringify(attempts); return e;
+    };
     for (let i = 0; i <= queue.length; i++) {
+      if (o.signal && o.signal.aborted) { const e = new Error('Stopped.'); e.aborted = true; throw e; }
+      if (o.deadline && Date.now() > o.deadline && attempts.length) throw giveUp('voice time budget used up');
       if (i === queue.length) {
         if (discovered) break;
         discovered = true;
@@ -427,13 +441,18 @@
       if (tried.has(model)) continue;
       tried.add(model);
       if (isCooling(model) && queue.slice(i + 1).some((q) => !tried.has(q) && !isCooling(q))) continue;
+      const t0 = Date.now();
       try {
         const out = await ttsWith(model, text, o);
+        attempts.push({ model, outcome: 'ok', ms: Date.now() - t0 }); if (o.onAttempt) o.onAttempt(attempts[attempts.length - 1]);
         if (model !== first && host.setTtsModel && !busyHit) { host.setTtsModel(model); if (host.onTtsModelSwitch) host.onTtsModelSwitch(first, model); }
         out.model = model;
         return out;
       } catch (err) {
         lastErr = err;
+        attempts.push({ model, outcome: err && err.timeout ? 'timeout' : err && err.aborted ? 'stopped' : 'HTTP ' + (err && err.status || '?'), ms: Date.now() - t0 }); if (o.onAttempt) o.onAttempt(attempts[attempts.length - 1]);
+        if (err && err.aborted) throw err;
+        if (err && err.timeout && o.maxTimeouts && ++timeouts >= o.maxTimeouts) throw giveUp(timeouts + ' request' + (timeouts > 1 ? 's' : '') + ' timed out');
         if (isQuota(err)) { quotaHit = true; coolDown(model, err); continue; } // quotas are per model: try the next one once
         if (isOverloaded(err)) { busyHit = true; coolDown(model, err); continue; } // Google overloaded: try the next voice model
         if (!isTtsModelUnavailable(err)) throw err;

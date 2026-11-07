@@ -2042,13 +2042,16 @@
     Q.pkg = pkg; if (pkg.beats.some((b) => !b.scene || !b.scene.setting)) S.attachScenes(pkg.beats);
     step('voice');
     const st = TTS_STYLES[tone] || TTS_STYLES.calm; const voice = ttsVoice();
+    // Voice budget for Autopilot: one 60 s timeout on the two-voice try, then the single voice gets 2 timeouts max,
+    // all inside ~3.5 min, so a TTS endpoint that never answers fails with a clear reason instead of eating the run.
+    const vDeadline = Date.now() + 210000; const onAttempt = (a) => { if (h.onDiag) h.onDiag({ event: 'tts ' + a.model, reason: a.outcome + ' ' + Math.round(a.ms / 1000) + 's' }); };
     let r = null; const dlg = dialogueLines(pkg); const v2 = dlg ? voice2For(voice) : '';
     if (dlg && v2) {
-      try { r = await G.generateDialogueSpeech(dlg.lines, { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, timeout: 60000, signal: h.signal }); }
-      catch (e) { if (e && (e.quota || e.status === 429)) throw e; r = null; }
+      try { r = await G.generateDialogueSpeech(dlg.lines, { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, timeout: 60000, signal: h.signal, maxTimeouts: 1, deadline: vDeadline - 90000, onAttempt }); }
+      catch (e) { if (e && (e.quota || e.status === 429 || e.aborted)) throw e; if (h.onDiag) h.onDiag({ event: 'two-voice failed, using one voice', reason: e && e.message }); r = null; }
     }
     if (h.signal && h.signal.aborted) throw Object.assign(new Error('Stopped.'), { aborted: true });
-    if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix, signal: h.signal, timeout: 90000 });
+    if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix, signal: h.signal, timeout: 75000, maxTimeouts: 2, deadline: vDeadline, onAttempt });
     step('decode');
     const buf = R.trimBuffer(await R.decodeBlob(r.blob), 56);
     Q.voice = { blob: r.blob, source: 'gemini', duration: buf.duration, mime: r.blob.type, createdAt: new Date().toISOString(), ttsVoice: voice, ttsModel: r.model };

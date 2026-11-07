@@ -11,6 +11,8 @@
   const NP = isNative ? ((cap.Plugins && cap.Plugins.Autopilot) || (cap.registerPlugin && cap.registerPlugin('Autopilot'))) : null;
   const D = window.vtsDesktop || null;
   const PLATFORM = NP ? 'android' : D ? 'desktop' : 'web';
+  // App build shown in Settings and stamped on every Post log row, so a screenshot proves which code wrote it.
+  const BUILD = '1.11.5';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const LS = { settings: 'vts.ap.settings', log: 'vts.ap.log', used: 'vts.ap.used', clientId: 'vts.ap.clientId', channel: 'vts.ap.channel', buffer: 'vts.ap.bufferChannel', ghRepo: 'vts.ap.ghRepo', host: 'vts.ap.host' };
@@ -99,13 +101,13 @@
     const gen = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
     running = true; current = slot.id; runStartedAt = Date.now(); activeGen = gen; ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const myCtl = ctl; hiddenAcc = 0; hiddenSince = document.hidden ? Date.now() : 0;
-    const entry = putLog({ slot: slot.id, gen, time: new Date().toISOString(), method: s.method, status: 'running', attempts: attempt, title: prev.title || '', why, stage: '', stageAt: null, stages: {}, progress: null, progressAt: null, hiddenMs: 0, diag: [], startedHidden: !!document.hidden });
+    const entry = putLog({ slot: slot.id, gen, time: new Date().toISOString(), method: s.method, status: 'running', build: BUILD, attempts: attempt, title: prev.title || '', why, stage: '', stageAt: null, stages: {}, progress: null, progressAt: null, hiddenMs: 0, diag: [], startedHidden: !!document.hidden });
     const row = () => getLog().find((e) => e.slot === slot.id) || {};
     const alive = () => row().gen === gen && !(myCtl && myCtl.signal.aborted);
     const P = (patch) => { if (row().gen !== gen) return null; return putLog(Object.assign({ slot: slot.id, hiddenMs: hiddenNow() }, patch)); };
     const fence = () => { if (!alive()) throw new Abandoned(); };
     const stage = (name) => P(C.stagePatch(row(), name, Date.now()));
-    const diag = (d) => { const r = row(); P({ diag: (r.diag || []).concat([new Date().toISOString().slice(11, 19) + ' ' + (d.event || '') + (d.reason ? ': ' + String(d.reason).slice(0, 160) : '')]).slice(-8) }); };
+    const diag = (d) => { const r = row(); P({ diag: (r.diag || []).concat([new Date().toTimeString().slice(0, 8) + ' ' + (d.event || '') + (d.reason ? ': ' + String(d.reason).slice(0, 160) : '')]).slice(-8) }); };
     let stopReason = null;
     const abort = (why2) => { if (!stopReason) stopReason = why2 || 'stopped'; try { if (myCtl) myCtl.abort(); } catch (_) { /* ignore */ } };
     // Stage watchdog: each stage has its own budget, and a render that stops reporting progress is stopped early.
@@ -314,13 +316,13 @@
     const rt = m === 'youtube' ? await secure.get('refreshToken').catch(() => null) : null; const ch = load(LS.channel, null);
     if ($('ap-ytstate')) $('ap-ytstate').textContent = rt ? 'Connected' + (ch ? ' to ' + ch.title : '') + '.' : 'Not connected.';
     const log = getLog(); const nx = C.nextSlot(Date.now(), s);
-    let st = s.enabled ? 'On · next: ' + (nx ? nx.day + ' ' + nx.time + ' IST' : '—') : 'Off';
+    let st = 'v' + BUILD + ' · ' + (s.enabled ? 'On · next: ' + (nx ? nx.day + ' ' + nx.time + ' IST' : '—') : 'Off');
     if (m === 'youtube') { const q = C.quotaLeft(Date.now(), log); st += ' · YouTube uploads left today: ' + q.uploads + ' of 6'; }
     if (armed && PLATFORM === 'android') { if (armed.batteryExempt === false) st += ' · ⚠️ battery optimisation is on'; if (armed.exact === false) st += ' · ⚠️ exact alarms not allowed'; if (armed.notifications === false) st += ' · notifications off'; }
     if (running) st += ' · working on ' + current + '…';
-    if (!$('ap-state').textContent || /^On|^Off/.test($('ap-state').textContent)) state(st);
+    if (!$('ap-state').textContent || /^v\d|^On|^Off/.test($('ap-state').textContent)) state(st);
     const badge = { posted: '✅', scheduled: '🗓️', running: '⏳', retrying: '🔁', deferred: '⏸️', failed: '❌', skipped: '⏭️' };
-    $('ap-log').innerHTML = log.length ? log.slice(0, 25).map((e) => '<div class="ap-row">' + (badge[e.status] || '•') + ' <b>' + esc(e.slot) + '</b> ' + esc(e.status) + (e.step ? ' (' + esc(e.step) + ')' : '') + ' — ' + esc(e.title || '') +
+    $('ap-log').innerHTML = log.length ? log.slice(0, 25).map((e) => '<div class="ap-row">' + (badge[e.status] || '•') + ' <b>' + esc(e.slot) + '</b> ' + esc(e.status) + (e.step ? ' (' + esc(e.step) + ')' : '') + ' — ' + esc(e.title || '') + ' <span class="muted">[' + esc(e.build ? 'v' + e.build : e.stages ? 'v1.11.4' : 'v1.11.3 or older') + ']</span>' +
       (e.videoUrl ? ' · <a href="' + esc(e.videoUrl) + '" target="_blank" rel="noopener">video</a>' : '') + (e.error ? '<br><span class="muted">' + esc(e.error) + '</span>' : '') + '</div>').join('') : '<p class="muted">Nothing posted yet.</p>';
   }
 
@@ -333,5 +335,5 @@
     if (PLATFORM !== 'web') setInterval(() => check('timer'), 60000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
-  VTS.autopilot = { check, runSlot, recover, settings, getLog, connectYouTube, PLATFORM };
+  VTS.autopilot = { BUILD, check, runSlot, recover, settings, getLog, connectYouTube, PLATFORM };
 }());
