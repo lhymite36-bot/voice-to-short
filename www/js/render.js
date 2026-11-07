@@ -719,7 +719,9 @@
     const illustrated = await r.prepare();
     r.draw(0);
     const ac = audioCtx();
-    if (ac.state === 'suspended') await ac.resume();
+    // resume() never settles when the page may not start audio (no user gesture / background): don't wait forever.
+    if (ac.state !== 'running') { await Promise.race([ac.resume().catch(() => {}), new Promise((r2) => setTimeout(r2, 5000))]); }
+    if (ac.state !== 'running') throw Object.assign(new Error('Render stalled: audio could not start (AudioContext ' + ac.state + (document.hidden ? ', app in background' : '') + '), so the live recorder cannot run.'), { renderStall: true });
     const dest = ac.createMediaStreamDestination();
     // v1.4: music + sound effects are pre-mixed around the voice (the voice itself is never turned down)
     let mixed = null;
@@ -743,10 +745,18 @@
     const startAt = ac.currentTime + 0.12;
     if (mixed) src.start(startAt, 0, P.total); else src.start(startAt + LEAD, 0, P.audioDur);
     let cancelled = false; let raf = 0; let timer = 0; let lastDraw = -1; let frames = 0; let drawMs = 0; let maxDraw = 0;
+    // The live render is clocked by the AudioContext. On Android the context can be suspended/interrupted when the app
+    // goes to the background (or was opened by an alarm with no user gesture): currentTime then freezes and the render
+    // used to sit at N% forever. Try to resume it; if the clock stays frozen for stallMs, fail with a clear reason.
+    let lastT = -1; let lastMove = performance.now(); let stallErr = null; const stallMs = opts.stallMs || 20000;
     const done = new Promise((resolve) => {
       const tick = () => {
         if (opts.signal && opts.signal.aborted) { cancelled = true; resolve(); return; }
-        const t = Math.max(0, ac.currentTime - startAt);
+        if (ac.state !== 'running') { try { ac.resume(); } catch (_) { /* ignore */ } }
+        const tNow = ac.currentTime;
+        if (tNow !== lastT) { lastT = tNow; lastMove = performance.now(); }
+        else if (performance.now() - lastMove > stallMs) { stallErr = Object.assign(new Error('Render stalled: the audio clock stopped (AudioContext ' + ac.state + (document.hidden ? ', app in background' : '') + ') for ' + Math.round(stallMs / 1000) + ' s.'), { renderStall: true }); resolve(); return; }
+        const t = Math.max(0, tNow - startAt);
         if (t - lastDraw >= 1 / 31 || t >= P.total) { const d0 = performance.now(); r.draw(t); const dd = performance.now() - d0; drawMs += dd; if (dd > maxDraw) maxDraw = dd; lastDraw = t; frames++; }
         if (onProgress) onProgress(Math.min(1, t / P.total), t, P.total);
         if (t >= P.total) { resolve(); return; }
@@ -762,6 +772,7 @@
     await stopped;
     vstream.getTracks().forEach((tr) => tr.stop());
     try { gain.disconnect(); if (monitor) monitor.disconnect(); } catch (_) { /* ignore */ }
+    if (stallErr) throw stallErr;
     if (cancelled) return null;
     const type = (rec.mimeType || mime || 'video/webm').split(';')[0];
     let out = new Blob(chunks, { type });

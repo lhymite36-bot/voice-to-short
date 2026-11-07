@@ -244,9 +244,14 @@ public class AutopilotPlugin extends Plugin {
     }
 
     // ---------- run lifecycle ----------
+    /** True while an Autopilot run is in progress: MainActivity keeps the WebView (JS timers, renderer priority) running when the app is backgrounded. */
+    static volatile boolean RUN_ACTIVE = false;
+
     @PluginMethod
     public void runStart(PluginCall call) {
+        RUN_ACTIVE = true;
         Context c = getContext();
+        if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).keepWebViewAwake();
         Intent i = new Intent(c, AutopilotService.class).putExtra("text", call.getString("text", "Making and posting a Short…"));
         try { ContextCompat.startForegroundService(c, i); } catch (Exception ignored) { }
         Activity a = getActivity();
@@ -256,6 +261,7 @@ public class AutopilotPlugin extends Plugin {
 
     @PluginMethod
     public void runEnd(PluginCall call) {
+        RUN_ACTIVE = false;
         Context c = getContext();
         c.stopService(new Intent(c, AutopilotService.class));
         AutopilotScheduler.scheduleNext(c);

@@ -61,7 +61,7 @@
   // ---------- hang protection ----------
   // A whole slot (script + voice + render + upload + Buffer) normally takes 2–8 min. Anything still 'running'
   // with no progress beat for STALE_MS was killed (app closed, WebView frozen in the background) or hung.
-  const LIMITS = { scriptMs: 4 * 60000, renderMs: 15 * 60000, uploadMs: 10 * 60000, bufferMs: 2 * 60000, slotMs: 30 * 60000, staleMs: 20 * 60000, maxShortSec: 70, bufferMaxSec: 179 };
+  const LIMITS = { stage: { script: 6 * 60000, voice: 4 * 60000, decode: 60000, render: 12 * 60000 }, noProgressMs: 120000, scriptMs: 6 * 60000, renderMs: 19 * 60000, uploadMs: 10 * 60000, bufferMs: 2 * 60000, slotMs: 30 * 60000, staleMs: 20 * 60000, maxShortSec: 70, bufferMaxSec: 179 };
   function lastBeat(e) { return Math.max(Date.parse(e && e.beat || '') || 0, Date.parse(e && e.time || '') || 0); }
   function isStale(e, now, ms) { return !!e && e.status === 'running' && (now - lastBeat(e)) > (ms || LIMITS.staleMs); }
   // Decide what to do with each stale 'running' row: retry once (re-using an uploaded video if there is one) or give up with a clear reason.
@@ -71,12 +71,30 @@
     (log || []).forEach((e) => {
       if (!isStale(e, now) || e.slot === skip) return;
       const at = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(e.slot) ? istSlotMs(e.slot.slice(0, 10), e.slot.slice(11)) : lastBeat(e);
-      const stuckAt = e.step ? ' at step "' + e.step + '"' : '';
+      const stuckAt = (e.step ? ' at step "' + e.step + '"' : '') + (e.stage && e.stageAt ? ' (stage ' + e.stage + ' began ' + new Date(e.stageAt).toISOString().slice(11, 16) + ' UTC)' : '');
       const mins = Math.round((now - lastBeat(e)) / 60000);
-      if ((e.attempts || 1) < 2 && now - at <= win) out.push({ slot: e.slot, status: 'retrying', step: '', error: 'Previous try stopped' + stuckAt + ' with no progress for ' + mins + ' min (app closed or render stalled). Retrying once' + (e.videoUrl ? ' with the already-uploaded video.' : '.'), nextRetryAt: new Date(now).toISOString() });
-      else out.push({ slot: e.slot, status: 'failed', step: '', error: 'Stopped' + stuckAt + ' with no progress for ' + mins + ' min (app closed or render stalled) and the slot is past its catch-up window. Marked failed so the next slots can run.', nextRetryAt: null });
+      const fence = 'recovered-' + now.toString(36);
+      if ((e.attempts || 1) < 2 && now - at <= win) out.push({ slot: e.slot, gen: fence, status: 'retrying', step: '', error: 'Previous try stopped' + stuckAt + ' with no progress for ' + mins + ' min (app closed or render stalled). Retrying once' + (e.videoUrl ? ' with the already-uploaded video.' : '.'), nextRetryAt: new Date(now).toISOString() });
+      else out.push({ slot: e.slot, gen: fence, status: 'failed', step: '', error: 'Stopped' + stuckAt + ' with no progress for ' + mins + ' min (app closed or render stalled) and the slot is past its catch-up window. Marked failed so the next slots can run.', nextRetryAt: null });
     });
     return out;
+  }
+  // Close the previous stage and open the next one; returns a patch { stage, stageAt, stages } for the log row.
+  function stagePatch(entry, name, now) {
+    const st = Object.assign({}, (entry && entry.stages) || {}); const prevName = entry && entry.stage;
+    if (prevName && st[prevName] && !st[prevName].ms) st[prevName] = Object.assign({}, st[prevName], { ms: now - Date.parse(st[prevName].at) });
+    if (name) st[name] = { at: new Date(now).toISOString() };
+    return { stage: name || '', stageAt: name ? new Date(now).toISOString() : null, stages: st };
+  }
+  // Human-readable timing summary, e.g. "script 41s, voice 18s, render 2m10s (stalled 31%), hidden 3m".
+  function fmtMs(ms) { ms = Math.max(0, ms | 0); const m = Math.floor(ms / 60000); const s2 = Math.round((ms % 60000) / 1000); return m ? m + 'm' + (s2 ? s2 + 's' : '') : s2 + 's'; }
+  function diagText(entry, now) {
+    const e = entry || {}; const parts = [];
+    Object.keys(e.stages || {}).forEach((k) => { const x = e.stages[k]; parts.push(k + ' ' + fmtMs(x.ms != null ? x.ms : now - Date.parse(x.at)) + (x.ms == null ? ' (unfinished)' : '')); });
+    if (e.progress != null) parts.push('last progress ' + Math.round(e.progress * 100) + '%' + (e.progressAt ? ' ' + fmtMs(now - Date.parse(e.progressAt)) + ' ago' : ''));
+    if (e.hiddenMs) parts.push('app in background ' + fmtMs(e.hiddenMs));
+    if (e.diag && e.diag.length) parts.push(e.diag.slice(-3).join('; '));
+    return parts.join(', ');
   }
   class TimeoutError extends Error { constructor(what, ms) { super(what + ' timed out after ' + Math.round(ms / 60000) + ' min'); this.timeout = true; } }
   // Race a promise against a timer; on timeout call abort() (if given) and reject with a clear message (not retriable by withRetry).
@@ -322,7 +340,7 @@
   };
   const videoUrl = (id) => 'https://youtube.com/shorts/' + id;
 
-  return { LIMITS, lastBeat, isStale, recoverStale, withTimeout, TimeoutError, shortDurationProblem, dayTag, IST_OFFSET_MIN, DEFAULTS, DEFAULT_TIMES, QUOTA, SCOPES, AUTH_URL, TOKEN_URL, UPLOAD_URL, CHANNEL_URL,
+  return { stagePatch, diagText, fmtMs, LIMITS, lastBeat, isStale, recoverStale, withTimeout, TimeoutError, shortDurationProblem, dayTag, IST_OFFSET_MIN, DEFAULTS, DEFAULT_TIMES, QUOTA, SCOPES, AUTH_URL, TOKEN_URL, UPLOAD_URL, CHANNEL_URL,
     parseTime, normTimes, normSettings, istDay, istSlotMs, slotsForDay, nextSlot, dueSlots,
     ptDay, quotaUsed, quotaLeft, nextPtMidnight, quotaExceeded, isRetriable, backoffMs, withRetry,
     ideaKey, pickIdea, buildMetadata, b64url, pkcePair, randomState, validClientId, buildAuthUrl, form, tokenRequest, refreshRequest,

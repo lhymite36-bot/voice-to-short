@@ -46,6 +46,7 @@ const srv = http.createServer((req, res) => { let p = decodeURIComponent(new URL
   const t0 = Date.now();
   const slotAt = Date.now() + 40 * 60000;
   const r1 = await page.evaluate(async (at) => { await VTS.autopilot.runSlot({ id: '2026-11-05T09:00', time: '09:00', at, runAt: at - 2400000 }, 'test'); return VTS.autopilot.getLog()[0]; }, slotAt);
+  ok('stage timings recorded (script, voice, render, upload, buffer)', ['script', 'voice', 'render', 'upload', 'buffer'].every((k) => r1.stages && r1.stages[k] && r1.stages[k].ms >= 0) && !r1.stage, r1.stages);
   ok('Buffer mode: slot scheduled', r1.status === 'scheduled', { status: r1.status, error: r1.error, ms: Date.now() - t0 });
   ok('Buffer mode: queue checked before render, then GitHub upload, then createPost', seen.join('|').includes('buffer:posts(') && seen.some((s) => s.startsWith('ghup:short-')) && seen.includes('buffer:createPost'), seen.filter((s) => !s.startsWith('{')));
   const input = JSON.parse(seen.find((s) => s.startsWith('{')) || '{}');
@@ -86,7 +87,7 @@ const srv = http.createServer((req, res) => { let p = decodeURIComponent(new URL
     VTS.makeShortHeadless = mk; L.renderMs = keep[0]; L.scriptMs = keep[1];
     return Object.assign({ aborted: !!(sig && sig.aborted) }, VTS.autopilot.getLog().find((e) => e.slot === '2026-11-05T19:00'));
   });
-  ok('hung render -> timed out, aborted, retrying (not running)', r5.status === 'retrying' && /timed out/.test(r5.error) && /render/.test(r5.error) && r5.aborted, { status: r5.status, error: r5.error });
+  ok('hung render -> timed out, aborted, retrying (not running)', r5.status === 'retrying' && /timed out|took longer/.test(r5.error) && /render/.test(r5.error) && r5.aborted, { status: r5.status, error: r5.error });
   // stale "running" rows left by a killed app are recovered on the next check
   const r6 = await page.evaluate(async () => {
     const log = VTS.autopilot.getLog(); const old = new Date(Date.now() - 3 * 3600000).toISOString();

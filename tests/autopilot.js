@@ -277,6 +277,19 @@ test('GitHub host: release lookup 422 falls back to dated release', async () => 
   assert.strictEqual(await C.HOSTS.github.upload(http, up, { token: 't', repo: 'p/qb', name: 'a.mp4', blob: {}, size: 1 }), 'ok');
 });
 
+test('stage timing: stagePatch closes previous stage, diagText summarises', () => {
+  const t = Date.parse('2026-11-07T03:30:00Z'); let e = Object.assign({}, C.stagePatch({}, 'script', t));
+  e = Object.assign(e, C.stagePatch(e, 'voice', t + 41000)); e = Object.assign(e, C.stagePatch(e, 'render', t + 60000));
+  assert.strictEqual(e.stages.script.ms, 41000); assert.strictEqual(e.stages.voice.ms, 19000); assert.strictEqual(e.stage, 'render');
+  e.progress = 0.31; e.progressAt = new Date(t + 90000).toISOString(); e.hiddenMs = 180000;
+  const d = C.diagText(e, t + 210000);
+  assert.ok(/script 41s/.test(d) && /voice 19s/.test(d) && /render 2m30s \(unfinished\)/.test(d) && /31% 2m ago/.test(d) && /background 3m/.test(d), d);
+});
+test('recoverStale patches carry a new generation fence', () => {
+  const now = IST('2026-11-06T19:30:00'); const p = C.recoverStale(now, [{ slot: '2026-11-06T19:00', status: 'running', gen: 'g1', time: new Date(now - 3600000).toISOString(), attempts: 1 }], S);
+  assert.ok(p[0].gen && p[0].gen !== 'g1');
+});
+
 (async () => {
   let fail = 0;
   for (const [name, fn] of tests) { try { await fn(); n++; console.log('ok  ' + name); } catch (e) { fail++; console.log('FAIL ' + name + '\n   ' + (e && e.stack || e)); } }

@@ -2044,12 +2044,15 @@
     const st = TTS_STYLES[tone] || TTS_STYLES.calm; const voice = ttsVoice();
     let r = null; const dlg = dialogueLines(pkg); const v2 = dlg ? voice2For(voice) : '';
     if (dlg && v2) {
-      try { r = await G.generateDialogueSpeech(dlg.lines, { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, timeout: 60000 }); }
+      try { r = await G.generateDialogueSpeech(dlg.lines, { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, timeout: 60000, signal: h.signal }); }
       catch (e) { if (e && (e.quota || e.status === 429)) throw e; r = null; }
     }
-    if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix });
+    if (h.signal && h.signal.aborted) throw Object.assign(new Error('Stopped.'), { aborted: true });
+    if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix, signal: h.signal, timeout: 90000 });
+    step('decode');
     const buf = R.trimBuffer(await R.decodeBlob(r.blob), 56);
     Q.voice = { blob: r.blob, source: 'gemini', duration: buf.duration, mime: r.blob.type, createdAt: new Date().toISOString(), ttsVoice: voice, ttsModel: r.model };
+    if (h.signal && h.signal.aborted) throw Object.assign(new Error('Stopped.'), { aborted: true });
     step('render');
     const lk = Object.assign({}, Q.look, { aspect: '9:16', handle: handle(), textHook: pkg.textHook || '', ctaSticker: pkg.cta || CTAS[0], template: Q.template, humour: Q.humour, stepLabel: (S.FORMATS[Q.template] || {}).badge || 'STEP', safeZones: false });
     const [cw, ch] = R.frameSize('9:16', 1); const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
@@ -2059,17 +2062,21 @@
     const MAXS = 59; const E = VTS.encode; let how = 'webcodecs';
     try {
       // Frame-exact WebCodecs encode -> flat MP4 with a real duration (never throttled when the screen is off / app hidden).
-      if (E && E.supported()) { try { res = await E.renderOffline({ canvas, buffer: buf, beats: pkg.beats, look: lk, signal: h.signal, maxSeconds: MAXS, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } }); } catch (e) { if (h.signal && h.signal.aborted) throw e; res = null; how = 'mediarecorder (WebCodecs failed: ' + (e && e.message || e) + ')'; } }
+      if (E && E.supported()) { try { res = await E.renderOffline({ canvas, buffer: buf, beats: pkg.beats, look: lk, signal: h.signal, maxSeconds: MAXS, onDiag: h.onDiag, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } }); } catch (e) { if (h.signal && h.signal.aborted) throw e; res = null; how = 'mediarecorder (WebCodecs failed: ' + (e && e.message || e) + ')'; } }
       else how = 'mediarecorder';
+      if (h.signal && h.signal.aborted) throw Object.assign(new Error('Stopped.'), { aborted: true }); // never start a second (realtime) render for a cancelled run
+      if (!res && h.onDiag) h.onDiag({ event: 'fallback-mediarecorder', reason: how });
       if (!res) res = await R.renderVideo({ canvas, buffer: buf, beats: pkg.beats, look: lk, format: 'auto', signal: h.signal, maxSeconds: MAXS, onProgress: (p) => { if (h.onProgress) h.onProgress(p); } });
     } finally { canvas.remove(); N.keepAwake(false); }
+    if (h.signal && h.signal.aborted) throw Object.assign(new Error('Stopped.'), { aborted: true });
     if (!res || !res.blob.size) throw new Error('Render produced no video.');
+    if (res.encoderRetry) how += ' (software retry after: ' + res.encoderRetry + ')';
     if (E && /mp4/.test(res.type || res.mime || '')) {
       const info = await E.blobInfo(res.blob); const chk = E.checkShort(info, 59.9);
       if (!chk.ok) throw Object.assign(new Error('The rendered video is not a valid Short (' + chk.problems.join(', ') + '; renderer: ' + how + '). It was not uploaded.'), { fatal: true });
       res.checkedDuration = info.duration;
     }
-    res.how = how;
+    res.how = res.how || how;
     Q.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect: '9:16', createdAt: new Date().toISOString(), visual: 'scenes' };
     try { const P2 = R.plan(buf, 60); const keep = P; P = Q; try { Q.thumb = thumbFrame(lk, P2.total, null, P2); } finally { P = keep; } } catch (_) { Q.thumb = ''; }
     Q.step = 'render'; Q.updatedAt = new Date().toISOString();
