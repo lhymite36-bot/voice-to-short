@@ -61,7 +61,7 @@
   // ---------- hang protection ----------
   // A whole slot (script + voice + render + upload + Buffer) normally takes 2–8 min. Anything still 'running'
   // with no progress beat for STALE_MS was killed (app closed, WebView frozen in the background) or hung.
-  const LIMITS = { stage: { script: 6 * 60000, voice: 4 * 60000, decode: 60000, render: 12 * 60000 }, noProgressMs: 120000, scriptMs: 6 * 60000, renderMs: 19 * 60000, uploadMs: 10 * 60000, bufferMs: 2 * 60000, slotMs: 30 * 60000, staleMs: 20 * 60000, maxShortSec: 70, bufferMaxSec: 179 };
+  const LIMITS = { stage: { script: 6 * 60000, voice: 4 * 60000, decode: 60000, render: 12 * 60000, upload: 10 * 60000 }, noProgressMs: 120000, frozenGapMs: 90000, thawGraceMs: 90000, wallMs: 3 * 3600000, uploadStallMs: 60000, scriptMs: 6 * 60000, renderMs: 19 * 60000, uploadMs: 10 * 60000, bufferMs: 2 * 60000, slotMs: 30 * 60000, staleMs: 20 * 60000, maxShortSec: 70, bufferMaxSec: 179 };
   function lastBeat(e) { return Math.max(Date.parse(e && e.beat || '') || 0, Date.parse(e && e.time || '') || 0); }
   function isStale(e, now, ms) { return !!e && e.status === 'running' && (now - lastBeat(e)) > (ms || LIMITS.staleMs); }
   // Decide what to do with each stale 'running' row: retry once (re-using an uploaded video if there is one) or give up with a clear reason.
@@ -79,6 +79,23 @@
     });
     return out;
   }
+  // Freeze clock: Android can stop the app's JavaScript completely (phone asleep / Doze, app frozen in the background).
+  // A heartbeat that should tick every few seconds and instead comes back after > gapMs means the app was frozen for that
+  // long. Budgets (stage limits, no-progress, the 30-min slot watchdog) count ACTIVE time only, so a render that was frozen
+  // and then thawed gets to continue instead of being killed the instant the phone wakes. (Hidden-page timer throttling
+  // stretches a 5 s tick to at most ~60 s, which stays below gapMs, so it is not mistaken for a freeze.)
+  function freezeClock(start, gapMs) {
+    const g = gapMs || LIMITS.frozenGapMs; const spans = []; let last = start;
+    return {
+      tick(now) { const gap = now - last; last = now; if (gap > g) { spans.push([now - gap, now]); return gap; } return 0; },
+      pendingGap(now) { return now - last > g ? now - last : 0; },
+      frozenSince(since, now) { let f = 0; spans.forEach(([a, b]) => { const lo = Math.max(a, since); const hi = Math.min(b, now); if (hi > lo) f += hi - lo; }); const pg = now - last > g ? now - Math.max(last, since) : 0; return f + Math.max(0, pg); },
+      activeSince(since, now) { return Math.max(0, now - since - this.frozenSince(since, now)); },
+      get frozenMs() { return spans.reduce((t, [a, b]) => t + (b - a), 0); },
+      get lastThaw() { return spans.length ? spans[spans.length - 1][1] : 0; },
+      get count() { return spans.length; },
+    };
+  }
   // Close the previous stage and open the next one; returns a patch { stage, stageAt, stages } for the log row.
   function stagePatch(entry, name, now) {
     const st = Object.assign({}, (entry && entry.stages) || {}); const prevName = entry && entry.stage;
@@ -93,6 +110,8 @@
     Object.keys(e.stages || {}).forEach((k) => { const x = e.stages[k]; parts.push(k + ' ' + fmtMs(x.ms != null ? x.ms : now - Date.parse(x.at)) + (x.ms == null ? ' (unfinished)' : '')); });
     if (e.progress != null) parts.push('last progress ' + Math.round(e.progress * 100) + '%' + (e.progressAt ? ' ' + fmtMs(now - Date.parse(e.progressAt)) + ' ago' : ''));
     if (e.hiddenMs) parts.push('app in background ' + fmtMs(e.hiddenMs));
+    if (e.frozenMs) parts.push('app frozen ' + fmtMs(e.frozenMs) + ' (phone asleep or Android paused the app)');
+    if (e.checkpoint) parts.push('saved: ' + e.checkpoint);
     if (e.diag && e.diag.length) parts.push(e.diag.slice(-3).join('; '));
     return parts.join(', ');
   }
@@ -341,7 +360,7 @@
   };
   const videoUrl = (id) => 'https://youtube.com/shorts/' + id;
 
-  return { stagePatch, diagText, fmtMs, LIMITS, lastBeat, isStale, recoverStale, withTimeout, TimeoutError, shortDurationProblem, dayTag, IST_OFFSET_MIN, DEFAULTS, DEFAULT_TIMES, QUOTA, SCOPES, AUTH_URL, TOKEN_URL, UPLOAD_URL, CHANNEL_URL,
+  return { freezeClock, stagePatch, diagText, fmtMs, LIMITS, lastBeat, isStale, recoverStale, withTimeout, TimeoutError, shortDurationProblem, dayTag, IST_OFFSET_MIN, DEFAULTS, DEFAULT_TIMES, QUOTA, SCOPES, AUTH_URL, TOKEN_URL, UPLOAD_URL, CHANNEL_URL,
     parseTime, normTimes, normSettings, istDay, istSlotMs, slotsForDay, nextSlot, dueSlots,
     ptDay, quotaUsed, quotaLeft, nextPtMidnight, quotaExceeded, isRetriable, backoffMs, withRetry,
     ideaKey, pickIdea, buildMetadata, b64url, pkcePair, randomState, validClientId, buildAuthUrl, form, tokenRequest, refreshRequest,

@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.net.wifi.WifiManager;
 import android.os.PowerManager;
 import androidx.core.app.NotificationCompat;
 
@@ -18,6 +19,7 @@ public class AutopilotService extends Service {
     static final String CH_RUN = "vts_autopilot_run";
     static final String CH_DONE = "vts_autopilot_done";
     private PowerManager.WakeLock wake;
+    private WifiManager.WifiLock wifi;
 
     static void channels(Context c) {
         if (Build.VERSION.SDK_INT < 26) return;
@@ -39,16 +41,25 @@ public class AutopilotService extends Service {
         String text = intent != null && intent.getStringExtra("text") != null ? intent.getStringExtra("text") : "Making and posting a Short…";
         Notification n = build(this, CH_RUN, "Voice to Short autopilot", text, true);
         if (Build.VERSION.SDK_INT >= 29) startForeground(42, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC); else startForeground(42, n);
-        if (wake == null) {
-            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vts:autopilot");
-            wake.acquire(30 * 60 * 1000L); // hard cap: 30 min per run
-        }
+        // CPU wake lock for the run (re-armed on every start so a second run never runs without one; 1.11.5 only took it
+        // once per service instance) + a Wi-Fi lock so the upload does not stall when the screen turns off.
+        try {
+            if (wake == null) { PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE); wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vts:autopilot"); wake.setReferenceCounted(false); }
+            wake.acquire(45 * 60 * 1000L); // hard cap per run
+        } catch (Exception ignored) { }
+        try {
+            if (wifi == null) { WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE); if (wm != null) { wifi = wm.createWifiLock(Build.VERSION.SDK_INT >= 29 ? WifiManager.WIFI_MODE_FULL_HIGH_PERF : WifiManager.WIFI_MODE_FULL, "vts:autopilot-upload"); wifi.setReferenceCounted(false); } }
+            if (wifi != null && !wifi.isHeld()) wifi.acquire();
+        } catch (Exception ignored) { }
         return START_NOT_STICKY;
     }
 
     @Override
-    public void onDestroy() { if (wake != null && wake.isHeld()) wake.release(); wake = null; super.onDestroy(); }
+    public void onDestroy() {
+        try { if (wake != null && wake.isHeld()) wake.release(); } catch (Exception ignored) { }
+        try { if (wifi != null && wifi.isHeld()) wifi.release(); } catch (Exception ignored) { }
+        wake = null; wifi = null; super.onDestroy();
+    }
 
     @Override
     public IBinder onBind(Intent intent) { return null; }

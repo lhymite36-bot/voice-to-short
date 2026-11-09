@@ -21,16 +21,21 @@ const srv = http.createServer((req, res) => { let p = decodeURIComponent(new URL
   const other = await browser.newPage(); await other.bringToFront();
   await new Promise((r) => setTimeout(r, 15000)); // past the (shortened) 5-minute grace period
   const r = await page.evaluate(async (fix, limit) => {
-    const sr = 24000; const sec = 6; const pcm = new Int16Array(sr * sec); for (let i = 0; i < pcm.length; i++) pcm[i] = Math.sin(i / 8) * 6000;
+    const sr = 24000; const sec = 8; const pcm = new Int16Array(sr * sec); for (let i = 0; i < pcm.length; i++) pcm[i] = Math.sin(i / 8) * 6000;
     const w = VTS.gemini.pcmToWav([new Uint8Array(pcm.buffer)], sr, 1); const buf = await VTS.render.decodeBlob(w instanceof Blob ? w : new Blob([w], { type: 'audio/wav' }));
     const [cw, ch] = VTS.render.frameSize('9:16', 1); const c = document.createElement('canvas'); c.width = cw; c.height = ch; document.body.appendChild(c);
+    // A phone's hardware encoder usually keeps up (queue never above 6), so the loop never waits on 'dequeue' events and its
+    // only yields are the timer yields. Model that: report an empty encode queue.
+    const Real = window.VideoEncoder;
+    window.VideoEncoder = class extends Real { get encodeQueueSize() { return 0; } };
     const t0 = performance.now(); let maxP = 0;
     const job = VTS.encode.renderOffline({ canvas: c, buffer: buf, beats: fix.beats, look: { aspect: '9:16', preset: 'kurz', visual: 'scenes', anim: '2d', aiImages: false, sfx: false, music: 'none' }, maxSeconds: 59, onProgress: (p) => { maxP = Math.max(maxP, p); } });
     // NOTE: this watchdog itself is a (throttled) timer; it only decides when we stop waiting.
     const out = await Promise.race([job.then((v) => ({ done: true, size: v && v.blob.size })), new Promise((res) => setTimeout(() => res({ done: false }), limit * 1000 + 61000))]);
+    window.VideoEncoder = Real;
     return Object.assign(out, { hidden: document.hidden, s: Math.round((performance.now() - t0) / 1000), progress: Math.round(maxP * 100) });
   }, FIX, LIMIT_S);
   const pass = r.hidden && r.done && r.s <= LIMIT_S;
-  console.log(pass ? 'PASS' : 'FAIL', 'render of a 6 s clip in a page hidden past the intensive-throttling grace period finishes within ' + LIMIT_S + ' s', JSON.stringify(r));
+  console.log(pass ? 'PASS' : 'FAIL', 'render of an 8 s clip in a page hidden past the intensive-throttling grace period finishes within ' + LIMIT_S + ' s', JSON.stringify(r));
   await browser.close(); srv.close(); process.exit(pass ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

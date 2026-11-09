@@ -12,7 +12,7 @@
   const D = window.vtsDesktop || null;
   const PLATFORM = NP ? 'android' : D ? 'desktop' : 'web';
   // App build shown in Settings and stamped on every Post log row, so a screenshot proves which code wrote it.
-  const BUILD = '1.11.5';
+  const BUILD = '1.11.6';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const LS = { settings: 'vts.ap.settings', log: 'vts.ap.log', used: 'vts.ap.used', clientId: 'vts.ap.clientId', channel: 'vts.ap.channel', buffer: 'vts.ap.bufferChannel', ghRepo: 'vts.ap.ghRepo', host: 'vts.ap.host' };
@@ -36,14 +36,25 @@
     if (D) return wrap(await D.http({ url: req.url, method: req.method, headers: req.headers, body: req.body }));
     return fetch(req.url, { method: req.method, headers: req.headers, body: req.body });
   }
+  // Video upload. Android: native streaming upload with a stall watchdog (no bytes sent for stallMs -> connection is
+  // dropped and the try fails with a clear "upload stalled" error that withRetry retries), progress events, and cancel
+  // when the run is stopped (1.11.5 left an orphan upload thread running after a timeout).
+  let upSeq = 0;
   async function nupload(req) {
     if (NP) {
-      const name = 'ap-upload-' + Date.now() + '.mp4';
+      const id = 'up' + Date.now().toString(36) + (++upSeq);
+      const name = 'ap-upload-' + id + '.mp4';
       const uri = await VTS.native.writeBlob(name, 'CACHE', req.blob);
-      return wrap(await NP.uploadFile({ url: req.url, method: req.method, headers: req.headers, path: uri, deleteAfter: true }));
+      if (req.signal && req.signal.aborted) throw Object.assign(new Error('Upload cancelled.'), { aborted: true });
+      let sub = null; const onAbort = () => { try { NP.cancelUpload({ id }); } catch (_) { /* ignore */ } };
+      try {
+        if (req.onProgress && NP.addListener) sub = await NP.addListener('uploadProgress', (e) => { if (e && e.id === id) req.onProgress(e.sent, e.total); });
+        if (req.signal) req.signal.addEventListener('abort', onAbort, { once: true });
+        return wrap(await NP.uploadFile({ id, url: req.url, method: req.method, headers: req.headers, path: uri, deleteAfter: true, stallMs: req.stallMs || 60000 }));
+      } finally { if (req.signal) req.signal.removeEventListener('abort', onAbort); if (sub && sub.remove) { try { await sub.remove(); } catch (_) { /* ignore */ } } }
     }
     if (D) return wrap(await D.http({ url: req.url, method: req.method, headers: req.headers, bytes: new Uint8Array(await req.blob.arrayBuffer()) }));
-    return fetch(req.url, { method: req.method, headers: req.headers, body: req.blob });
+    return fetch(req.url, { method: req.method, headers: req.headers, body: req.blob, signal: req.signal });
   }
   const notify = async (title, body) => {
     try { if (NP) return await NP.notify({ title, body }); if (D) return await D.notify(title, body); if (window.Notification && Notification.permission === 'granted') new Notification(title, { body }); } catch (_) { /* ignore */ }
@@ -89,7 +100,7 @@
   // Abort controller of the run in progress, so a watchdog (or a timeout) can stop a hung render.
   // Generation fencing: every run stamps its log row with a fresh `gen`. Late work from a run that was cancelled,
   // timed out or recovered (row's gen changed) is dropped and can never upload or schedule in Buffer.
-  let ctl = null; let runStartedAt = 0; let activeGen = '';
+  let ctl = null; let runStartedAt = 0; let activeGen = ''; let clock = null;
   let hiddenSince = 0; let hiddenAcc = 0;
   document.addEventListener('visibilitychange', () => { if (document.hidden) hiddenSince = Date.now(); else if (hiddenSince) { hiddenAcc += Date.now() - hiddenSince; hiddenSince = 0; } });
   const hiddenNow = () => hiddenAcc + (hiddenSince ? Date.now() - hiddenSince : 0);
@@ -101,23 +112,43 @@
     const gen = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
     running = true; current = slot.id; runStartedAt = Date.now(); activeGen = gen; ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const myCtl = ctl; hiddenAcc = 0; hiddenSince = document.hidden ? Date.now() : 0;
-    const entry = putLog({ slot: slot.id, gen, time: new Date().toISOString(), method: s.method, status: 'running', build: BUILD, attempts: attempt, title: prev.title || '', why, stage: '', stageAt: null, stages: {}, progress: null, progressAt: null, hiddenMs: 0, diag: [], startedHidden: !!document.hidden });
+    const myClock = clock = C.freezeClock(runStartedAt, L.frozenGapMs);
+    const entry = putLog({ slot: slot.id, gen, time: new Date().toISOString(), method: s.method, status: 'running', build: BUILD, attempts: attempt, title: prev.title || '', why, stage: '', stageAt: null, stages: {}, progress: null, progressAt: null, hiddenMs: 0, frozenMs: 0, diag: [], startedHidden: !!document.hidden, projectId: prev.projectId || null, checkpoint: prev.checkpoint || '' });
     const row = () => getLog().find((e) => e.slot === slot.id) || {};
     const alive = () => row().gen === gen && !(myCtl && myCtl.signal.aborted);
-    const P = (patch) => { if (row().gen !== gen) return null; return putLog(Object.assign({ slot: slot.id, hiddenMs: hiddenNow() }, patch)); };
+    const P = (patch) => { if (row().gen !== gen) return null; return putLog(Object.assign({ slot: slot.id, hiddenMs: hiddenNow(), frozenMs: myClock.frozenMs }, patch)); };
     const fence = () => { if (!alive()) throw new Abandoned(); };
     const stage = (name) => P(C.stagePatch(row(), name, Date.now()));
     const diag = (d) => { const r = row(); P({ diag: (r.diag || []).concat([new Date().toTimeString().slice(0, 8) + ' ' + (d.event || '') + (d.reason ? ': ' + String(d.reason).slice(0, 160) : '')]).slice(-8) }); };
     let stopReason = null;
     const abort = (why2) => { if (!stopReason) stopReason = why2 || 'stopped'; try { if (myCtl) myCtl.abort(); } catch (_) { /* ignore */ } };
-    // Stage watchdog: each stage has its own budget, and a render that stops reporting progress is stopped early.
-    const dog = setInterval(() => {
+    // Stage watchdog: each stage has its own budget (ACTIVE time: time the app was frozen does not count), and a render
+    // or upload that stops reporting progress is stopped early. Also runs right away when the app comes back to the front.
+    let makeStartedAt = 0; let lastSave = 0;
+    const tick = () => {
+      const now = Date.now(); const gap = myClock.tick(now);
       const r = row(); if (r.gen !== gen) { abort('superseded'); return; }
-      const now = Date.now(); const lim = r.stage && L.stage[r.stage];
-      if (lim && r.stageAt && now - Date.parse(r.stageAt) > lim) abort('Stage "' + r.stage + '" took longer than ' + C.fmtMs(lim));
-      else if (r.stage === 'render' && now - Date.parse(r.progressAt || r.stageAt) > L.noProgressMs) abort('Render made no progress for ' + C.fmtMs(now - Date.parse(r.progressAt || r.stageAt)) + (r.progress != null ? ' (stuck at ' + Math.round(r.progress * 100) + '%)' : ''));
-    }, 5000);
-    try { if (NP) await NP.runStart({ text: 'Making the ' + slot.time + ' IST Short…' }); if (D) D.runState(true); } catch (_) { /* ignore */ }
+      if (gap) {
+        diag({ event: 'app was frozen ' + C.fmtMs(gap), reason: (document.hidden ? 'in the background' : 'app open') + '; phone asleep or Android paused the app — continuing' });
+        // Woke up long after the catch-up window of a scheduled slot: do not post hours late.
+        if (why !== 'manual' && /^\d{4}-/.test(slot.id) && now - slot.at > Math.max(s.catchUpHours * 3600000, 10 * 60000)) { abort('The app was frozen for ' + C.fmtMs(gap) + ' (phone asleep or Android paused it) and woke up past this slot\'s catch-up window'); return; }
+      }
+      const act = (since) => myClock.activeSince(since, now);
+      const lim = r.stage && L.stage[r.stage]; const stAt = Date.parse(r.stageAt || '') || now;
+      const progSince = Math.max(Date.parse(r.progressAt || '') || 0, stAt, myClock.lastThaw ? myClock.lastThaw + L.thawGraceMs - L.noProgressMs : 0);
+      if (lim && act(stAt) > lim) abort('Stage "' + r.stage + '" took longer than ' + C.fmtMs(lim) + (myClock.frozenMs ? ' of active time' : ''));
+      else if ((r.stage === 'render' || (r.stage === 'upload' && NP && s.method === 'buffer')) && act(progSince) > (r.stage === 'upload' ? L.uploadMs / 2 : L.noProgressMs)) abort((r.stage === 'upload' ? 'Upload' : 'Render') + ' made no progress for ' + C.fmtMs(act(progSince)) + (r.progress != null ? ' (stuck at ' + Math.round(r.progress * 100) + '%)' : ''));
+      else if (makeStartedAt && /^(script|voice|decode|render)$/.test(r.stage || '') && act(makeStartedAt) > L.renderMs + L.scriptMs) abort('Making the Short took longer than ' + C.fmtMs(L.renderMs + L.scriptMs) + ' of active time');
+      else if (now - runStartedAt > L.wallMs) abort('Run still going after ' + C.fmtMs(L.wallMs));
+      else if (now - lastSave > 30000) { lastSave = now; P({}); } // keep hidden/frozen time in the row current (1.11.5 showed stale "58s in background")
+    };
+    const dog = setInterval(tick, 5000);
+    const onFront = () => { if (!document.hidden) setTimeout(tick, 0); };
+    document.addEventListener('visibilitychange', onFront); document.addEventListener('resume', onFront);
+    try {
+      if (NP) { const rs = await NP.runStart({ text: 'Making the ' + slot.time + ' IST Short…' }); if (rs && rs.fgs === false) diag({ event: 'background service did not start', reason: rs.error || 'Android refused' }); else if (rs && rs.batteryExempt === false) diag({ event: 'battery optimisation is on', reason: 'Android may pause the app in the background' }); }
+      if (D) D.runState(true);
+    } catch (_) { /* ignore */ }
     try {
       let bufKey = null; let bch = null;
       if (s.method === 'buffer') {
@@ -148,25 +179,30 @@
       }
       const it = prev.idea ? prev.idea : pickIdea(); if (!it) throw Object.assign(new Error('Idea bank is empty.'), { fatal: true });
       P({ idea: it, title: it.text.slice(0, 80), step: 'script' }); stage('script');
-      let lastProg = 0;
+      let lastProg = 0; let resumeId = prev.projectId || null; makeStartedAt = Date.now();
       // Reject as soon as the run is aborted, even if some inner step ignores the signal (its late result is fenced off anyway).
       const abortedP = new Promise((_, rej) => { if (myCtl) myCtl.signal.addEventListener('abort', () => rej(new Abandoned(stopReason || 'Stopped.')), { once: true }); });
       abortedP.catch(() => {});
       const made = await C.withTimeout(C.withRetry(() => { fence(); return Promise.race([abortedP, VTS.makeShortHeadless(it, {
-        signal: myCtl ? myCtl.signal : undefined,
+        signal: myCtl ? myCtl.signal : undefined, resumeId,
+        onCheckpoint: (c) => { if (row().gen !== gen) return; resumeId = c.projectId; P({ projectId: c.projectId, checkpoint: c.stage }); },
         onStep: (st) => { if (row().gen !== gen) return; P({ step: st }); if (L.stage[st]) stage(st); },
         onDiag: diag,
         onProgress: (p) => { const now = Date.now(); if (now - lastProg > 3000) { lastProg = now; P({ step: 'render ' + Math.round(p * 100) + '%', progress: p, progressAt: new Date(now).toISOString() }); } },
-      })]); }, { tries: 3, onWait: (ms) => P({ step: 'waiting ' + Math.round(ms / 1000) + ' s (Gemini busy)' }) }), L.renderMs + L.scriptMs, 'Making the Short (script/voice/render)', () => abort('Making the Short took longer than ' + C.fmtMs(L.renderMs + L.scriptMs)));
+      })]); }, { tries: 3, onWait: (ms) => P({ step: 'waiting ' + Math.round(ms / 1000) + ' s (Gemini busy)' }) }), L.wallMs, 'Making the Short (script/voice/render)', () => abort('Making the Short took longer than ' + C.fmtMs(L.wallMs)));
+      makeStartedAt = 0;
       fence();
       const durProblem = C.shortDurationProblem(made.duration, L.maxShortSec);
       if (durProblem) throw Object.assign(new Error('Not uploaded: ' + durProblem + ' (Buffer rejects YouTube Shorts over 3 min). Renderer: ' + (made.how || '?') + '.'), { fatal: true });
-      const title = C.buildMetadata(made.pkg).snippet.title; P({ title, step: 'upload', duration: Math.round(made.duration * 10) / 10, renderer: made.how }); stage('upload');
+      const title = C.buildMetadata(made.pkg).snippet.title; P({ title, step: 'upload', duration: Math.round(made.duration * 10) / 10, renderer: made.how, progress: null, progressAt: null }); stage('upload');
+      let lastUp = 0;
+      const upProg = (sent, total) => { const now = Date.now(); if (now - lastUp < 3000 && sent < total) return; lastUp = now; const p = total ? sent / total : 0; P({ step: 'upload ' + Math.round(p * 100) + '% (' + (sent / 1048576).toFixed(1) + ' of ' + (total / 1048576).toFixed(1) + ' MB)', progress: p, progressAt: new Date(now).toISOString() }); };
+      const upload = (req) => nupload(Object.assign({}, req, { onProgress: upProg, signal: myCtl ? myCtl.signal : undefined, stallMs: L.uploadStallMs }));
       if (s.method === 'buffer') {
         const host = C.HOSTS[load(LS.host, 'github')] || C.HOSTS.github;
         const ext = /webm/.test(made.mime) ? 'webm' : 'mp4'; const name = 'short-' + stamp(slot) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6) + '.' + ext;
         const ghToken = await secure.get('githubToken'); if (!ghToken) throw Object.assign(new Error('Add a GitHub token for the video host (Settings).'), { fatal: true });
-        const videoUrl = await C.withTimeout(C.withRetry(() => { fence(); return host.upload(nhttp, nupload, { token: ghToken, repo: load(LS.ghRepo, ''), name, blob: made.blob, size: made.blob.size, mime: made.mime }); }, { tries: 3 }), L.uploadMs, 'GitHub video upload', () => abort('GitHub upload timed out'));
+        const videoUrl = await C.withTimeout(C.withRetry(() => { fence(); return host.upload(nhttp, upload, { token: ghToken, repo: load(LS.ghRepo, ''), name, blob: made.blob, size: made.blob.size, mime: made.mime }); }, { tries: 3, onWait: (ms, a, e) => diag({ event: 'upload retry in ' + Math.round(ms / 1000) + ' s', reason: e && e.message }) }), L.wallMs, 'GitHub video upload', () => abort('GitHub upload timed out'));
         fence();
         // Remember the upload (and the package) right away so a Buffer failure retries only Buffer.
         P({ videoUrl, pkg: made.pkg, step: 'buffer' }); stage('buffer');
@@ -195,20 +231,23 @@
       P(Object.assign(C.stagePatch(cur, '', Date.now()), { status: retriable ? 'retrying' : 'failed', step: '', error: msg, nextRetryAt: retriable ? new Date(Date.now() + C.backoffMs(attempt + 1)).toISOString() : null }));
       if (!retriable) notify('Autopilot could not post a Short', msg.slice(0, 180));
     } finally {
-      clearInterval(dog);
-      if (activeGen === gen) { running = false; current = ''; ctl = null; runStartedAt = 0; activeGen = ''; try { if (D) D.runState(false); } catch (_) { /* ignore */ } }
+      clearInterval(dog); document.removeEventListener('visibilitychange', onFront); document.removeEventListener('resume', onFront);
+      if (activeGen === gen) { running = false; current = ''; ctl = null; runStartedAt = 0; activeGen = ''; clock = null; try { if (D) D.runState(false); } catch (_) { /* ignore */ } }
       void entry;
     }
   }
   let lastBeatAt = 0; void lastBeatAt;
   // Turn stale "running" rows (app was killed mid-render, or a hung run) into retrying/failed; and unstick this process if its own run hung.
   function recover() {
-    if (running && runStartedAt && Date.now() - runStartedAt > C.LIMITS.slotMs) {
+    const now = Date.now(); const activeMs = running && runStartedAt ? (clock ? clock.activeSince(runStartedAt, now) : now - runStartedAt) : 0;
+    if (running && runStartedAt && (activeMs > C.LIMITS.slotMs || now - runStartedAt > C.LIMITS.wallMs)) {
       const slotId = current; const r = getLog().find((e) => e.slot === slotId) || {};
-      // Fence first, then abort: the hung run's late result can no longer write, upload or schedule.
-      putLog({ slot: slotId, gen: 'watchdog-' + Date.now().toString(36), status: 'failed', step: '', error: 'Watchdog: this run was still going after ' + C.fmtMs(C.LIMITS.slotMs) + ' and was stopped — ' + C.diagText(r, Date.now()), nextRetryAt: null });
+      const fz = clock ? clock.frozenSince(runStartedAt, now) : 0;
+      // Fence first, then abort: the hung run's late result can no longer write, upload or schedule. Diagnostics use the
+      // live hidden/frozen time (1.11.5 used the row's last saved value, which made a background freeze look like a foreground stall).
+      putLog({ slot: slotId, gen: 'watchdog-' + now.toString(36), status: 'failed', step: '', error: 'Watchdog: this run was still going after ' + C.fmtMs(now - runStartedAt) + (fz ? ' (' + C.fmtMs(activeMs) + ' active)' : '') + ' and was stopped — ' + C.diagText(Object.assign({}, r, { hiddenMs: hiddenNow(), frozenMs: fz }), now), nextRetryAt: null });
       try { if (ctl) ctl.abort(); } catch (_) { /* ignore */ }
-      running = false; current = ''; ctl = null; runStartedAt = 0; activeGen = '';
+      running = false; current = ''; ctl = null; runStartedAt = 0; activeGen = ''; clock = null;
     }
     C.recoverStale(Date.now(), getLog(), settings(), running ? current : null).forEach((p) => putLog(p));
   }

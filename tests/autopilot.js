@@ -290,6 +290,23 @@ test('recoverStale patches carry a new generation fence', () => {
   assert.ok(p[0].gen && p[0].gen !== 'g1');
 });
 
+test('freezeClock: a 41-min gap counts as frozen, normal (even throttled 60 s) ticks do not; active time excludes the freeze', () => {
+  const t = 1e12; const k = C.freezeClock(t, 90000);
+  assert.strictEqual(k.tick(t + 5000), 0); assert.strictEqual(k.tick(t + 65000), 0); // hidden-page throttled tick (60 s) is not a freeze
+  assert.strictEqual(k.tick(t + 65000 + 41 * 60000), 41 * 60000);
+  assert.strictEqual(k.frozenMs, 41 * 60000); assert.strictEqual(k.lastThaw, t + 65000 + 41 * 60000);
+  assert.strictEqual(k.activeSince(t, t + 65000 + 41 * 60000 + 10000), 75000);
+  // a freeze still in progress (no tick yet) is counted too, so the slot watchdog does not fire the moment the app thaws
+  const k2 = C.freezeClock(t, 90000); k2.tick(t + 5000); assert.strictEqual(k2.activeSince(t, t + 5000 + 40 * 60000), 5000);
+});
+test('diagText reports frozen time and the saved checkpoint', () => {
+  const d = C.diagText({ frozenMs: 38 * 60000, hiddenMs: 39 * 60000, checkpoint: 'script + voice' }, Date.now());
+  assert.ok(/app frozen 38m/.test(d) && /background 39m/.test(d) && /saved: script \+ voice/.test(d), d);
+});
+test('LIMITS: upload stage has an active-time budget; wall-clock backstop is hours, not minutes', () => {
+  assert.ok(C.LIMITS.stage.upload >= 5 * 60000); assert.ok(C.LIMITS.wallMs >= 2 * 3600000); assert.ok(C.LIMITS.frozenGapMs > 60000);
+});
+
 (async () => {
   let fail = 0;
   for (const [name, fn] of tests) { try { await fn(); n++; console.log('ok  ' + name); } catch (e) { fail++; console.log('FAIL ' + name + '\n   ' + (e && e.stack || e)); } }

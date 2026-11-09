@@ -175,22 +175,74 @@ public class AutopilotPlugin extends Plugin {
         }).start();
     }
 
-    /** Streams a file (written by the app into its cache) to an upload URL. */
+    /** Uploads in progress by id, so JS can cancel one (run stopped / timed out) instead of leaving it running. */
+    private static final java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection> UPLOADS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Streams a file (written by the app into its cache) to an upload URL.
+     * v1.11.6: HttpURLConnection has no write timeout, so a dead connection (Wi-Fi asleep, network switch) used to block
+     * the upload for up to its 10-min read timeout or longer. A watchdog thread now drops the connection when no bytes
+     * have been sent for stallMs (or no response arrives within 3 min after the last byte), and progress events are sent
+     * to JS so the Autopilot no-progress watchdog sees a live upload.
+     */
     @PluginMethod
     public void uploadFile(PluginCall call) {
         if (!allowed(call.getString("url"))) { call.reject("URL not allowed"); return; }
+        final String id = call.getString("id", "up" + System.nanoTime());
+        final long stallMs = Math.max(15000L, call.getLong("stallMs", 60000L));
         new Thread(() -> {
+            final long[] lastMove = { System.currentTimeMillis() }; final long[] sent = { 0 }; final boolean[] done = { false }; final String[] why = { null };
+            HttpURLConnection c = null; File f = null;
             try {
                 String path = call.getString("path", ""); if (path.startsWith("file://")) path = Uri.parse(path).getPath();
-                File f = new File(path);
-                HttpURLConnection c = open(call, call.getString("method", "POST"));
-                c.setDoOutput(true); c.setFixedLengthStreamingMode(f.length()); c.setReadTimeout(600000);
+                f = new File(path); final long total = f.length();
+                c = open(call, call.getString("method", "POST"));
+                c.setDoOutput(true); c.setFixedLengthStreamingMode(total); c.setReadTimeout(180000);
+                UPLOADS.put(id, c);
+                final HttpURLConnection conn = c;
+                Thread dog = new Thread(() -> {
+                    while (!done[0]) {
+                        try { Thread.sleep(2000); } catch (InterruptedException ie) { return; }
+                        if (done[0]) return;
+                        long idle = System.currentTimeMillis() - lastMove[0];
+                        boolean writing = sent[0] < total;
+                        if ((writing && idle > stallMs) || (!writing && idle > 180000)) {
+                            why[0] = writing ? "upload stalled: no data sent for " + (idle / 1000) + " s (" + (sent[0] / 1048576) + " of " + (total / 1048576) + " MB)" : "no response from the server " + (idle / 1000) + " s after the upload finished";
+                            try { conn.disconnect(); } catch (Exception ignored) { }
+                            return;
+                        }
+                    }
+                });
+                dog.setDaemon(true); dog.start();
                 OutputStream o = c.getOutputStream(); FileInputStream in = new FileInputStream(f);
-                byte[] b = new byte[65536]; int n; while ((n = in.read(b)) > 0) o.write(b, 0, n); in.close(); o.close();
+                byte[] b = new byte[65536]; int n; long lastEvt = 0;
+                try {
+                    while ((n = in.read(b)) > 0) {
+                        o.write(b, 0, n); sent[0] += n; lastMove[0] = System.currentTimeMillis();
+                        if (lastMove[0] - lastEvt > 1000 || sent[0] == total) { lastEvt = lastMove[0]; JSObject ev = new JSObject(); ev.put("id", id); ev.put("sent", sent[0]); ev.put("total", total); notifyListeners("uploadProgress", ev); }
+                    }
+                } finally { in.close(); }
+                o.close(); lastMove[0] = System.currentTimeMillis();
                 respond(call, c);
-                if (call.getBoolean("deleteAfter", false)) f.delete();
-            } catch (Exception e) { call.reject("Network error: " + e.getMessage()); }
+            } catch (Exception e) {
+                String reason = why[0] != null ? why[0] : ("cancelled".equals(e.getMessage()) ? "cancelled" : e.getMessage());
+                if (CANCELLED.remove(id) != null) reason = "upload cancelled (run stopped)";
+                call.reject("Network error: " + reason);
+            } finally {
+                done[0] = true; UPLOADS.remove(id);
+                if (f != null && call.getBoolean("deleteAfter", false)) f.delete();
+            }
         }).start();
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, Boolean> CANCELLED = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @PluginMethod
+    public void cancelUpload(PluginCall call) {
+        String id = call.getString("id", "");
+        HttpURLConnection c = UPLOADS.get(id);
+        if (c != null) { CANCELLED.put(id, true); new Thread(() -> { try { c.disconnect(); } catch (Exception ignored) { } }).start(); }
+        JSObject r = new JSObject(); r.put("cancelled", c != null); call.resolve(r);
     }
 
     // ---------- schedule ----------
@@ -253,10 +305,15 @@ public class AutopilotPlugin extends Plugin {
         Context c = getContext();
         if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).keepWebViewAwake();
         Intent i = new Intent(c, AutopilotService.class).putExtra("text", call.getString("text", "Making and posting a Short…"));
-        try { ContextCompat.startForegroundService(c, i); } catch (Exception ignored) { }
+        // Report whether the foreground service really started (Android 12+ can refuse it from the background); 1.11.5 swallowed this.
+        JSObject r = new JSObject(); boolean fgs = true;
+        try { ContextCompat.startForegroundService(c, i); } catch (Exception e) { fgs = false; r.put("error", e.getClass().getSimpleName() + ": " + e.getMessage()); }
+        r.put("fgs", fgs);
+        PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
+        r.put("batteryExempt", Build.VERSION.SDK_INT < 23 || pm.isIgnoringBatteryOptimizations(c.getPackageName()));
         Activity a = getActivity();
         if (a != null) a.runOnUiThread(() -> a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
-        call.resolve();
+        call.resolve(r);
     }
 
     @PluginMethod

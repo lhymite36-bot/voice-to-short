@@ -2034,7 +2034,17 @@
     if (!getKey()) throw Object.assign(new Error('No Gemini API key saved (Settings).'), { fatal: true });
     if (!R.canRender()) throw Object.assign(new Error('This device cannot record video.'), { fatal: true });
     const tone = load(K.tone, 'sarcastic'); const length = it.length === '30' ? '30' : '60';
-    const Q = blankProject(); Object.assign(Q, { idea: it.text, tone, template: it.format || 'classic', length, humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, autopilot: true });
+    // Checkpoint + resume (v1.11.6): a retry of the same slot re-uses what the earlier try already made and saved to the
+    // Library: the finished, checked video (-> straight to upload), or the script + voice (-> straight to render).
+    let saved = null;
+    if (h.resumeId) { try { const o = await DB.get(h.resumeId); if (o && o.autopilot && o.pkg && o.voice && o.voice.blob && o.voice.blob.size) saved = o; } catch (_) { saved = null; } }
+    if (saved && saved.video && saved.video.blob && saved.video.blob.size && saved.video.apChecked) {
+      if (h.onDiag) h.onDiag({ event: 'resume: re-using the video rendered by the earlier try' }); step('render'); if (h.onProgress) h.onProgress(1);
+      return { project: saved, pkg: saved.pkg, blob: saved.video.blob, mime: saved.video.type || saved.video.mime || 'video/mp4', duration: saved.video.checkedDuration || saved.video.duration, how: (saved.video.how || 'saved') + ' (re-used from earlier try)', resumed: 'video' };
+    }
+    const Q = saved || blankProject();
+    if (saved) { if (h.onDiag) h.onDiag({ event: 'resume: re-using script + voice from the earlier try' }); }
+    else { Object.assign(Q, { idea: it.text, tone, template: it.format || 'classic', length, humour: S.TONES[tone] && S.TONES[tone].funny ? 2 : 0, autopilot: true });
     Q.look = Object.assign({}, Q.look, { aspect: '9:16', preset: 'kurz', visual: 'scenes', aiImages: false, anim: '2d', quality: 'auto' });
     step('script');
     const pkg = await S.generatePackage(Q.idea, { tone, format: Q.template, humour: Q.humour, platform: 'youtube', language: load(K.language, 'English'), handle: handle(), length, signal: h.signal,
@@ -2052,9 +2062,14 @@
     }
     if (h.signal && h.signal.aborted) throw Object.assign(new Error('Stopped.'), { aborted: true });
     if (!r) r = await G.generateSpeech(pkg.script, { voice, style: st.style, prefix: st.prefix, signal: h.signal, timeout: 75000, maxTimeouts: 2, deadline: vDeadline, onAttempt });
+    Q.voice = { blob: r.blob, source: 'gemini', duration: 0, mime: r.blob.type, createdAt: new Date().toISOString(), ttsVoice: voice, ttsModel: r.model };
+    Q.step = 'voice'; Q.updatedAt = new Date().toISOString();
+    try { await DB.put(Q); if (h.onCheckpoint) h.onCheckpoint({ projectId: Q.id, stage: 'script + voice' }); } catch (_) { /* best-effort */ }
+    }
+    const pkg = Q.pkg;
     step('decode');
-    const buf = R.trimBuffer(await R.decodeBlob(r.blob), 56);
-    Q.voice = { blob: r.blob, source: 'gemini', duration: buf.duration, mime: r.blob.type, createdAt: new Date().toISOString(), ttsVoice: voice, ttsModel: r.model };
+    const buf = R.trimBuffer(await R.decodeBlob(Q.voice.blob), 56);
+    Q.voice.duration = buf.duration;
     if (h.signal && h.signal.aborted) throw Object.assign(new Error('Stopped.'), { aborted: true });
     step('render');
     const lk = Object.assign({}, Q.look, { aspect: '9:16', handle: handle(), textHook: pkg.textHook || '', ctaSticker: pkg.cta || CTAS[0], template: Q.template, humour: Q.humour, stepLabel: (S.FORMATS[Q.template] || {}).badge || 'STEP', safeZones: false });
@@ -2080,10 +2095,11 @@
       res.checkedDuration = info.duration;
     }
     res.how = res.how || how;
-    Q.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect: '9:16', createdAt: new Date().toISOString(), visual: 'scenes' };
+    if (res.resumes) res.how += ' (encoder resumed ' + res.resumes + 'x from a checkpoint)';
+    Q.video = { blob: res.blob, mime: res.mime, type: res.type, duration: res.duration, size: res.blob.size, width: res.width, height: res.height, aspect: '9:16', createdAt: new Date().toISOString(), visual: 'scenes', how: res.how, checkedDuration: res.checkedDuration, apChecked: true };
     try { const P2 = R.plan(buf, 60); const keep = P; P = Q; try { Q.thumb = thumbFrame(lk, P2.total, null, P2); } finally { P = keep; } } catch (_) { Q.thumb = ''; }
     Q.step = 'render'; Q.updatedAt = new Date().toISOString();
-    try { await DB.put(Q); } catch (_) { /* library save is best-effort */ }
+    try { await DB.put(Q); if (h.onCheckpoint) h.onCheckpoint({ projectId: Q.id, stage: 'video' }); } catch (_) { /* library save is best-effort */ }
     return { project: Q, pkg, blob: res.blob, mime: res.type || 'video/webm', duration: res.checkedDuration || res.duration, how: res.how };
   }
   VTS.makeShortHeadless = makeShortHeadless;
