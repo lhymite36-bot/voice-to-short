@@ -1,17 +1,11 @@
-# Voice to Short 1.11.1-decide-3d-test
+# Voice to Short 1.11.6-autopilot-render-fix-test
 
-**TEST / pre-release.** Decide now renders the real dark **3D Blender EEVEE** look inside the Windows app.
+**TEST / pre-release (not Latest).** Fixes for Autopilot renders and uploads that stopped while the phone was asleep or the app was in the background.
 
-## New
-- **Render Decide 3D** button (Windows app, Decide → Render step). Runs the bundled `tools/decide` pipeline:
-  Gemini multi-voice TTS → horror SFX → Blender EEVEE scenes → A/B pills, rewind, captions, audio mix → 1080×1920 MP4.
-- Finished MP4 loads into the project like a normal render, so Save / Share work.
-- Detects Blender (PATH or Program Files\Blender Foundation), Python, Node. If your ffmpeg is missing/too old, a free ffmpeg build (~90 MB, BtbN) downloads once into the app data folder.
-- Clear in-app message if Blender is missing (free from blender.org).
-- **Quick 2D draft** stays available as the secondary button (same as phone).
-- Pipeline scripts are path-independent (work dir under app data) and auto-generate choice pills from your script.
-
-## Notes
-- Uses your Gemini key from Settings for voices. Render time ~20–40 min depending on PC (Blender ~1–2 min per shot).
-- 3D sets are the WESTGATE set library (desk, corridor, food court, staff door, break room); your script's scenes map to the closest set.
-- Quiet Brain Autopilot / Buffer unchanged. Not merged to main / Latest.
+- The "stuck at 3–4 %" runs were the app being frozen by Android, not a stall with the app open. 1.11.5 wrote a stale "in background" figure into the log, so it looked like a stall with the app open. The log now shows how long the app was frozen.
+- After a freeze, the run continues where it stopped. Time limits count only the time the app was actually running.
+- If the video encoder dies, rendering resumes from the last 2-second checkpoint instead of starting again at 0 %.
+- A retry re-uses the script, voice and finished video that were already saved, so it does not make them again.
+- The render keeps full speed in the background: it no longer waits on timers that Android throttles to once a minute.
+- Upload: a stalled connection is dropped after 60 s with no data sent, then retried. Progress is shown. Stopping a run cancels its upload. A Wi-Fi lock is held during the run.
+- Windows: Buffer/GitHub requests time out instead of waiting forever.

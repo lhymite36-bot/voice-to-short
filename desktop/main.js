@@ -86,8 +86,13 @@ const ALLOWED = ['https://api.buffer.com', 'https://api.github.com/', 'https://u
 ipcMain.handle('http', async (e, req) => {
   if (!ALLOWED.some((a) => String(req.url).startsWith(a))) throw new Error('URL not allowed');
   const body = req.bytes ? Buffer.from(req.bytes) : req.body;
-  const res = await net.fetch(req.url, { method: req.method || 'GET', headers: req.headers || {}, body: req.method === 'GET' ? undefined : body });
-  return { status: res.status, body: await res.text() };
+  // v1.11.6: never wait forever on a dead connection (uploads: 15 min, API calls: 2 min); the Autopilot retries the upload.
+  const ac = new AbortController(); const ms = req.bytes ? 15 * 60000 : 120000; const t = setTimeout(() => ac.abort(), ms);
+  try {
+    const res = await net.fetch(req.url, { method: req.method || 'GET', headers: req.headers || {}, body: req.method === 'GET' ? undefined : body, signal: ac.signal });
+    return { status: res.status, body: await res.text() };
+  } catch (err) { throw new Error(ac.signal.aborted ? 'Network error: request timed out after ' + Math.round(ms / 60000) + ' min' : 'Network error: ' + (err && err.message || err)); }
+  finally { clearTimeout(t); }
 });
 
 // ---------- Decide 3D (v1.11.1): run tools/decide (Gemini TTS → SFX → Blender EEVEE → ffmpeg assemble) ----------
