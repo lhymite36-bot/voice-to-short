@@ -84,6 +84,7 @@ test('OAuth URL: PKCE, offline, both scopes, loopback redirect', async () => {
   const u = new URL(C.buildAuthUrl({ clientId: '123-abc.apps.googleusercontent.com', redirectUri: 'http://127.0.0.1:5555', state: 's1', challenge: p.challenge }));
   assert.strictEqual(u.searchParams.get('access_type'), 'offline'); assert.strictEqual(u.searchParams.get('code_challenge_method'), 'S256');
   assert.ok(u.searchParams.get('scope').includes('youtube.upload') && u.searchParams.get('scope').includes('youtube.readonly'));
+  assert.ok(u.searchParams.get('scope').includes('yt-analytics.readonly') && u.searchParams.get('scope').includes('youtube.force-ssl'));
   assert.strictEqual(u.searchParams.get('redirect_uri'), 'http://127.0.0.1:5555');
   assert.ok(C.validClientId('123-abc.apps.googleusercontent.com')); assert.ok(!C.validClientId('nope'));
   const t = C.tokenRequest({ code: 'c/1', clientId: 'id', clientSecret: 'sec', redirectUri: 'http://127.0.0.1:5555', verifier: 'v' });

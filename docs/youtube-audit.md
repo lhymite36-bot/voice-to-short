@@ -65,3 +65,13 @@ Nothing is submitted by the app or by this repo; you fill the forms yourself.
 > and voice, and uploads videos to the user's own YouTube channel through the YouTube Data API. It stores
 > the YouTube refresh token encrypted on the device and has no server, analytics or third-party sharing.
 > Users can revoke access at any time at https://myaccount.google.com/permissions.
+
+
+## Quiet Brain Studio scopes (v1.12+)
+
+Studio needs two extra scopes on the same OAuth client:
+
+- `https://www.googleapis.com/auth/yt-analytics.readonly` — retention and average % viewed
+- `https://www.googleapis.com/auth/youtube.force-ssl` — read comment threads
+
+Also enable **YouTube Analytics API** on the Cloud project. After adding scopes, disconnect and Connect YouTube again so Google re-prompts consent. Buffer posting is unchanged and still needs no Google audit.

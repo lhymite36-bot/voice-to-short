@@ -1,6 +1,6 @@
 {
   "name": "voice-to-short",
-  "version": "1.11.6",
+  "version": "1.12.0",
   "private": true,
   "description": "Voice to Short: talk an idea, get a colour-graded vertical YouTube Short with captions. Android (Capacitor) + web.",
   "license": "MIT",
@@ -9,7 +9,9 @@
     "sync": "npm run vendor && cap sync android",
     "apk:debug": "npm run sync && cd android && ./gradlew assembleDebug",
     "apk:release": "npm run sync && cd android && ./gradlew assembleRelease",
-    "serve": "npx --yes http-server www -p 8080 -c-1"
+    "serve": "npx --yes http-server www -p 8080 -c-1",
+    "test": "node tests/autopilot.js && node tests/qbs/store.js && node tests/qbs/analytics.js && node tests/qbs/comments.js && node tests/qbs/sync.js",
+    "test:autopilot": "node tests/autopilot.js && node tests/stalls-e2e.js && node tests/freeze-resume-e2e.js && node tests/render-resume-e2e.js && node tests/background-throttle-e2e.js && node tests/voice-e2e.js"
   },
   "dependencies": {
     "@capacitor-community/speech-recognition": "7.0.1",

@@ -165,7 +165,7 @@ audio { width: 100%; height: 44px; margin-top: 4px; filter: invert(.9) hue-rotat
 .play.playing { opacity: 0; }
 .preview-wrap:hover .play.playing { opacity: .8; }
 .preview-time { position: absolute; bottom: 10px; right: 12px; font: 700 12px system-ui; color: rgba(255,255,255,.8); text-shadow: 0 1px 4px #000; }
-.grades { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .grade { border: 1.5px solid var(--border); border-radius: 14px; padding: 6px; background: var(--bg2); cursor: pointer; color: var(--text); font: 700 12.5px system-ui, sans-serif; }
 .grade i { display: block; height: 44px; border-radius: 10px; margin-bottom: 6px; }
 .grade.on { border-color: transparent; background: linear-gradient(var(--bg2), var(--bg2)) padding-box, var(--grad) border-box; }
@@ -333,3 +333,9 @@ input[type=range] { width: 100%; accent-color: var(--accent2); }
 .decide-lines li[data-ui=choice_lock][data-key=A] { border-left: 3px solid #E23D28; }
 .decide-lines li[data-ui=choice_lock][data-key=B] { border-left: 3px solid #2ECC71; }
 .decide-badge { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.08); margin-right:6px; }
+
+/* Quiet Brain Studio */
+.qbs-row, .qbs-topic { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.qbs-title { font-weight: 700; margin-bottom: 4px; }
+.qbs-metrics { display: flex; flex-wrap: wrap; gap: 8px 12px; color: var(--muted); }
+.qbs-topic { display: flex; flex-direction: column; gap: 4px; }

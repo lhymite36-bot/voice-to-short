@@ -12,7 +12,7 @@
   const D = window.vtsDesktop || null;
   const PLATFORM = NP ? 'android' : D ? 'desktop' : 'web';
   // App build shown in Settings and stamped on every Post log row, so a screenshot proves which code wrote it.
-  const BUILD = '1.11.6';
+  const BUILD = '1.12.0';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const LS = { settings: 'vts.ap.settings', log: 'vts.ap.log', used: 'vts.ap.used', clientId: 'vts.ap.clientId', channel: 'vts.ap.channel', buffer: 'vts.ap.bufferChannel', ghRepo: 'vts.ap.ghRepo', host: 'vts.ap.host' };
@@ -94,7 +94,16 @@
 
   // ---------- one run ----------
   let running = false; let current = '';
-  function pickIdea() { const ideas = (VTS.ideas && VTS.ideas.IDEAS) || []; const used = load(LS.used, []); const it = C.pickIdea(ideas, used); if (it) save(LS.used, used.filter((k) => k !== C.ideaKey(it)).concat([C.ideaKey(it)]).slice(-1000)); return it; }
+  function pickIdea() {
+    try {
+      if (VTS.qbs && typeof VTS.qbs.consumeTopic === 'function') {
+        const t = VTS.qbs.consumeTopic();
+        if (t && t.text) return { text: t.text, format: t.format || 'classic', length: t.length || '60', cat: 'Quiet Brain Studio', source: 'qbs-comment' };
+      }
+    } catch (_) { /* fall through to idea bank */ }
+    const ideas = (VTS.ideas && VTS.ideas.IDEAS) || []; const used = load(LS.used, []);
+    const it = C.pickIdea(ideas, used); if (it) save(LS.used, used.filter((k) => k !== C.ideaKey(it)).concat([C.ideaKey(it)]).slice(-1000)); return it;
+  }
   const stamp = (slot) => slot.id.replace(/[^0-9T]/g, '').replace('T', '-');
 
   // Abort controller of the run in progress, so a watchdog (or a timeout) can stop a hung render.
@@ -284,7 +293,7 @@
 
   // ---------- UI ----------
   const GUIDE_BUFFER = '<ol class="small"><li>Open <a href="https://publish.buffer.com/settings/api" target="_blank" rel="noopener">Buffer → Settings → API</a> and create a personal API key. Paste it below.</li><li>Tap <b>Load channels</b> and pick your YouTube channel (it must already be connected in Buffer).</li><li>Buffer needs a public link to each video. Create a <b>public</b> GitHub repo (e.g. <code>qb-media</code>), then a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to only that repo and <b>Contents: Read and write</b>. Paste the repo (owner/name) and token below.</li><li>Turn Autopilot on. Each Short is made about 40 min before its time and scheduled in Buffer for the exact time.</li></ol><p class="small muted">Buffer mode needs <b>no Google review</b>: Buffer is already approved by YouTube, so Shorts go out public. Free Buffer plan: max 10 queued posts per channel — extra Shorts wait and retry.</p>';
-  const GUIDE_YT = '<ol class="small"><li>Go to <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> and create a project (free, no card needed).</li><li>APIs &amp; Services → Library → enable <b>YouTube Data API v3</b>.</li><li>APIs &amp; Services → OAuth consent screen: User type <b>External</b>, app name “Voice to Short”, your Gmail as support + developer email. Leave it in <b>Testing</b> and add your own Gmail (the one that owns the channel) under <b>Test users</b>. Scopes: youtube.upload and youtube.readonly.</li><li>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Application type <b>Desktop app</b>. Copy the <b>Client ID</b> and <b>Client secret</b> into the boxes below (they stay on this device). The same client works on the phone and the PC.</li><li>Tap <b>Connect YouTube</b>, pick the Quiet Brain account, allow access.</li></ol><p class="small warn-text">⚠️ Google locks uploads from unverified apps to <b>private</b> until the app passes Google’s YouTube API audit. Also, in Testing mode Google expires the sign-in after 7 days, so you would reconnect weekly. See docs/youtube-audit.md for the audit form text. Buffer mode avoids both.</p>';
+  const GUIDE_YT = '<ol class="small"><li>Go to <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> and create a project (free, no card needed).</li><li>APIs &amp; Services → Library → enable <b>YouTube Data API v3</b>.</li><li>APIs &amp; Services → OAuth consent screen: User type <b>External</b>, app name “Voice to Short”, your Gmail as support + developer email. Leave it in <b>Testing</b> and add your own Gmail (the one that owns the channel) under <b>Test users</b>. Scopes: youtube.upload, youtube.readonly, yt-analytics.readonly and youtube.force-ssl (Studio stats + comments).</li><li>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Application type <b>Desktop app</b>. Copy the <b>Client ID</b> and <b>Client secret</b> into the boxes below (they stay on this device). The same client works on the phone and the PC.</li><li>Tap <b>Connect YouTube</b>, pick the Quiet Brain account, allow access. If you connected before v1.12, disconnect and connect again so Google grants analytics + comments.</li></ol><p class="small warn-text">⚠️ Google locks uploads from unverified apps to <b>private</b> until the app passes Google’s YouTube API audit. Also, in Testing mode Google expires the sign-in after 7 days, so you would reconnect weekly. See docs/youtube-audit.md for the audit form text. Buffer mode avoids both.</p>';
   function card() {
     const host = $('view-settings'); if (!host || $('ap-card')) return;
     const el = document.createElement('div'); el.className = 'card'; el.id = 'ap-card';
@@ -294,7 +303,7 @@
       '<label class="field"><span>Post with</span><select id="ap-method"><option value="buffer">Buffer (recommended, no Google review)</option><option value="youtube">Direct to YouTube (needs your Google OAuth client)</option></select></label>' +
       '<label class="field"><span>Shorts per day</span><select id="ap-per">' + [1, 2, 3, 4, 5, 6].map((n) => '<option>' + n + '</option>').join('') + '</select></label>' +
       '<label class="field"><span>Post times (IST, 24 h, comma-separated)</span><input id="ap-times" type="text" spellcheck="false"></label>' +
-      '<p class="small muted">Ideas come from the idea bank (no repeats until all ' + ((VTS.ideas && VTS.ideas.COUNT) || '') + ' are used). Style: default Kurzgesagt look, 2D, 9:16.</p>' +
+      '<p class="small muted">Ideas prefer Quiet Brain Studio comment topics when queued, otherwise the idea bank (no repeats until all ' + ((VTS.ideas && VTS.ideas.COUNT) || '') + ' are used). Style: default Kurzgesagt look, 2D, 9:16.</p>' +
       (PLATFORM === 'desktop' ? '<label class="switch"><input type="checkbox" id="ap-boot"><span>Start with Windows (in the tray)</span></label>' : '') +
       (PLATFORM === 'android' ? '<button type="button" class="btn" id="ap-battery">Allow background running (battery, alarms, notifications)</button>' : '') +
       '<div id="ap-buffer"><h3>Buffer</h3><details><summary>How to set up Buffer (5 min)</summary>' + GUIDE_BUFFER + '</details>' +
@@ -374,5 +383,5 @@
     if (PLATFORM !== 'web') setInterval(() => check('timer'), 60000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
-  VTS.autopilot = { BUILD, check, runSlot, recover, settings, getLog, connectYouTube, PLATFORM };
+  VTS.autopilot = { BUILD, check, runSlot, recover, settings, getLog, connectYouTube, getAccessToken: accessToken, PLATFORM };
 }());

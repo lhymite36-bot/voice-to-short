@@ -1,7 +1,7 @@
 /* Voice to Short — app UI. Plain JS, no build step. */
 (function () {
   'use strict';
-  const APP_VERSION = '1.7.0';
+  const APP_VERSION = '1.12.0';
   const G = VTS.gemini; const S = VTS.shortgen; const R = VTS.render; const N = VTS.native; const DB = VTS.db;
   const $ = (id) => document.getElementById(id);
   const MAX_IDEA_SEC = 20 * 60; // long dictation (auto-restarts after pauses)
@@ -212,7 +212,7 @@
   function renderAll() { paintMode(); renderIdea(); renderComicIdea(); renderDecideIdea(); renderScript(); renderVoice(); renderRenderPane(); $('project-name').textContent = projectTitle(P); }
 
   // ---------- navigation ----------
-  const views = { create: $('view-create'), library: $('view-library'), settings: $('view-settings') };
+  const views = { create: $('view-create'), library: $('view-library'), studio: $('view-studio'), settings: $('view-settings') };
   let currentView = 'create';
   function showView(name) {
     if (name !== 'create') stopPreview();
@@ -2110,7 +2110,7 @@
     if (last) { try { const p = await DB.get(last); if (p) { P = Object.assign(blankProject(), p); P.look = Object.assign(blankProject().look, p.look || {}); if (P.mode === 'comic') normalizeComic(P); if (P.mode === 'decide') normalizeDecide(P); } } catch (_) { /* ignore */ } }
     renderAll();
     const hash = location.hash.replace('#', '');
-    showView(['library', 'settings'].includes(hash) ? hash : 'create');
+    showView(['library', 'studio', 'settings'].includes(hash) ? hash : 'create');
     showStep(P.step || 'idea');
     if (!getKey() && !P.pkg) setStatus('gen-status', 'Tip: add your free Gemini API key in Settings to write scripts.');
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { persist(true); if (rendering) toast('Keep Voice to Short open while rendering.', true); } });

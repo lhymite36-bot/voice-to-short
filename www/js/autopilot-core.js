@@ -13,7 +13,7 @@
   const DEFAULTS = { enabled: false, method: 'buffer', leadMin: 0, perDay: 6, times: DEFAULT_TIMES.slice(), catchUpHours: 3, privacy: 'public', startWithWindows: false };
   // YouTube Data API v3 default project quota: 10,000 units/day; videos.insert = 1,600 units -> 6 uploads.
   const QUOTA = { daily: 10000, insert: 1600, list: 1 };
-  const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'];
+  const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/yt-analytics.readonly', 'https://www.googleapis.com/auth/youtube.force-ssl'];
   const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
   const TOKEN_URL = 'https://oauth2.googleapis.com/token';
   const UPLOAD_URL = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
